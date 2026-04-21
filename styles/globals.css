@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --mx-primary: #00CED1;
+  --mx-secondary: #40E0D0;
+  --mx-tertiary: #00C5CD;
+  --mx-page-bg: #c4c9d1;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--mx-page-bg);
+  color: #0f172a;
+  font-family: "SF Pro Text", "SF Pro Display", "San Francisco", -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+  @apply antialiased;
+}
+
+* {
+  @apply box-border;
+}
+
+button,
+input,
+select,
+textarea {
+  @apply outline-none focus:ring-2;
+  --tw-ring-color: var(--mx-primary);
+}
+
+.mx-brand-primary {
+  color: var(--mx-primary);
+}
+
+.mx-brand-secondary {
+  color: var(--mx-secondary);
+}
+
+.mx-brand-tertiary {
+  color: var(--mx-tertiary);
+}

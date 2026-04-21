@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Basic user profile document
+    match /users/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin();
+    }
+
+    // Sensitive seller verification + banking data
+    match /sellerPrivateProfiles/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin();
+    }
+
+    // Brand configuration used by seller submission form.
+    match /catalogConfig/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Product and submission rules should be defined according to your business process.
+    // This file focuses on securing sensitive seller profile data.
+  }
+}

@@ -1,0 +1,36 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isImageUpload() {
+      return request.resource != null
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    // Seller listing submissions
+    // Path used by app: sellerSubmissions/{sellerUid}/{submissionId}/{fileName}
+    match /sellerSubmissions/{sellerUid}/{submissionId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(sellerUid) && isImageUpload();
+    }
+
+    // User avatars
+    match /profilePictures/{userId} {
+      allow read: if true;
+      allow write: if isOwner(userId) && isImageUpload();
+    }
+
+    // Default deny
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
