@@ -1,8 +1,10 @@
 import Link from 'next/link';
 import { useEffect } from 'react';
+import { useRouter } from 'next/router';
 import { useCart } from '../lib/cartContext';
 
 export default function CartDrawer({ isOpen, onClose }) {
+  const router = useRouter();
   const { items, removeItem, updateQuantity, clearCart, totalItems, totalPrice } = useCart();
 
   // Prevent body scroll while drawer is open
@@ -164,6 +166,7 @@ export default function CartDrawer({ isOpen, onClose }) {
 
             <button
               type="button"
+              onClick={() => { onClose(); router.push('/checkout'); }}
               className="w-full rounded-full bg-[#00CED1] py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white hover:bg-[#00C5CD]"
             >
               Proceed to checkout

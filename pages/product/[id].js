@@ -169,27 +169,6 @@ export default function ProductDetail() {
       </div>
 
       {/* Seller badge display at top of product details */}
-      {(product.sellerBadge === 'gold' || product.sellerBadge === 'platinum') && (
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-slate-700">Seller:</span>
-          {product.sellerBadge === 'gold' && (
-            <span title="Gold Seller" className="inline-flex items-center gap-1 rounded-full bg-yellow-400/80 px-2 py-0.5 text-xs font-bold text-yellow-900">
-              <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="10" r="9" /></svg>
-              Gold Seller
-            </span>
-          )}
-          {product.sellerBadge === 'platinum' && (
-            <span title="Platinum Seller" className="inline-flex items-center gap-1 rounded-full bg-gray-300/80 px-2 py-0.5 text-xs font-bold text-gray-900">
-              <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="10" r="9" /></svg>
-              Platinum Seller
-            </span>
-          )}
-          {typeof product.sellerTrustScore === 'number' && (
-            <span className="ml-2 text-xs font-semibold text-slate-700">Trust Score: {product.sellerTrustScore}</span>
-          )}
-        </div>
-      )}
-
       <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="space-y-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -218,18 +197,6 @@ export default function ProductDetail() {
             <p className="text-sm uppercase tracking-[0.3em] text-slate-500">{product.category}</p>
             <div className="flex items-center gap-2 mt-3">
               <h1 className="text-3xl font-semibold text-slate-900">{product.name}</h1>
-              {product.sellerBadge === 'gold' && (
-                <span title="Gold Seller" className="inline-flex items-center gap-1 rounded-full bg-yellow-400/80 px-2 py-0.5 text-xs font-bold text-yellow-900">
-                  <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="10" r="9" /></svg>
-                  Gold
-                </span>
-              )}
-              {product.sellerBadge === 'platinum' && (
-                <span title="Platinum Seller" className="inline-flex items-center gap-1 rounded-full bg-gray-300/80 px-2 py-0.5 text-xs font-bold text-gray-900">
-                  <svg width="18" height="18" viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="10" r="9" /></svg>
-                  Platinum
-                </span>
-              )}
             </div>
             {/* Seller suburb and city */}
             {(product.sellerSuburb || product.sellerCity) && (

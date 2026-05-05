@@ -380,14 +380,7 @@ export default function Header() {
                     : 'border-transparent text-slate-600 hover:text-slate-900'
                 }`}
               >
-                {tab === 'MOTO' ? (
-                  <span className="inline-flex items-center gap-2">
-                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#00CED1] text-[10px] font-bold text-white">DB</span>
-                    {tab}
-                  </span>
-                ) : (
-                  tab
-                )}
+                {tab}
               </button>
             ))}
           </div>

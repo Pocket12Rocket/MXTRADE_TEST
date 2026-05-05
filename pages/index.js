@@ -264,19 +264,22 @@ export default function Home() {
           </div>
 
           <div className="space-y-4 lg:pl-4">
-            <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Gear Trade-In Program</p>
+            <div className="flex items-center gap-2">
+              <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Gear Trade-In Program</p>
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">Coming Soon</span>
+            </div>
             <h2 className="max-w-xl text-4xl font-semibold leading-tight text-slate-900 sm:text-5xl">
               Trade in Your Gear &amp; Upgrade for Less!
             </h2>
             <p className="max-w-lg text-base leading-7 text-slate-700 sm:text-lg">
               Get credit towards your next piece of riding gear by trading in your old setup. It&apos;s fast, practical, and keeps quality kit moving.
             </p>
-            <Link
-              href="/shop/gear"
-              className="inline-flex rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+            <button
+              disabled
+              className="inline-flex cursor-not-allowed rounded-full bg-slate-300 px-6 py-3 text-sm font-semibold text-slate-400"
             >
               Start Your Trade-In Now!
-            </Link>
+            </button>
           </div>
         </div>
       </section>

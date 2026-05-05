@@ -33,18 +33,6 @@ export default function ProductCard({ product }) {
       <div className="p-5">
         <div className="flex items-center gap-2">
           <h3 className="text-lg font-semibold text-slate-900">{product.name}</h3>
-          {product.sellerBadge === 'gold' && (
-            <span title="Gold Seller" className="inline-flex items-center gap-1 rounded-full bg-yellow-400/80 px-2 py-0.5 text-xs font-bold text-yellow-900">
-              <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="10" r="9" /></svg>
-              Gold
-            </span>
-          )}
-          {product.sellerBadge === 'platinum' && (
-            <span title="Platinum Seller" className="inline-flex items-center gap-1 rounded-full bg-gray-300/80 px-2 py-0.5 text-xs font-bold text-gray-900">
-              <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="10" r="9" /></svg>
-              Platinum
-            </span>
-          )}
         </div>
         {product.subcategory ? <p className="mt-1 text-sm text-slate-600">{product.subcategory}</p> : null}
         {/* Show suburb and city if available */}

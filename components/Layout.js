@@ -27,7 +27,7 @@ export default function Layout({ children }) {
       </a>
 
       <footer className="border-t border-slate-300 bg-slate-900 py-8 text-center text-xs uppercase tracking-[0.1em] text-slate-300">
-        © 2026 MXTrade | Built with Firebase and PayFast-ready architecture
+        © Fast Sports | Built by the community
       </footer>
     </div>
   );
