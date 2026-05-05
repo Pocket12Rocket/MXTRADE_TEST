@@ -239,12 +239,20 @@ export default function Header() {
                 <button
                   type="button"
                   onClick={() => setIsProfileMenuOpen((currentValue) => !currentValue)}
-                  className="rounded-full bg-[#00CED1] p-2 text-white hover:bg-[#00C5CD]"
+                  className={`rounded-full p-0 ${profile?.photoURL ? '' : 'bg-[#00CED1] text-white hover:bg-[#00C5CD]'}`}
                   aria-label="Open profile menu"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6.75a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-                  </svg>
+                  {profile?.photoURL ? (
+                    <img
+                      src={profile.photoURL}
+                      alt="Profile"
+                      className="h-11 w-11 rounded-full object-cover"
+                    />
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6.75a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                    </svg>
+                  )}
                 </button>
 
                 {isProfileMenuOpen ? (
@@ -308,10 +316,18 @@ export default function Header() {
           </button>
         </form>
           {user ? (
-            <Link href="/profile" className="rounded-full bg-[#00CED1] p-2 text-white hover:bg-[#00C5CD]" aria-label="Open profile">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6.75a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-              </svg>
+            <Link href="/profile" className={`rounded-full p-0 ${profile?.photoURL ? '' : 'bg-[#00CED1] text-white hover:bg-[#00C5CD]'}`} aria-label="Open profile">
+              {profile?.photoURL ? (
+                <img
+                  src={profile.photoURL}
+                  alt="Profile"
+                  className="h-11 w-11 rounded-full object-cover"
+                />
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6.75a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                </svg>
+              )}
             </Link>
           ) : (
             <Link href="/login" className="rounded-full bg-[#00CED1] p-2 text-white hover:bg-[#00C5CD]" aria-label="Go to login">

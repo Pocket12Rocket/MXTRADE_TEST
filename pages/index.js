@@ -122,8 +122,8 @@ export default function Home() {
         <div className="relative px-6 py-14 sm:px-10 lg:px-14">
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#40E0D0]">This Week's New Products</p>
-            <Link href="/shop" className="text-xs font-semibold uppercase tracking-[0.08em] text-white/90 hover:text-white">
-              View all
+            <Link href="/shop" className="text-xs font-semibold uppercase tracking-[0.08em] text-white/90 hover:text-white flex items-center gap-1">
+              Browse full catalog <span className="text-base">→</span>
             </Link>
           </div>
 

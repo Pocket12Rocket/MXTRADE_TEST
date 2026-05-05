@@ -5,18 +5,18 @@ import { useEffect } from 'react';
 const SHOP_CATEGORY_OPTIONS = [
   {
     href: '/shop/catalog?category=Gear',
-    title: 'Shop Gear',
-    description: 'Browse riding gear, helmets, boots, jerseys, and combos.',
+    label: 'Gear',
+    color: 'bg-[#00CED1] text-white hover:bg-[#00C5CD]',
   },
   {
     href: '/shop/catalog?category=Accessories',
-    title: 'Shop Accessories',
-    description: 'Explore tools, maintenance items, straps, bags, and more.',
+    label: 'Accessories',
+    color: 'bg-[#00CED1] text-white hover:bg-[#00C5CD]',
   },
   {
     href: '/shop/catalog?category=Parts',
-    title: 'Shop Dirt Bike Parts',
-    description: 'Find parts across engine, suspension, brakes, wheels, and controls.',
+    label: 'Bike Parts',
+    color: 'bg-[#00CED1] text-white hover:bg-[#00C5CD]',
   },
 ];
 
@@ -52,14 +52,22 @@ export default function ShopLanding() {
           <Link
             key={option.href}
             href={option.href}
-            className="group rounded-3xl border border-slate-300 bg-[#eceff3] p-6 shadow-sm transition hover:border-[#00CED1] hover:bg-white"
+            className={`flex items-center justify-center rounded-3xl p-8 text-2xl font-bold uppercase tracking-wide shadow-sm transition ${option.color}`}
           >
-            <h2 className="text-xl font-semibold text-slate-900 group-hover:text-[#00C5CD]">{option.title}</h2>
-            <p className="mt-3 text-sm leading-6 text-slate-600">{option.description}</p>
-            <p className="mt-5 text-xs font-semibold uppercase tracking-[0.1em] text-[#00C5CD]">Open category</p>
+            {option.label}
           </Link>
         ))}
       </section>
+      <div className="mt-2 flex md:block md:pl-0 pl-4">
+        <Link
+          href="/shop/catalog"
+          className="inline-flex items-center text-[#00CED1] hover:underline text-sm font-semibold px-3 py-1 rounded-full transition"
+          style={{ marginLeft: 0 }}
+        >
+          Shop all
+          <svg className="ml-1" width="16" height="16" fill="none" viewBox="0 0 20 20"><path d="M7 5l5 5-5 5" stroke="#00CED1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        </Link>
+      </div>
     </div>
   );
 }
