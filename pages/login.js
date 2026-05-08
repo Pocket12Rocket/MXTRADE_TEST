@@ -1,10 +1,28 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { auth } from '../lib/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { createUserProfile } from '../lib/firestoreHelpers';
 
 export default function Login() {
+      // Handle confirm password change and blur
+      const handleConfirmPasswordChange = (value) => {
+        setConfirmPassword(value);
+        if (passwordMismatchError && value === password) {
+          setPasswordMismatchError('');
+        }
+      };
+
+      const handleConfirmPasswordBlur = () => {
+        if (confirmPassword && confirmPassword !== password) {
+          setPasswordMismatchError('Passwords do not match.');
+        } else {
+          setPasswordMismatchError('');
+        }
+      };
+    // Input classnames
+    const defaultInputClass = "mt-2 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 w-full focus:outline-none";
+    const requiredSignupInputClass = "mt-2 rounded-3xl border border-red-300 bg-red-50 px-4 py-3 w-full focus:outline-none";
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -22,17 +40,6 @@ export default function Login() {
   const countryCodes = [
     { cc: 'US', code: '+1', name: 'United States' },
     { cc: 'CA', code: '+1', name: 'Canada' },
-    { cc: 'GB', code: '+44', name: 'United Kingdom' },
-    { cc: 'AU', code: '+61', name: 'Australia' },
-    { cc: 'NZ', code: '+64', name: 'New Zealand' },
-    { cc: 'ZA', code: '+27', name: 'South Africa' },
-    { cc: 'NG', code: '+234', name: 'Nigeria' },
-    { cc: 'KE', code: '+254', name: 'Kenya' },
-    { cc: 'UG', code: '+256', name: 'Uganda' },
-    { cc: 'MA', code: '+212', name: 'Morocco' },
-    { cc: 'DZ', code: '+213', name: 'Algeria' },
-    { cc: 'EG', code: '+20', name: 'Egypt' },
-    { cc: 'AE', code: '+971', name: 'United Arab Emirates' },
     { cc: 'SA', code: '+966', name: 'Saudi Arabia' },
     { cc: 'QA', code: '+974', name: 'Qatar' },
     { cc: 'KH', code: '+855', name: 'Cambodia' },
@@ -58,21 +65,10 @@ export default function Login() {
     { cc: 'DK', code: '+45', name: 'Denmark' },
     { cc: 'SE', code: '+46', name: 'Sweden' },
     { cc: 'NO', code: '+47', name: 'Norway' },
-    { cc: 'FI', code: '+358', name: 'Finland' },
-    { cc: 'PL', code: '+48', name: 'Poland' },
-    { cc: 'CZ', code: '+420', name: 'Czech Republic' },
-    { cc: 'RO', code: '+40', name: 'Romania' },
-    { cc: 'HU', code: '+36', name: 'Hungary' },
-    { cc: 'GR', code: '+30', name: 'Greece' },
-    { cc: 'PT', code: '+351', name: 'Portugal' },
-    { cc: 'BR', code: '+55', name: 'Brazil' },
-    { cc: 'AR', code: '+54', name: 'Argentina' },
-    { cc: 'CL', code: '+56', name: 'Chile' },
-    { cc: 'CO', code: '+57', name: 'Colombia' },
-    { cc: 'PE', code: '+51', name: 'Peru' },
-    { cc: 'UY', code: '+598', name: 'Uruguay' },
-    { cc: 'MX', code: '+52', name: 'Mexico' },
   ];
+
+  // ...existing hook logic and handlers...
+
 
   const countryCodeToFlag = (cc) => {
     const codePoints = cc.toUpperCase().split('').map(char => 127397 + char.charCodeAt());
@@ -82,22 +78,6 @@ export default function Login() {
   useEffect(() => {
     setMessage('Use Firebase auth with `.env.local` values configured. Admin accounts should be created in Firebase Console.');
   }, []);
-
-  const requiredSignupInputClass = 'mt-2 w-full rounded-3xl border border-red-400 bg-white px-4 py-3 focus:border-red-500 focus:outline-none';
-  const defaultInputClass = 'mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3';
-
-  const handleConfirmPasswordBlur = () => {
-    if (password && confirmPassword && password !== confirmPassword) {
-      setPasswordMismatchError('Passwords do not match');
-    } else {
-      setPasswordMismatchError('');
-    }
-  };
-
-  const handleConfirmPasswordChange = (value) => {
-    setConfirmPassword(value);
-    setPasswordMismatchError('');
-  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -196,6 +176,18 @@ export default function Login() {
       setMessage('Verification email resent. Please check your inbox.');
     } catch {
       setMessage('Could not resend verification email. Please try logging in again.');
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      // Optional: create user profile in Firestore if new user
+      setMessage('Signed in with Google. Redirecting...');
+      await router.push('/');
+    } catch (error) {
+      setMessage(error.message);
     }
   };
 
