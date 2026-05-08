@@ -1,8 +1,34 @@
 import { useRouter } from 'next/router';
 import { useEffect, useRef, useState } from 'react';
 import ProductCard from '../../components/ProductCard';
-import { GEAR_CONDITION_OPTIONS } from '../../lib/dirtBikeCategories';
+import { GEAR_CONDITION_OPTIONS, DIRT_BIKE_CATEGORIES } from '../../lib/dirtBikeCategories';
 import { fetchLiveProducts } from '../../lib/firestoreHelpers';
+// Manufacturer and model options for filtering
+const MANUFACTURERS = [
+  'Honda', 'Yamaha', 'KTM', 'Kawasaki', 'Suzuki', 'Husqvarna', 'GasGas', 'Beta', 'Sherco', 'TM Racing',
+  'Stark Future', 'Fantic', 'Sur-Ron', 'Kayo', 'Osset', 'Triumph', 'Universal', 'Other'
+];
+const MODELS = {
+  Honda: ['CRF450R','CRF450RWE','CRF250R','CRF250RWE','CRF450RX','CRF250RX','CRF450X','CRF250F','CRF125F','CRF110F','CRF50F'],
+  Yamaha: ['YZ450F','YZ250F','YZ250','YZ125','YZ450FX','YZ250FX','WR450F','WR250F','TT-R230','TT-R125LE','TT-R110E','TT-R50E','PW50','YZ65','YZ85'],
+  KTM: ['450 SX-F','350 SX-F','250 SX-F','300 SX','250 SX','125 SX','85 SX','65 SX','50 SX','450 XC-F','350 XC-F','250 XC-F','300 XC','250 XC'],
+  Kawasaki: ['KX450','KX250','KX112','KX85','KX65','KX450X','KX250X','KLX300R','KLX230R','KLX140R','KLX110R'],
+  Suzuki: ['RM-Z450','RM-Z250','DR-Z125L','DR-Z50','RM-250','RM-125','RM-85'],
+  Husqvarna: ['FC 450','FC 350','FC 250','TC 300','TC 250','TC 125','TC 85','TC 65','TC 50','TE 300','FE 350','FE 501','FE 450','FE 350','FE 250','TE 300','TE 250','TE 150','TE 125'],
+  GasGas: ['MC 450F','MC 250F','MC 250','MC 125','MC 85','MC 65','MC 50','EC 500F','EC 350F','EC 300.','EX 300'],
+  Beta: ['RX 350','RX 250','RX 450','125 RR Race','200 RR Race','250 RR Race','300 RR Race','350 RR Race','390 RR Race','430 RR Race','480 RR Race'],
+  Sherco: ['125 SE Factory','250 SE Factory','300 SE Factory','4-Stroke Models','250 SEF Factory','300 SEF Factory','450 SEF Factory','500 SEF Factory','250 SE Xtrem'],
+  'TM Racing': ['EN 125 Fi','EN 144 Fi','EN 250 Fi','EN 300 Fi','EN 250Fi','EN 300Fi','EN 450Fi','MX 85','MX 125','MX 144','MX 250','MX 300','MX 250Fi','MX 300Fi','MX 450Fi'],
+  'Stark Future': ['VARG MX','VARG EX'],
+  Fantic: ['XEF 450','XEF 310','XEF 250','XE 300','XE 125','XEF 125','XE 50','XXF 450','XXF 250','XX 250','XX 125'],
+  'Sur-Ron': ['Light Bee X','Light Bee L1E','Light Bee S','Ultra Bee','Ultra Bee T','Ultra Bee R','Storm Bee F','Storm Bee E','Storm Bee R'],
+  Osset: ['TXP-24','TXP-20','TXP-16','TXP-12'],
+  Triumph: ['TF 450-X','TF 250-X','TF 250-C','TF 450-C','TF 250-E','TF 450-E'],
+};
+
+
+
+
 
 const CORE_CATEGORY_OPTIONS = ['Gear', 'Accessories', 'Parts'];
 
@@ -13,11 +39,16 @@ function normalizeCategoryValue(value) {
 }
 
 export default function Shop() {
+
   const router = useRouter();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedSort, setSelectedSort] = useState('popular');
+  const [selectedManufacturer, setSelectedManufacturer] = useState('');
+  const [selectedModel, setSelectedModel] = useState('');
+
+  // Manufacturer/model filtering logic will be placed after productsForSubcategories is defined
 
   const searchQuery = typeof router.query.q === 'string' ? router.query.q.trim() : '';
   const queryCategory = typeof router.query.category === 'string' ? normalizeCategoryValue(router.query.category) : '';
@@ -209,17 +240,53 @@ export default function Shop() {
     ])
   ).sort((a, b) => a.localeCompare(b));
 
+
   const productsForSubcategories = selectedCategory
     ? products.filter((product) => (product.category || '').toLowerCase() === selectedCategory.toLowerCase())
     : products;
 
-  const subcategoryOptions = Array.from(
-    new Set(
-      productsForSubcategories
-        .map((product) => (product.subcategory || '').trim())
-        .filter(Boolean)
-    )
-  ).sort((a, b) => a.localeCompare(b));
+  // Manufacturer/model filtering logic (must come after productsForSubcategories)
+  // Custom manufacturer/model filtering logic
+  const productsForManufacturer = selectedManufacturer && selectedManufacturer !== 'Universal'
+    ? productsForSubcategories.filter((product) => {
+        // Always include Gear and Accessories
+        const category = (product.category || '').toLowerCase();
+        if (category === 'gear' || category === 'accessories') return true;
+        // For Parts, include if manufacturer matches or is Universal
+        const manufacturer = (product.manufacturer || '').toLowerCase();
+        return manufacturer === selectedManufacturer.toLowerCase() || manufacturer === 'universal';
+      })
+    : productsForSubcategories;
+
+  const productsForModel = selectedModel && selectedManufacturer && selectedManufacturer !== 'Universal' && MODELS[selectedManufacturer]
+    ? productsForManufacturer.filter((product) => {
+        // Always include Gear and Accessories
+        const category = (product.category || '').toLowerCase();
+        if (category === 'gear' || category === 'accessories') return true;
+        // For Parts, include if model matches or manufacturer is Universal
+        const manufacturer = (product.manufacturer || '').toLowerCase();
+        if (manufacturer === 'universal') return true;
+        return (product.model || '').toLowerCase() === selectedModel.toLowerCase();
+      })
+    : productsForManufacturer;
+
+  // Use static subcategories for Parts, Gear, Accessories
+  let subcategoryOptions = [];
+  if (selectedCategory === 'Parts') {
+    subcategoryOptions = DIRT_BIKE_CATEGORIES.Parts;
+  } else if (selectedCategory === 'Gear') {
+    subcategoryOptions = DIRT_BIKE_CATEGORIES.Gear;
+  } else if (selectedCategory === 'Accessories') {
+    subcategoryOptions = DIRT_BIKE_CATEGORIES.Accessories;
+  } else {
+    subcategoryOptions = Array.from(
+      new Set(
+        productsForSubcategories
+          .map((product) => (product.subcategory || '').trim())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b));
+  }
 
   const brandOptions = Array.from(new Set(products.map((product) => getProductBrand(product)).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   const filteredBrandOptions = brandOptions.filter((brand) => brand.toLowerCase().includes(brandFilterQuery.toLowerCase().trim()));
@@ -256,7 +323,39 @@ export default function Shop() {
   const numericMinPrice = priceMin === '' ? null : Number(priceMin);
   const numericMaxPrice = priceMax === '' ? null : Number(priceMax);
 
-  const filteredEntries = products
+  const filteredEntries = productsForModel
+      // In the filter UI (wherever your filters are rendered):
+      /*
+        Add this inside your filter sidebar or filter section:
+        <label className="block mt-4">
+          <span className="text-sm font-medium text-slate-700">Bike Manufacturer</span>
+          <select
+            value={selectedManufacturer}
+            onChange={e => { setSelectedManufacturer(e.target.value); setSelectedModel(''); }}
+            className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
+          >
+            <option value="">All Manufacturers</option>
+            {MANUFACTURERS.map(m => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        </label>
+        {selectedManufacturer && selectedManufacturer !== 'Universal' && selectedManufacturer !== 'Other' && (
+          <label className="block mt-4">
+            <span className="text-sm font-medium text-slate-700">Bike Model</span>
+            <select
+              value={selectedModel}
+              onChange={e => setSelectedModel(e.target.value)}
+              className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
+            >
+              <option value="">All Models</option>
+              {MODELS[selectedManufacturer]?.map(mod => (
+                <option key={mod} value={mod}>{mod}</option>
+              ))}
+            </select>
+          </label>
+        )}
+      */
     .map((product) => {
       const searchMatch = getSearchMatch(product, queryTerms);
 
@@ -375,6 +474,38 @@ export default function Shop() {
             ))}
           </select>
         </label>
+
+
+        {/* Manufacturer filter */}
+        <label className="block mt-4">
+          <span className="text-sm font-medium text-slate-700">Bike Manufacturer</span>
+          <select
+            value={selectedManufacturer}
+            onChange={e => { setSelectedManufacturer(e.target.value); setSelectedModel(''); }}
+            className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
+          >
+            <option value="">All Manufacturers</option>
+            {MANUFACTURERS.map(m => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        </label>
+        {/* Model filter, only show if manufacturer is selected and not Universal/Other */}
+        {selectedManufacturer && selectedManufacturer !== 'Universal' && selectedManufacturer !== 'Other' && (
+          <label className="block mt-4">
+            <span className="text-sm font-medium text-slate-700">Bike Model</span>
+            <select
+              value={selectedModel}
+              onChange={e => setSelectedModel(e.target.value)}
+              className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
+            >
+              <option value="">All Models</option>
+              {MODELS[selectedManufacturer]?.map(mod => (
+                <option key={mod} value={mod}>{mod}</option>
+              ))}
+            </select>
+          </label>
+        )}
 
         {renderBrandFilter()}
 

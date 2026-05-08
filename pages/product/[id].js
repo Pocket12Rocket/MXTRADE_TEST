@@ -207,6 +207,9 @@ export default function ProductDetail() {
               </p>
             )}
             {displayDescription ? <p className="mt-4 text-slate-600">{displayDescription}</p> : null}
+            <div className="mt-4 rounded-xl bg-blue-50 px-4 py-3 text-blue-700 text-sm font-medium">
+              <span className="font-semibold">Nationwide delivery:</span> Flat rate of R150 added at checkout.
+            </div>
             {displaySpecifications.length ? (
               <div className="mt-6 space-y-2">
                 <h2 className="text-xl font-semibold text-slate-900">Specifications</h2>
@@ -239,7 +242,7 @@ export default function ProductDetail() {
           >
             {addedToCart ? 'Added to cart!' : 'Add to cart'}
           </button>
-          <p className="mt-6 text-sm text-slate-600">Your cart is saved locally. Checkout will process through PayFast.</p>
+          {/* Removed cart info text as requested */}
         </aside>
       </div>
       {error ? <p className="text-red-600">{error}</p> : null}

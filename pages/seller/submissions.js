@@ -1002,7 +1002,7 @@ export default function SellerSubmissions() {
                       <span className="text-sm font-medium text-slate-700">Product name</span>
                       <input
                         value={editForm.name}
-                        onChange={(event) => setEditForm((prev) => ({ ...prev, name: event.target.value }))}
+                        onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
                         required
                         className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                       />
@@ -1012,7 +1012,7 @@ export default function SellerSubmissions() {
                       <input
                         type="number"
                         value={editForm.price}
-                        onChange={(event) => setEditForm((prev) => ({ ...prev, price: event.target.value }))}
+                        onChange={e => setEditForm(prev => ({ ...prev, price: e.target.value }))}
                         required
                         className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                       />
@@ -1020,40 +1020,79 @@ export default function SellerSubmissions() {
                   </div>
 
                   <label className="block">
-                    <span className="text-sm font-medium text-slate-700">Parts subcategory</span>
+                    <span className="text-sm font-medium text-slate-700">Dirt Bike Category</span>
                     <select
                       value={editForm.subcategory}
-                      onChange={(event) => setEditForm((prev) => ({ ...prev, subcategory: event.target.value }))}
+                      onChange={e => setEditForm(prev => ({ ...prev, subcategory: e.target.value }))}
                       required
                       className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                     >
-                      {DIRT_BIKE_CATEGORIES.Parts.map((item) => (
-                        <option key={item} value={item}>
-                          {item}
-                        </option>
+                      <option value="">Select a category</option>
+                      {DIRT_BIKE_CATEGORIES.Parts.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
                       ))}
                     </select>
                   </label>
 
                   <label className="block">
-                    <span className="text-sm font-medium text-slate-700">Description</span>
-                    <textarea
-                      rows="4"
-                      value={editForm.description}
-                      onChange={(event) => setEditForm((prev) => ({ ...prev, description: event.target.value }))}
+                    <span className="text-sm font-medium text-slate-700">Fits Bike Manufacturer</span>
+                    <select
+                      value={editForm.manufacturer || ''}
+                      onChange={e => setEditForm(prev => ({ ...prev, manufacturer: e.target.value, model: '', otherManufacturer: '' }))}
                       required
                       className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                    />
+                    >
+                      <option value="">Select manufacturer</option>
+                      {[
+                        'Honda','Yamaha','KTM','Kawasaki','Suzuki','Husqvarna','GasGas','Beta','Sherco','TM Racing','Stark Future','Fantic','Sur-Ron','Kayo','Osset','Triumph','Universal','Other'
+                      ].map(m => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                    {editForm.manufacturer === 'Other' && (
+                      <input
+                        className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
+                        placeholder="Enter manufacturer name"
+                        value={editForm.otherManufacturer || ''}
+                        onChange={e => setEditForm(prev => ({ ...prev, otherManufacturer: e.target.value }))}
+                        required
+                      />
+                    )}
                   </label>
 
                   <label className="block">
-                    <span className="text-sm font-medium text-slate-700">Specifications (one per line)</span>
-                    <textarea
-                      rows="4"
-                      value={editForm.specifications}
-                      onChange={(event) => setEditForm((prev) => ({ ...prev, specifications: event.target.value }))}
+                    <span className="text-sm font-medium text-slate-700">Fits Bike Model</span>
+                    <select
+                      value={editForm.model || ''}
+                      onChange={e => setEditForm(prev => ({ ...prev, model: e.target.value }))}
+                      disabled={editForm.manufacturer === 'Universal' || !editForm.manufacturer || editForm.manufacturer === 'Other'}
+                      required={editForm.manufacturer !== 'Universal' && editForm.manufacturer !== 'Other'}
                       className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                    />
+                    >
+                      <option value="">{editForm.manufacturer === 'Universal' ? 'Not applicable' : 'Select model'}</option>
+                      {(function() {
+                        const MODELS = {
+                          Honda: ['CRF450R','CRF450RWE','CRF250R','CRF250RWE','CRF450RX','CRF250RX','CRF450X','CRF250F','CRF125F','CRF110F','CRF50F'],
+                          Yamaha: ['YZ450F','YZ250F','YZ250','YZ125','YZ450FX','YZ250FX','WR450F','WR250F','TT-R230','TT-R125LE','TT-R110E','TT-R50E','PW50','YZ65','YZ85'],
+                          KTM: ['450 SX-F','350 SX-F','250 SX-F','300 SX','250 SX','125 SX','85 SX','65 SX','50 SX','450 XC-F','350 XC-F','250 XC-F','300 XC','250 XC'],
+                          Kawasaki: ['KX450','KX250','KX112','KX85','KX65','KX450X','KX250X','KLX300R','KLX230R','KLX140R','KLX110R'],
+                          Suzuki: ['RM-Z450','RM-Z250','DR-Z125L','DR-Z50','RM-250','RM-125','RM-85'],
+                          Husqvarna: ['FC 450','FC 350','FC 250','TC 300','TC 250','TC 125','TC 85','TC 65','TC 50','TE 300','FE 350','FE 501','FE 450','FE 350','FE 250','TE 300','TE 250','TE 150','TE 125'],
+                          GasGas: ['MC 450F','MC 250F','MC 250','MC 125','MC 85','MC 65','MC 50','EC 500F','EC 350F','EC 300.','EX 300'],
+                          Beta: ['RX 350','RX 250','RX 450','125 RR Race','200 RR Race','250 RR Race','300 RR Race','350 RR Race','390 RR Race','430 RR Race','480 RR Race'],
+                          Sherco: ['125 SE Factory','250 SE Factory','300 SE Factory','4-Stroke Models','250 SEF Factory','300 SEF Factory','450 SEF Factory','500 SEF Factory','250 SE Xtrem'],
+                          'TM Racing': ['EN 125 Fi','EN 144 Fi','EN 250 Fi','EN 300 Fi','EN 250Fi','EN 300Fi','EN 450Fi','MX 85','MX 125','MX 144','MX 250','MX 300','MX 250Fi','MX 300Fi','MX 450Fi'],
+                          'Stark Future': ['VARG MX','VARG EX'],
+                          Fantic: ['XEF 450','XEF 310','XEF 250','XE 300','XE 125','XEF 125','XE 50','XXF 450','XXF 250','XX 250','XX 125'],
+                          'Sur-Ron': ['Light Bee X','Light Bee L1E','Light Bee S','Ultra Bee','Ultra Bee T','Ultra Bee R','Storm Bee F','Storm Bee E','Storm Bee R'],
+                          Osset: ['TXP-24','TXP-20','TXP-16','TXP-12'],
+                          Triumph: ['TF 450-X','TF 250-X','TF 250-C','TF 450-C','TF 250-E','TF 450-E'],
+                        };
+                        return MODELS[editForm.manufacturer] ? MODELS[editForm.manufacturer].map(mod => (
+                          <option key={mod} value={mod}>{mod}</option>
+                        )) : null;
+                      })()}
+                    </select>
                   </label>
                 </>
               )}

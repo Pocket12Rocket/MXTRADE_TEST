@@ -45,6 +45,8 @@ export default function CheckoutPage() {
   const router = useRouter();
   const { user, profile } = useAuth();
   const { items, totalPrice, clearCart } = useCart();
+  const DELIVERY_FEE = 150;
+  const totalWithDelivery = totalPrice + DELIVERY_FEE;
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [touched, setTouched] = useState({});
@@ -114,8 +116,9 @@ export default function CheckoutPage() {
         buyerId: user ? user.uid : null,
         buyerEmail: form.email.trim() || String(user?.email || '').trim(),
         items,
-        totalAmount: totalPrice,
+        totalAmount: totalWithDelivery,
         shippingAddress,
+        deliveryFee: DELIVERY_FEE,
       });
 
       clearCart();
@@ -215,11 +218,21 @@ export default function CheckoutPage() {
                   </li>
                 ))}
               </ul>
-              <div className="mt-4 border-t border-slate-200 pt-4 flex justify-between text-base font-semibold text-slate-900">
-                <span>Total</span>
-                <span>R{totalPrice.toFixed(2)}</span>
+              <div className="mt-4 border-t border-slate-200 pt-4 space-y-2">
+                <div className="flex justify-between text-base">
+                  <span>Subtotal</span>
+                  <span>R{totalPrice.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-base">
+                  <span>Delivery (nationwide)</span>
+                  <span>R{DELIVERY_FEE.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-base font-semibold text-slate-900 border-t border-slate-200 pt-2">
+                  <span>Total</span>
+                  <span>R{totalWithDelivery.toFixed(2)}</span>
+                </div>
               </div>
-              <p className="mt-2 text-xs text-slate-500">Shipping cost calculated at payment.</p>
+              <p className="mt-2 text-xs text-slate-500">Nationwide delivery is a flat rate of R150.</p>
             </div>
 
             {submitError && (

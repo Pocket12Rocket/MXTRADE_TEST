@@ -57,8 +57,7 @@ export default function ContactPage() {
         <h1 className="mt-3 text-3xl font-semibold text-slate-900">Contact us</h1>
         <p className="mt-3 text-slate-600">Send us a message and the admin team will get back to you.</p>
       </div>
-
-      <form onSubmit={handleSubmit} className="space-y-5">
+      <form onSubmit={handleSubmit} className="mt-8 space-y-6">
         <label className="block">
           <span className="text-sm font-medium text-slate-700">Name</span>
           <input
@@ -100,7 +99,13 @@ export default function ContactPage() {
           {isSubmitting ? 'Sending...' : 'Send message'}
         </button>
       </form>
-
+      <div className="mt-8 rounded-2xl bg-slate-50 border border-slate-200 p-6 text-slate-700">
+        <h2 className="text-lg font-semibold mb-2">Contact Details</h2>
+        <div className="space-y-1">
+          <div><span className="font-medium">Email:</span> <a href="mailto:support@fastsport.co.za" className="text-[#00C5CD] hover:underline">support@fastsport.co.za</a></div>
+          <div><span className="font-medium">Tel:</span> <a href="tel:+27824684935" className="text-[#00C5CD] hover:underline">+27 82 468 4935</a></div>
+        </div>
+      </div>
       {status ? (
         <p className={isError ? 'text-red-600' : 'text-emerald-700'}>{status}</p>
       ) : null}
