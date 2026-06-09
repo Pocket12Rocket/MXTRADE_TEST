@@ -1,5 +1,3 @@
-import qs from 'querystring';
-
 export default function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Only POST is supported' });
@@ -17,11 +15,10 @@ export default function handler(req, res) {
 
   const { amount, item_name, item_description, email_address, return_url, cancel_url, notify_url, custom_str1 } = req.body;
 
-  // Build Payfast payload (only include fields Payfast expects)
-  // Only include Payfast-documented fields (no merchant_key, no passphrase)
-  // Data for signature (no merchant_key)
+  // Build Payfast payload with deterministic field order.
   const pfData = {
     merchant_id,
+    merchant_key,
     amount: Number(amount).toFixed(2),
     item_name: item_name || 'Order',
     item_description: item_description || '',
@@ -32,41 +29,36 @@ export default function handler(req, res) {
     custom_str1: custom_str1 || '',
   };
 
-  // Data for redirect (include merchant_key as required by this Payfast account)
-  const pfDataWithKey = {
-    ...pfData,
-    merchant_key,
-  };
+  // Payfast uses urlencode semantics where spaces are encoded as +.
+  const encodeForPayfast = (value) => encodeURIComponent(String(value).trim()).replace(/%20/g, '+');
 
-  // Build signature string (Payfast: key=value&key2=value2... with encodeURIComponent, no + for spaces)
+  // Build signature string from the exact payload being submitted (excluding signature).
   let pfString = Object.entries(pfData)
     .filter(([_, v]) => v !== undefined && v !== null && v !== '')
-    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .map(([k, v]) => `${k}=${encodeForPayfast(v)}`)
     .join('&');
-  if (passphrase) pfString += `&passphrase=${encodeURIComponent(passphrase)}`;
+  if (passphrase) pfString += `&passphrase=${encodeForPayfast(passphrase)}`;
 
   // Calculate signature (MD5)
   const crypto = require('crypto');
   const signature = crypto.createHash('md5').update(pfString).digest('hex');
 
-  // Build redirect URL (use encodeURIComponent for values, not +)
+  // Build redirect URL from the same field set used for signing.
   const payfastUrl = process.env.PAYFAST_SANDBOX === 'true'
     ? 'https://sandbox.payfast.co.za/eng/process'
     : 'https://www.payfast.co.za/eng/process';
-  const redirectUrl = `${payfastUrl}?${Object.entries({ ...pfDataWithKey, signature })
+  const redirectUrl = `${payfastUrl}?${Object.entries({ ...pfData, signature })
     .filter(([_, v]) => v !== undefined && v !== null && v !== '')
-    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
+    .map(([k, v]) => `${k}=${encodeForPayfast(v)}`)
     .join('&')}`;
 
-  // Log signature string and signature to the server console for debugging
-  console.log('Payfast pfString:', pfString);
+  // Keep logs server-side for troubleshooting; do not return sensitive values to the browser.
+  console.log('Payfast payload string (without passphrase):', pfString.replace(/&passphrase=.*$/, '&passphrase=***'));
   console.log('Payfast signature:', signature);
-  // Log the full redirect URL for debugging
   console.log('Payfast redirectUrl:', redirectUrl);
+
   return res.status(200).json({
     success: true,
     redirectUrl,
-    pfString, // The string used to generate the signature
-    signature, // The generated signature
   });
 }
