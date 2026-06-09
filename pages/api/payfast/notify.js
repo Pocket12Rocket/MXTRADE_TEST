@@ -50,10 +50,11 @@ async function validateItn(rawPayload, isSandbox) {
 async function sendAdminEmail({ order, products, sellerMap }) {
   const resendApiKey = process.env.RESEND_API_KEY;
   const fromEmail = process.env.CONTACT_FROM_EMAIL || 'Fast Sports <onboarding@resend.dev>';
+  const supportEmail = (process.env.SUPPORT_EMAIL || 'support@fastsport.co.za').trim();
   const adminEmailsCsv = process.env.CONTACT_ADMIN_EMAILS || process.env.ADMIN_NOTIFICATION_EMAILS || '';
   const singleAdmin = process.env.CONTACT_ADMIN_EMAIL || '';
   const parsed = adminEmailsCsv.split(',').map((e) => e.trim()).filter(Boolean);
-  const toEmails = parsed.length ? parsed : singleAdmin ? [singleAdmin] : [];
+  const toEmails = Array.from(new Set([supportEmail, ...parsed, ...(singleAdmin ? [singleAdmin] : [])].filter(Boolean)));
 
   if (!resendApiKey || !toEmails.length) return; // Silently skip — do not block the ITN
 
@@ -207,15 +208,17 @@ export default async function handler(req, res) {
       },
     });
 
-    // 2. Mark each product as sold (removes from store, stays visible as sold)
+    // 2. Mark each product as sold and set marketplace lifecycle status to purchased.
     const sellerIds = new Set();
     for (const item of order.items || []) {
       if (item.productId) {
         const productRef = adminDb.collection('products').doc(item.productId);
         batch.update(productRef, {
           marketSold: true,
+          status: 'purchased',
           soldAt: admin.firestore.FieldValue.serverTimestamp(),
           soldOrderId: orderId,
+          statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
         if (item.sellerId) sellerIds.add(item.sellerId);
       }
@@ -234,6 +237,19 @@ export default async function handler(req, res) {
 
     // 4. Send admin notification email
     await sendAdminEmail({ order, products: order.items || [], sellerMap });
+
+    // 5. Create admin in-app notification for the dashboard
+    await adminDb.collection('adminNotifications').add({
+      type: 'sale',
+      title: 'New paid order',
+      message: `Order ${orderId} was paid successfully.`,
+      orderId,
+      buyerEmail: order.buyerEmail || '',
+      totalAmount: Number(order.totalAmount || 0),
+      itemCount: Array.isArray(order.items) ? order.items.length : 0,
+      read: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
     console.log(`[PayFast ITN] Order ${orderId} marked as paid successfully`);
     return res.status(200).send('OK');

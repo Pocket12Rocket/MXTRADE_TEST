@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import React, { useEffect, useState } from 'react';
+import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import useAuth from '../../lib/useAuth';
+import { db } from '../../lib/firebase';
 import {
   fetchPendingSubmissions,
   approveSubmission,
@@ -91,6 +93,24 @@ function AdminDashboard() {
   const [refundLoading, setRefundLoading] = useState(true);
   const [refundError, setRefundError] = useState('');
   const [refundActionLoading, setRefundActionLoading] = useState(false);
+  const [adminNotifications, setAdminNotifications] = useState([]);
+
+  useEffect(() => {
+    if (!user || profile?.role !== 'admin') return undefined;
+
+    const notificationsQuery = query(
+      collection(db, 'adminNotifications'),
+      orderBy('createdAt', 'desc'),
+      limit(20)
+    );
+
+    const unsubscribe = onSnapshot(notificationsQuery, (snapshot) => {
+      const rows = snapshot.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() }));
+      setAdminNotifications(rows);
+    });
+
+    return () => unsubscribe();
+  }, [user, profile?.role]);
   // ...other state and handlers...
 
   // --- Main return block ---
@@ -132,6 +152,27 @@ function AdminDashboard() {
         </div>
       </div>
       {error ? <p className="text-red-600">{error}</p> : null}
+
+      {/* --- Admin Sales Notifications --- */}
+      <section className="space-y-3">
+        <h2 className="text-xl font-semibold text-slate-900">Recent sales notifications</h2>
+        {adminNotifications.length === 0 ? (
+          <p className="text-slate-600">No sale notifications yet.</p>
+        ) : (
+          <ul className="divide-y divide-slate-200 rounded-3xl border border-slate-200 bg-white px-4 shadow-sm">
+            {adminNotifications.map((note) => (
+              <li key={note.id} className="py-3">
+                <p className="text-sm font-semibold text-slate-900">{note.title || 'New paid order'}</p>
+                <p className="text-sm text-slate-600">{note.message || 'A payment has been completed.'}</p>
+                <p className="text-xs text-slate-500">
+                  Order: {note.orderId || 'N/A'} | Buyer: {note.buyerEmail || 'N/A'} | Total: R{Number(note.totalAmount || 0).toFixed(2)}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       {submissions.length === 0 ? (
         <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
           <p className="text-slate-600">No pending submissions found.</p>
