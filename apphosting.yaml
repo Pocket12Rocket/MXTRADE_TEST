@@ -36,3 +36,17 @@ env:
     secret: PAYFAST_PASSPHRASE
     availability:
       - RUNTIME
+
+  # Purchase notification email settings
+  - variable: SUPPORT_EMAIL
+    value: "support@fastsport.co.za"
+    availability:
+      - RUNTIME
+  - variable: CONTACT_FROM_EMAIL
+    value: "Fast Sports <onboarding@resend.dev>"
+    availability:
+      - RUNTIME
+  - variable: RESEND_API_KEY
+    secret: RESEND_API_KEY
+    availability:
+      - RUNTIME

@@ -56,7 +56,13 @@ async function sendAdminEmail({ order, products, sellerMap }) {
   const parsed = adminEmailsCsv.split(',').map((e) => e.trim()).filter(Boolean);
   const toEmails = Array.from(new Set([supportEmail, ...parsed, ...(singleAdmin ? [singleAdmin] : [])].filter(Boolean)));
 
-  if (!resendApiKey || !toEmails.length) return; // Silently skip — do not block the ITN
+  if (!resendApiKey || !toEmails.length) {
+    console.warn('[PayFast ITN] Email skipped: missing RESEND_API_KEY or recipients', {
+      hasResendApiKey: Boolean(resendApiKey),
+      recipientCount: toEmails.length,
+    });
+    return; // Do not block the ITN
+  }
 
   const shipping = order.shippingAddress || {};
   const shippingLine = [
@@ -115,7 +121,7 @@ async function sendAdminEmail({ order, products, sellerMap }) {
       </p>
     </div>`;
 
-  await fetch('https://api.resend.com/emails', {
+  const emailResponse = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${resendApiKey}`,
@@ -127,6 +133,22 @@ async function sendAdminEmail({ order, products, sellerMap }) {
       subject: `New Order Confirmed — R${Number(order.totalAmount).toFixed(2)} (${escapeHtml(order.id)})`,
       html,
     }),
+  });
+
+  if (!emailResponse.ok) {
+    const responseText = await emailResponse.text();
+    console.error('[PayFast ITN] Failed to send purchase email', {
+      status: emailResponse.status,
+      body: responseText,
+      toEmails,
+      orderId: order.id,
+    });
+    return;
+  }
+
+  console.log('[PayFast ITN] Purchase email sent', {
+    toEmails,
+    orderId: order.id,
   });
 }
 

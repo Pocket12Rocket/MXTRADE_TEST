@@ -5,7 +5,7 @@ import { signOut } from 'firebase/auth';
 import { DIRT_BIKE_CATEGORIES } from '../lib/dirtBikeCategories';
 import { useCart } from '../lib/cartContext';
 import useAuth from '../lib/useAuth';
-import { fetchPendingSubmissions } from '../lib/firestoreHelpers';
+import { fetchPendingSubmissions, fetchUnreadAdminNotificationCount } from '../lib/firestoreHelpers';
 import CartDrawer from './CartDrawer';
 import { auth } from '../lib/firebase';
 
@@ -78,9 +78,12 @@ export default function Header() {
 
     const loadPendingCount = async () => {
       try {
-        const pending = await fetchPendingSubmissions();
+        const [pending, unreadNotifications] = await Promise.all([
+          fetchPendingSubmissions(),
+          fetchUnreadAdminNotificationCount(),
+        ]);
         if (isMounted) {
-          setPendingApprovalCount(pending.length);
+          setPendingApprovalCount(pending.length + unreadNotifications);
         }
       } catch {
         if (isMounted) {
