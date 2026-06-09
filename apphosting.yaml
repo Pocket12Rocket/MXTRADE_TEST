@@ -8,17 +8,31 @@ runConfig:
   # memoryMiB: 512
 
 # Environment variables and secrets.
-# env:
-  # Configure environment variables.
-  # See https://firebase.google.com/docs/app-hosting/configure#user-defined-environment
-  # - variable: MESSAGE
-  #   value: Hello world!
-  #   availability:
-  #     - BUILD
-  #     - RUNTIME
+env:
+  # Non-secret runtime config
+  - variable: PAYFAST_SANDBOX
+    value: "true"
+    availability:
+      - RUNTIME
+  - variable: PAYFAST_SKIP_VALIDATION
+    value: "false"
+    availability:
+      - RUNTIME
 
-  # Grant access to secrets in Cloud Secret Manager.
-  # You can create secrets with the CLI command `firebase apphosting:secrets:set <secretName>`.
-  # See https://firebase.google.com/docs/app-hosting/configure#secret-parameters
-  # - variable: MY_SECRET
-  #   secret: mySecretRef
+  # Sensitive Payfast credentials — stored in Cloud Secret Manager.
+  # Create each secret by running:
+  #   firebase apphosting:secrets:set PAYFAST_MERCHANT_ID
+  #   firebase apphosting:secrets:set PAYFAST_MERCHANT_KEY
+  #   firebase apphosting:secrets:set PAYFAST_PASSPHRASE
+  - variable: PAYFAST_MERCHANT_ID
+    secret: PAYFAST_MERCHANT_ID
+    availability:
+      - RUNTIME
+  - variable: PAYFAST_MERCHANT_KEY
+    secret: PAYFAST_MERCHANT_KEY
+    availability:
+      - RUNTIME
+  - variable: PAYFAST_PASSPHRASE
+    secret: PAYFAST_PASSPHRASE
+    availability:
+      - RUNTIME
