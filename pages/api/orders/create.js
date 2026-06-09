@@ -1,5 +1,5 @@
-import { adminDb } from '../../../../lib/firebaseAdmin';
-import admin from '../../../../lib/firebaseAdmin';
+import { adminDb } from '../../../lib/firebaseAdmin';
+import admin from '../../../lib/firebaseAdmin';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
