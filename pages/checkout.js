@@ -142,7 +142,7 @@ export default function CheckoutPage() {
         window.location.href = pfData.redirectUrl;
         return;
       } else {
-        setSubmitError('Could not initiate Payfast payment.');
+        setSubmitError(pfData.error || 'Could not initiate Payfast payment.');
         setIsSubmitting(false);
         return;
       }
