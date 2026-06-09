@@ -7,9 +7,9 @@ export default function handler(req, res) {
     const crypto = require('crypto');
 
     // Required Payfast credentials from env
-    const merchant_id = process.env.PAYFAST_MERCHANT_ID;
-    const merchant_key = process.env.PAYFAST_MERCHANT_KEY;
-    const passphrase = process.env.PAYFAST_PASSPHRASE || '';
+    const merchant_id = (process.env.PAYFAST_MERCHANT_ID || '').trim();
+    const merchant_key = (process.env.PAYFAST_MERCHANT_KEY || '').trim();
+    const passphrase = (process.env.PAYFAST_PASSPHRASE || '').trim();
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
     if (!merchant_id || !merchant_key) {
@@ -24,7 +24,7 @@ export default function handler(req, res) {
       return res.status(400).json({ error: `Invalid amount: ${amount}` });
     }
 
-    // Build Payfast payload with deterministic field order.
+    // Build Payfast payload.
     const pfData = {
       merchant_id,
       merchant_key,
@@ -38,15 +38,20 @@ export default function handler(req, res) {
       custom_str1: custom_str1 || '',
     };
 
-    // Payfast signature uses PHP urlencode semantics (spaces as +).
-    const encodeForPayfast = (value) => encodeURIComponent(String(value).trim()).replace(/%20/g, '+');
+    // Payfast signature uses PHP urlencode semantics where spaces become '+'.
+    const encodeForPayfast = (value) => encodeURIComponent(String(value)).replace(/%20/g, '+');
 
-    // Build signature string from the exact payload (excluding signature field itself).
-    let pfString = Object.entries(pfData)
-      .filter(([_, v]) => v !== undefined && v !== null && v !== '')
-      .map(([k, v]) => `${k}=${encodeForPayfast(v)}`)
+    // Build canonical payload string from non-empty fields sorted by key name.
+    const payloadString = Object.keys(pfData)
+      .filter((k) => pfData[k] !== undefined && pfData[k] !== null && String(pfData[k]) !== '')
+      .sort()
+      .map((k) => `${k}=${encodeForPayfast(pfData[k])}`)
       .join('&');
-    if (passphrase) pfString += `&passphrase=${encodeForPayfast(passphrase)}`;
+
+    // Append passphrase only for signature generation.
+    const pfString = passphrase
+      ? `${payloadString}&passphrase=${encodeForPayfast(passphrase)}`
+      : payloadString;
 
     const signature = crypto.createHash('md5').update(pfString).digest('hex');
 
@@ -54,10 +59,7 @@ export default function handler(req, res) {
       ? 'https://sandbox.payfast.co.za/eng/process'
       : 'https://www.payfast.co.za/eng/process';
 
-    const redirectUrl = `${payfastUrl}?${Object.entries({ ...pfData, signature })
-      .filter(([_, v]) => v !== undefined && v !== null && v !== '')
-      .map(([k, v]) => `${k}=${encodeForPayfast(v)}`)
-      .join('&')}`;
+    const redirectUrl = `${payfastUrl}?${payloadString}&signature=${signature}`;
 
     console.log('[Payfast] Payload string:', pfString.replace(/&passphrase=.*$/, '&passphrase=***'));
     console.log('[Payfast] Signature:', signature);
