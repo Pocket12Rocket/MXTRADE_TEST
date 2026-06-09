@@ -10,7 +10,16 @@ export default function handler(req, res) {
     const merchant_id = (process.env.PAYFAST_MERCHANT_ID || '').trim();
     const merchant_key = (process.env.PAYFAST_MERCHANT_KEY || '').trim();
     const passphrase = (process.env.PAYFAST_PASSPHRASE || '').trim();
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+    const configuredSiteUrl = (process.env.NEXT_PUBLIC_SITE_URL || '').trim();
+    const forwardedProto = (req.headers['x-forwarded-proto'] || '').toString().split(',')[0].trim();
+    const forwardedHost = (req.headers['x-forwarded-host'] || '').toString().split(',')[0].trim();
+    const host = (req.headers.host || '').toString().trim();
+
+    // Prefer explicit env var, otherwise derive from incoming host in hosted environments.
+    const siteUrl = configuredSiteUrl
+      || (forwardedHost ? `${forwardedProto || 'https'}://${forwardedHost}` : '')
+      || (host ? `${forwardedProto || 'http'}://${host}` : '')
+      || 'http://localhost:3000';
 
     if (!merchant_id || !merchant_key) {
       console.error('[Payfast] Missing credentials — check PAYFAST_MERCHANT_ID and PAYFAST_MERCHANT_KEY in .env.local');
