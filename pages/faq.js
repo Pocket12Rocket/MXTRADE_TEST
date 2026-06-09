@@ -1,32 +1,40 @@
-const faqs = [
-  {
-    question: 'How do sellers submit products?',
-    answer: 'Sellers log in, create a profile, and submit products through the seller dashboard. Submissions remain pending until approved by an admin.',
-  },
-  {
-    question: 'Can customers pay online?',
-    answer: 'Yes, the architecture is built for PayFast / Fayfast integration. The checkout route is a placeholder until gateway credentials are configured.',
-  },
-  {
-    question: 'What happens after approval?',
-    answer: 'Once an admin approves a submission, it is published as a live product and becomes visible in the shop catalog.',
-  },
-];
+
+import { useEffect, useState } from 'react';
+import { fetchFaqs } from '../lib/firestoreHelpers';
 
 export default function FAQ() {
+  const [faqs, setFaqs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetchFaqs()
+      .then(setFaqs)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
   return (
     <div className="space-y-10">
       <div>
-        <p className="text-sm uppercase tracking-[0.3em] text-slate-500">FAQ</p>
-        <h1 className="mt-3 text-3xl font-semibold text-slate-900">Frequently asked questions</h1>
+        <p className="text-sm uppercase tracking-[0.3em] text-slate-500">Fast Sport FAQ</p>
+        <h1 className="mt-3 text-3xl font-semibold text-slate-900">Fast Sport Frequently Asked Questions</h1>
       </div>
       <div className="space-y-4">
-        {faqs.map((item) => (
-          <div key={item.question} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-900">{item.question}</h2>
-            <p className="mt-2 text-slate-600">{item.answer}</p>
-          </div>
-        ))}
+        {loading ? (
+          <p>Loading FAQs...</p>
+        ) : error ? (
+          <p className="text-red-600">{error}</p>
+        ) : faqs.length === 0 ? (
+          <p className="text-slate-600">No FAQs found.</p>
+        ) : (
+          faqs.map((item) => (
+            <div key={item.id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-900">{item.question}</h2>
+              <p className="mt-2 text-slate-600">{item.answer}</p>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );

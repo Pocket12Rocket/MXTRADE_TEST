@@ -627,6 +627,7 @@ export default function ProfilePage() {
 
               <div />
 
+
               <label className="block">
                 <span className="text-sm font-medium text-slate-700">Bank Name</span>
                 <input
@@ -639,22 +640,27 @@ export default function ProfilePage() {
               </label>
 
               <label className="block">
-                <span className="text-sm font-medium text-slate-700">Branch Name</span>
-                <input
-                  type="text"
-                  value={sellerProfileForm.branchName}
-                  onChange={(event) => handleSellerFieldChange('branchName', event.target.value)}
+                <span className="text-sm font-medium text-slate-700">Account Type</span>
+                <select
+                  value={sellerProfileForm.accountType || ''}
+                  onChange={e => handleSellerFieldChange('accountType', e.target.value)}
                   required
                   className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                />
+                >
+                  <option value="">Select account type</option>
+                  <option value="Current/Cheque">Current/Cheque</option>
+                  <option value="Savings">Savings</option>
+                </select>
               </label>
 
               <label className="block">
                 <span className="text-sm font-medium text-slate-700">Branch Code</span>
                 <input
-                  type="text"
+                  type="number"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={sellerProfileForm.branchCode}
-                  onChange={(event) => handleSellerFieldChange('branchCode', event.target.value)}
+                  onChange={(event) => handleSellerFieldChange('branchCode', event.target.value.replace(/\D/g, ''))}
                   required
                   className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                 />

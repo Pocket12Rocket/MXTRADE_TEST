@@ -54,22 +54,25 @@ export default function CheckoutPage() {
   const [submitError, setSubmitError] = useState('');
 
   useEffect(() => {
-    if (!user) {
-      return;
-    }
+    if (!user) return;
 
     const profileFirstName = (profile?.firstName || '').trim();
     const profileLastName = (profile?.lastName || '').trim();
     const displayNameParts = String(profile?.displayName || user.displayName || '').trim().split(/\s+/).filter(Boolean);
-
     const fallbackFirstName = displayNameParts[0] || '';
     const fallbackLastName = displayNameParts.length > 1 ? displayNameParts.slice(1).join(' ') : '';
 
     setForm((current) => ({
       ...current,
-      firstName: current.firstName || profileFirstName || fallbackFirstName,
-      lastName: current.lastName || profileLastName || fallbackLastName,
-      email: current.email || String(user.email || '').trim(),
+      firstName: profileFirstName || fallbackFirstName,
+      lastName: profileLastName || fallbackLastName,
+      email: String(user.email || '').trim(),
+      phone: profile?.phone || '',
+      streetAddress: profile?.streetAddress || '',
+      suburb: profile?.suburb || '',
+      city: profile?.city || '',
+      province: profile?.province || '',
+      postalCode: profile?.postCode || profile?.postalCode || '',
     }));
   }, [user, profile]);
 
@@ -121,8 +124,28 @@ export default function CheckoutPage() {
         deliveryFee: DELIVERY_FEE,
       });
 
-      clearCart();
-      router.push(`/order/confirmation?orderId=${orderId}`);
+      // Call Payfast checkout API
+      const pfRes = await fetch('/api/payfast/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: totalWithDelivery,
+          item_name: `Order #${orderId}`,
+          item_description: items.map(i => i.name).join(', '),
+          email_address: form.email.trim() || String(user?.email || ''),
+          custom_str1: orderId,
+        }),
+      });
+      const pfData = await pfRes.json();
+      if (pfData.success && pfData.redirectUrl) {
+        clearCart();
+        window.location.href = pfData.redirectUrl;
+        return;
+      } else {
+        setSubmitError('Could not initiate Payfast payment.');
+        setIsSubmitting(false);
+        return;
+      }
     } catch (err) {
       setSubmitError(err.message || 'Something went wrong. Please try again.');
       setIsSubmitting(false);

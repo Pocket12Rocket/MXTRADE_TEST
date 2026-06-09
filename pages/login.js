@@ -38,6 +38,7 @@ export default function Login() {
   const [passwordMismatchError, setPasswordMismatchError] = useState('');
 
   const countryCodes = [
+    { cc: 'ZA', code: '+27', name: 'South Africa' },
     { cc: 'US', code: '+1', name: 'United States' },
     { cc: 'CA', code: '+1', name: 'Canada' },
     { cc: 'SA', code: '+966', name: 'Saudi Arabia' },
@@ -75,9 +76,7 @@ export default function Login() {
     return String.fromCodePoint(...codePoints);
   };
 
-  useEffect(() => {
-    setMessage('Use Firebase auth with `.env.local` values configured. Admin accounts should be created in Firebase Console.');
-  }, []);
+  // useEffect for message removed (no default info message)
 
   const handleSubmit = async (event) => {
     event.preventDefault();

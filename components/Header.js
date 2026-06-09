@@ -264,6 +264,13 @@ export default function Header() {
                     >
                       Profile
                     </Link>
+                    <Link
+                      href="/profile/orders"
+                      onClick={() => setIsProfileMenuOpen(false)}
+                      className="block rounded-xl px-4 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                    >
+                      Orders
+                    </Link>
                     <button
                       type="button"
                       onClick={handleLogout}
@@ -357,6 +364,13 @@ export default function Header() {
                   </span>
                 </Link>
               ))}
+              {/* Orders tab under Profile for mobile menu */}
+              <Link
+                href="/profile/orders"
+                className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]"
+              >
+                Orders
+              </Link>
               <Link
                 href="/seller/submissions"
                 className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]"

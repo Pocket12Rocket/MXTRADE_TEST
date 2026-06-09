@@ -1,5 +1,42 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+// Tooltip for selling price info
+function SellingPriceInfo({ price }) {
+  const [show, setShow] = useState(false);
+  if (!price || isNaN(Number(price)) || Number(price) <= 0) return null;
+  const p = Number(price);
+  let markup = 0.20;
+  if (p > 999) markup = 0.11;
+  else if (p >= 501) markup = 0.15;
+  const sellingPrice = (p + p * markup).toFixed(2);
+  return (
+    <div className="flex items-center gap-2 mt-1 text-xs text-red-600">
+      <span>
+        Selling price (incl. markup): R {sellingPrice}
+      </span>
+      <span className="relative flex items-center">
+        <span
+          tabIndex={0}
+          className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold cursor-pointer border border-slate-300 hover:bg-slate-300 focus:bg-slate-300 focus:outline-none"
+          onMouseEnter={() => setShow(true)}
+          onMouseLeave={() => setShow(false)}
+          onFocus={() => setShow(true)}
+          onBlur={() => setShow(false)}
+        >
+          ?
+        </span>
+        {show && (
+          <span
+            className="absolute left-6 top-1 z-10 w-64 rounded-lg bg-white border border-slate-300 p-3 text-xs text-slate-700 shadow-lg"
+          >
+            The selling price includes the Fast Sport transaction fee. This is the final amount the buyer will pay, excluding shipping costs.<br /><br />
+            The price entered by you (the seller) is the amount you will receive from the sale.
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
 import useAuth from '../../lib/useAuth';
 import { fetchGearBrandOptions, submitProductRequest } from '../../lib/firestoreHelpers';
 import { DIRT_BIKE_CATEGORIES, GEAR_BRAND_OPTIONS, GEAR_CONDITION_OPTIONS, GEAR_ITEM_OPTIONS } from '../../lib/dirtBikeCategories';
@@ -277,16 +314,26 @@ export default function SellerSubmit() {
         };
       }
 
+      // Calculate markup price
+      const sellerPrice = Number(price);
+      let markup = 0.20;
+      if (sellerPrice > 999) markup = 0.11;
+      else if (sellerPrice >= 501) markup = 0.15;
+      const markupPrice = (sellerPrice + sellerPrice * markup).toFixed(2);
+
       await submitProductRequest({
         user,
         name: resolvedName,
-        price,
+        price: markupPrice,
         category,
         subcategory: resolvedSubcategory,
         description: resolvedDescription,
         specifications: resolvedSpecifications,
         files,
-        customFields: resolvedCustomFields,
+        customFields: {
+          ...resolvedCustomFields,
+          sellerPrice: sellerPrice.toFixed(2),
+        },
       });
       setName('');
       setPrice('');
@@ -587,6 +634,8 @@ export default function SellerSubmit() {
                 required
                 className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
               />
+              {/* Selling price calculation */}
+              <SellingPriceInfo price={price} />
             </label>
           </>
         ) : category === 'Accessories' ? (
@@ -679,6 +728,8 @@ export default function SellerSubmit() {
                 required
                 className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
               />
+              {/* Selling price calculation */}
+              <SellingPriceInfo price={price} />
             </label>
           </>
         ) : (
@@ -702,6 +753,8 @@ export default function SellerSubmit() {
                   required
                   className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                 />
+                {/* Selling price calculation */}
+                <SellingPriceInfo price={price} />
               </label>
               <label className="block">
                 <span className="text-sm font-medium text-slate-700">Condition</span>

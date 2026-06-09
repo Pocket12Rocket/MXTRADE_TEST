@@ -2,9 +2,9 @@ export default function About() {
   return (
     <div className="space-y-8">
       <div>
-        <p className="text-sm uppercase tracking-[0.3em] text-slate-500">About MXTrade</p>
+        <p className="text-sm uppercase tracking-[0.3em] text-slate-500">About Fast Sport</p>
         <h1 className="mt-3 text-3xl font-semibold text-slate-900">Clean commerce for sellers and buyers</h1>
-        <p className="mt-4 max-w-2xl text-slate-600">MXTrade is built to let sellers submit inventory for review, while giving customers a curated shopping experience. The admin layer keeps the marketplace quality controlled.</p>
+        <p className="mt-4 max-w-2xl text-slate-600">Fast Sport is built to let sellers submit inventory for review, while giving customers a curated shopping experience. The admin layer keeps the marketplace quality controlled.</p>
       </div>
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
