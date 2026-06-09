@@ -1,5 +1,6 @@
 import { adminDb } from '../../../lib/firebaseAdmin';
 import admin from '../../../lib/firebaseAdmin';
+import qs from 'querystring';
 
 // PayFast sends the ITN as application/x-www-form-urlencoded — disable Next.js body parsing
 export const config = { api: { bodyParser: false } };
@@ -19,19 +20,18 @@ async function parseBody(req) {
     let raw = '';
     req.on('data', (chunk) => { raw += chunk.toString(); });
     req.on('end', () => {
-      const params = {};
-      for (const pair of raw.split('&')) {
-        const [key, value] = pair.split('=').map(decodeURIComponent);
-        if (key) params[key.replace(/\+/g, ' ')] = (value || '').replace(/\+/g, ' ');
-      }
-      resolve(params);
+      const parsed = qs.parse(raw);
+      const params = Object.fromEntries(
+        Object.entries(parsed).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value])
+      );
+      resolve({ raw, params });
     });
     req.on('error', reject);
   });
 }
 
 // Validate the ITN came from PayFast by re-requesting their validation endpoint
-async function validateItn(itnData, isSandbox) {
+async function validateItn(rawPayload, isSandbox) {
   const validationUrl = isSandbox
     ? 'https://sandbox.payfast.co.za/eng/query/validate'
     : 'https://www.payfast.co.za/eng/query/validate';
@@ -39,9 +39,8 @@ async function validateItn(itnData, isSandbox) {
   const response = await fetch(validationUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: Object.entries(itnData)
-      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-      .join('&'),
+    // Send original raw payload exactly as received from Payfast.
+    body: rawPayload,
   });
 
   const text = await response.text();
@@ -136,19 +135,23 @@ export default async function handler(req, res) {
   }
 
   let itnData;
+  let rawPayload;
   try {
-    itnData = await parseBody(req);
+    const parsed = await parseBody(req);
+    rawPayload = parsed.raw;
+    itnData = parsed.params;
   } catch {
     return res.status(400).send('Bad Request');
   }
 
   const isSandbox = process.env.PAYFAST_SANDBOX === 'true';
 
-  // Validate the ITN with PayFast (skip in sandbox if PAYFAST_SKIP_VALIDATION=true)
-  const skipValidation = process.env.PAYFAST_SKIP_VALIDATION === 'true';
+  // In sandbox, default to skipping validation unless explicitly forced on.
+  const forceSandboxValidation = process.env.PAYFAST_FORCE_SANDBOX_VALIDATION === 'true';
+  const skipValidation = process.env.PAYFAST_SKIP_VALIDATION === 'true' || (isSandbox && !forceSandboxValidation);
   if (!skipValidation) {
     try {
-      const isValid = await validateItn(itnData, isSandbox);
+      const isValid = await validateItn(rawPayload, isSandbox);
       if (!isValid) {
         console.error('[PayFast ITN] Validation failed — ignoring request');
         return res.status(200).send('OK'); // Always 200 to PayFast
@@ -161,6 +164,7 @@ export default async function handler(req, res) {
 
   const paymentStatus = (itnData.payment_status || '').toUpperCase();
   const orderId = itnData.custom_str1; // We'll pass orderId as custom_str1 when building the payment form
+  console.log(`[PayFast ITN] Received payment_status=${paymentStatus} orderId=${orderId || 'N/A'} sandbox=${isSandbox}`);
 
   if (paymentStatus !== 'COMPLETE') {
     console.log(`[PayFast ITN] Non-complete status "${paymentStatus}" for order ${orderId} — ignoring`);
