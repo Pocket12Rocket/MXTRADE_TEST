@@ -1,3 +1,4 @@
+import nodemailer from 'nodemailer';
 import { adminDb } from '../../../lib/firebaseAdmin';
 import admin from '../../../lib/firebaseAdmin';
 import qs from 'querystring';
@@ -49,6 +50,8 @@ async function validateItn(rawPayload, isSandbox) {
 
 async function sendAdminEmail({ order, products, sellerMap }) {
   const resendApiKey = process.env.RESEND_API_KEY;
+  const smtpUser = (process.env.SMTP_USER || '').trim();
+  const smtpPass = (process.env.SMTP_PASS || '').trim();
   const fromEmail = process.env.CONTACT_FROM_EMAIL || 'Fast Sports <onboarding@resend.dev>';
   const supportEmail = (process.env.SUPPORT_EMAIL || 'support@fastsport.co.za').trim();
   const adminEmailsCsv = process.env.CONTACT_ADMIN_EMAILS || process.env.ADMIN_NOTIFICATION_EMAILS || '';
@@ -56,12 +59,9 @@ async function sendAdminEmail({ order, products, sellerMap }) {
   const parsed = adminEmailsCsv.split(',').map((e) => e.trim()).filter(Boolean);
   const toEmails = Array.from(new Set([supportEmail, ...parsed, ...(singleAdmin ? [singleAdmin] : [])].filter(Boolean)));
 
-  if (!resendApiKey || !toEmails.length) {
-    console.warn('[PayFast ITN] Email skipped: missing RESEND_API_KEY or recipients', {
-      hasResendApiKey: Boolean(resendApiKey),
-      recipientCount: toEmails.length,
-    });
-    return; // Do not block the ITN
+  if (!toEmails.length) {
+    console.warn('[PayFast ITN] Email skipped: no recipients configured');
+    return;
   }
 
   const shipping = order.shippingAddress || {};
@@ -121,32 +121,75 @@ async function sendAdminEmail({ order, products, sellerMap }) {
       </p>
     </div>`;
 
-  const emailResponse = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${resendApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: fromEmail,
-      to: toEmails,
-      subject: `New Order Confirmed — R${Number(order.totalAmount).toFixed(2)} (${escapeHtml(order.id)})`,
-      html,
-    }),
-  });
+  const subject = `New Order Confirmed — R${Number(order.totalAmount).toFixed(2)} (${escapeHtml(order.id)})`;
 
-  if (!emailResponse.ok) {
+  if (resendApiKey) {
+    const emailResponse = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${resendApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: fromEmail,
+        to: toEmails,
+        subject,
+        html,
+      }),
+    });
+
+    if (emailResponse.ok) {
+      console.log('[PayFast ITN] Purchase email sent via Resend', {
+        toEmails,
+        orderId: order.id,
+      });
+      return;
+    }
+
     const responseText = await emailResponse.text();
-    console.error('[PayFast ITN] Failed to send purchase email', {
+    console.error('[PayFast ITN] Resend purchase email failed', {
       status: emailResponse.status,
       body: responseText,
       toEmails,
       orderId: order.id,
     });
-    return;
   }
 
-  console.log('[PayFast ITN] Purchase email sent', {
+  if (smtpUser && smtpPass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+      });
+
+      await transporter.sendMail({
+        from: smtpUser,
+        to: toEmails,
+        subject,
+        html,
+      });
+
+      console.log('[PayFast ITN] Purchase email sent via SMTP', {
+        toEmails,
+        orderId: order.id,
+      });
+      return;
+    } catch (error) {
+      console.error('[PayFast ITN] SMTP purchase email failed', {
+        message: error.message,
+        toEmails,
+        orderId: order.id,
+      });
+    }
+  }
+
+  console.warn('[PayFast ITN] Email skipped: no working transport configured', {
+    hasResendApiKey: Boolean(resendApiKey),
+    hasSmtpUser: Boolean(smtpUser),
+    hasSmtpPass: Boolean(smtpPass),
     toEmails,
     orderId: order.id,
   });
