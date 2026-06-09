@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { useCart } from '../lib/cartContext';
-import { createOrder } from '../lib/firestoreHelpers';
 import useAuth from '../lib/useAuth';
 
 const PROVINCES = [
@@ -115,14 +114,25 @@ export default function CheckoutPage() {
         postalCode: form.postalCode.trim(),
       };
 
-      const orderId = await createOrder({
-        buyerId: user ? user.uid : null,
-        buyerEmail: form.email.trim() || String(user?.email || '').trim(),
-        items,
-        totalAmount: totalWithDelivery,
-        shippingAddress,
-        deliveryFee: DELIVERY_FEE,
+      const orderRes = await fetch('/api/orders/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          buyerId: user ? user.uid : null,
+          buyerEmail: form.email.trim() || String(user?.email || '').trim(),
+          items,
+          totalAmount: totalWithDelivery,
+          shippingAddress,
+          deliveryFee: DELIVERY_FEE,
+        }),
       });
+
+      const orderData = await orderRes.json();
+      if (!orderRes.ok || !orderData.success || !orderData.orderId) {
+        throw new Error(orderData.error || 'Could not create order.');
+      }
+
+      const orderId = orderData.orderId;
 
       // Call Payfast checkout API
       const pfRes = await fetch('/api/payfast/checkout', {
