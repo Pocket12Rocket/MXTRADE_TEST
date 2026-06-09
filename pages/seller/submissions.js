@@ -170,16 +170,21 @@ export default function SellerSubmissions() {
         submission,
       }));
 
-    const liveProductRows = products.map((product) => ({
+    const liveProductRows = products.map((product) => {
+      const normalizedProductStatus = product.status
+        || (product.marketSold ? 'purchased' : 'listed');
+
+      return ({
       id: product.id,
       productName: product.name || 'Untitled product',
-      productStatus: product.marketSold ? 'sold' : 'listed',
+      productStatus: normalizedProductStatus,
       createdAtMillis: getCreatedAtMillis(product.createdAt),
       listingType: 'product',
-      viewType: product.marketSold ? 'disabled' : 'shop',
+      viewType: normalizedProductStatus === 'listed' ? 'shop' : 'disabled',
       canEdit: false,
       product,
-    }));
+    });
+    });
 
     return [...liveProductRows, ...pendingAndRejectedRows].sort((a, b) => b.createdAtMillis - a.createdAtMillis);
   }, [products, submissions]);
