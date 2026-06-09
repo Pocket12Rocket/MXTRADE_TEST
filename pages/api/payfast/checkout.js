@@ -41,10 +41,45 @@ export default function handler(req, res) {
     // Payfast signature uses PHP urlencode semantics where spaces become '+'.
     const encodeForPayfast = (value) => encodeURIComponent(String(value)).replace(/%20/g, '+');
 
-    // Build canonical payload string from non-empty fields sorted by key name.
-    const payloadString = Object.keys(pfData)
-      .filter((k) => pfData[k] !== undefined && pfData[k] !== null && String(pfData[k]) !== '')
-      .sort()
+    // Build payload in Payfast's expected field order.
+    const payfastKeyOrder = [
+      'merchant_id',
+      'merchant_key',
+      'return_url',
+      'cancel_url',
+      'notify_url',
+      'name_first',
+      'name_last',
+      'email_address',
+      'cell_number',
+      'm_payment_id',
+      'amount',
+      'item_name',
+      'item_description',
+      'custom_int1',
+      'custom_int2',
+      'custom_int3',
+      'custom_int4',
+      'custom_int5',
+      'custom_str1',
+      'custom_str2',
+      'custom_str3',
+      'custom_str4',
+      'custom_str5',
+      'email_confirmation',
+      'confirmation_address',
+      'payment_method',
+    ];
+
+    const nonEmptyKeys = Object.keys(pfData).filter(
+      (k) => pfData[k] !== undefined && pfData[k] !== null && String(pfData[k]) !== ''
+    );
+    const orderedKeys = [
+      ...payfastKeyOrder.filter((k) => nonEmptyKeys.includes(k)),
+      ...nonEmptyKeys.filter((k) => !payfastKeyOrder.includes(k)),
+    ];
+
+    const payloadString = orderedKeys
       .map((k) => `${k}=${encodeForPayfast(pfData[k])}`)
       .join('&');
 
