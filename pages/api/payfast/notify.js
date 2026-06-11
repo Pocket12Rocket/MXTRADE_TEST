@@ -195,6 +195,176 @@ async function sendAdminEmail({ order, products, sellerMap }) {
   });
 }
 
+async function sendBuyerEmail({ order, itnData }) {
+  const toEmail = (order.buyerEmail || '').trim();
+  if (!toEmail) {
+    console.warn('[PayFast ITN] Buyer email skipped: no buyerEmail on order', { orderId: order.id });
+    return;
+  }
+
+  const resendApiKey = process.env.RESEND_API_KEY;
+  const smtpUser = (process.env.SMTP_USER || '').trim();
+  const smtpPass = (process.env.SMTP_PASS || '').trim();
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://fastsport.co.za').trim();
+  const fromEmail = process.env.BUYER_FROM_EMAIL || process.env.CONTACT_FROM_EMAIL || 'Fast Sports <noreply@fastsport.co.za>';
+
+  const shipping = order.shippingAddress || {};
+  const shippingLines = [
+    [shipping.firstName, shipping.lastName].filter(Boolean).join(' '),
+    shipping.streetAddress,
+    shipping.suburb,
+    shipping.city,
+    shipping.province,
+    shipping.postalCode,
+    shipping.phone ? `Tel: ${shipping.phone}` : null,
+  ].filter(Boolean);
+
+  const amountGross = itnData?.amount_gross ? `R${Number(itnData.amount_gross).toFixed(2)}` : `R${Number(order.totalAmount || 0).toFixed(2)}`;
+  const paymentMethod = 'PayFast';
+  const ordersUrl = `${siteUrl}/profile/orders`;
+
+  const itemRows = (order.items || []).map((item) => `
+    <tr style="border-bottom:1px solid #e2e8f0">
+      <td style="padding:10px 8px;font-size:14px;color:#1e293b">${escapeHtml(item.name)}</td>
+      <td style="padding:10px 8px;font-size:14px;color:#64748b;text-align:center">${Number(item.quantity)}</td>
+      <td style="padding:10px 8px;font-size:14px;color:#1e293b;text-align:right">R${Number(item.price).toFixed(2)}</td>
+      <td style="padding:10px 8px;font-size:14px;font-weight:600;color:#1e293b;text-align:right">R${(Number(item.price) * Number(item.quantity)).toFixed(2)}</td>
+    </tr>`).join('');
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 0">
+    <tr><td align="center">
+      <table width="620" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;max-width:620px;width:100%">
+
+        <!-- Header -->
+        <tr><td style="background:#0f172a;padding:28px 40px;text-align:center">
+          <p style="margin:0;font-size:22px;font-weight:700;color:#ffffff;letter-spacing:0.06em">FAST SPORTS</p>
+          <p style="margin:6px 0 0;font-size:12px;color:#94a3b8;letter-spacing:0.12em;text-transform:uppercase">Order Confirmation</p>
+        </td></tr>
+
+        <!-- Intro -->
+        <tr><td style="padding:32px 40px 16px">
+          <h1 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#0f172a">Thanks for your order!</h1>
+          <p style="margin:0;font-size:14px;color:#64748b;line-height:1.6">
+            Your payment was successful. Here's a summary of what you ordered.
+          </p>
+          <p style="margin:12px 0 0;font-size:13px;color:#94a3b8">
+            Order reference: <span style="font-family:monospace;color:#475569">${escapeHtml(order.id)}</span>
+          </p>
+        </td></tr>
+
+        <!-- Items table -->
+        <tr><td style="padding:0 40px 24px">
+          <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+            <thead>
+              <tr style="background:#f8fafc">
+                <th style="padding:10px 8px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#64748b;text-align:left">Product</th>
+                <th style="padding:10px 8px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#64748b;text-align:center">Qty</th>
+                <th style="padding:10px 8px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#64748b;text-align:right">Unit price</th>
+                <th style="padding:10px 8px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#64748b;text-align:right">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>${itemRows}</tbody>
+          </table>
+        </td></tr>
+
+        <!-- Total + Payment method -->
+        <tr><td style="padding:0 40px 28px">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="font-size:14px;color:#64748b;padding:6px 0">Payment method</td>
+              <td style="font-size:14px;color:#1e293b;text-align:right;padding:6px 0">${escapeHtml(paymentMethod)}</td>
+            </tr>
+            <tr style="border-top:2px solid #e2e8f0">
+              <td style="font-size:16px;font-weight:700;color:#0f172a;padding:12px 0 0">Total paid</td>
+              <td style="font-size:16px;font-weight:700;color:#00CED1;text-align:right;padding:12px 0 0">${escapeHtml(amountGross)}</td>
+            </tr>
+          </table>
+        </td></tr>
+
+        <!-- Shipping address -->
+        <tr><td style="padding:0 40px 28px">
+          <p style="margin:0 0 10px;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:#64748b">Shipping address</p>
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;font-size:14px;color:#334155;line-height:1.8">
+            ${shippingLines.map((l) => escapeHtml(l)).join('<br>')}
+          </div>
+        </td></tr>
+
+        <!-- CTA button -->
+        <tr><td style="padding:0 40px 36px;text-align:center">
+          <a href="${ordersUrl}" target="_blank"
+             style="display:inline-block;background:#00CED1;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;padding:14px 32px;border-radius:999px;letter-spacing:0.06em;text-transform:uppercase">
+            My Orders
+          </a>
+          <p style="margin:12px 0 0;font-size:12px;color:#94a3b8">
+            Not logged in? You'll be asked to sign in first.
+          </p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+  const subject = `Order confirmed — ${amountGross} (ref: ${order.id})`;
+
+  if (resendApiKey) {
+    const emailResponse = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${resendApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ from: fromEmail, to: [toEmail], subject, html }),
+    });
+
+    if (emailResponse.ok) {
+      console.log('[PayFast ITN] Buyer confirmation email sent via Resend', { toEmail, orderId: order.id });
+      return;
+    }
+
+    const responseText = await emailResponse.text();
+    console.error('[PayFast ITN] Resend buyer email failed', {
+      status: emailResponse.status,
+      body: responseText,
+      toEmail,
+      orderId: order.id,
+    });
+  }
+
+  if (smtpUser && smtpPass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user: smtpUser, pass: smtpPass },
+      });
+
+      await transporter.sendMail({ from: smtpUser, to: toEmail, subject, html });
+      console.log('[PayFast ITN] Buyer confirmation email sent via SMTP', { toEmail, orderId: order.id });
+      return;
+    } catch (error) {
+      console.error('[PayFast ITN] SMTP buyer email failed', {
+        message: error.message,
+        toEmail,
+        orderId: order.id,
+      });
+    }
+  }
+
+  console.warn('[PayFast ITN] Buyer email skipped: no working transport configured', {
+    hasResendApiKey: Boolean(resendApiKey),
+    hasSmtpUser: Boolean(smtpUser),
+    hasSmtpPass: Boolean(smtpPass),
+    toEmail,
+    orderId: order.id,
+  });
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).send('Method Not Allowed');
@@ -300,8 +470,11 @@ export default async function handler(req, res) {
       })
     );
 
-    // 4. Send admin notification email
-    await sendAdminEmail({ order, products: order.items || [], sellerMap });
+    // 4. Send admin notification email + buyer confirmation email
+    await Promise.allSettled([
+      sendAdminEmail({ order, products: order.items || [], sellerMap }),
+      sendBuyerEmail({ order, itnData }),
+    ]);
 
     // 5. Create admin in-app notification for the dashboard
     await adminDb.collection('adminNotifications').add({
