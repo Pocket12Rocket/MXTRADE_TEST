@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { useCart } from '../lib/cartContext';
 import useAuth from '../lib/useAuth';
+import { db } from '../lib/firebase';
 
 const PROVINCES = [
   'Eastern Cape',
@@ -103,6 +105,7 @@ export default function CheckoutPage() {
     setSubmitError('');
 
     try {
+      const buyerEmail = form.email.trim() || String(user?.email || '').trim();
       const shippingAddress = {
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
@@ -114,25 +117,59 @@ export default function CheckoutPage() {
         postalCode: form.postalCode.trim(),
       };
 
-      const orderRes = await fetch('/api/orders/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          buyerId: user ? user.uid : null,
-          buyerEmail: form.email.trim() || String(user?.email || '').trim(),
-          items,
-          totalAmount: totalWithDelivery,
-          shippingAddress,
-          deliveryFee: DELIVERY_FEE,
-        }),
-      });
+      const sanitizedItems = items.map((item) => ({
+        productId: item.id,
+        name: item.name,
+        price: Number(item.price),
+        quantity: Number(item.quantity),
+        primaryImage: item.primaryImage || null,
+      }));
 
-      const orderData = await orderRes.json();
-      if (!orderRes.ok || !orderData.success || !orderData.orderId) {
-        throw new Error(orderData.error || 'Could not create order.');
+      let orderId = '';
+
+      try {
+        const orderRes = await fetch('/api/orders/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            buyerId: user ? user.uid : null,
+            buyerEmail,
+            items,
+            totalAmount: totalWithDelivery,
+            shippingAddress,
+            deliveryFee: DELIVERY_FEE,
+          }),
+        });
+
+        const orderData = await orderRes.json();
+        if (!orderRes.ok || !orderData.success || !orderData.orderId) {
+          throw new Error(orderData.error || 'Could not create order.');
+        }
+
+        orderId = orderData.orderId;
+      } catch (orderError) {
+        const message = String(orderError?.message || '');
+        const shouldTryGuestFallback = !user && /missing or insufficient permissions/i.test(message);
+
+        if (!shouldTryGuestFallback) {
+          throw orderError;
+        }
+
+        // Fallback: guest checkout can create a pending order directly via rules.
+        const guestOrderRef = await addDoc(collection(db, 'orders'), {
+          buyerId: null,
+          buyerEmail,
+          items: sanitizedItems,
+          totalAmount: Number(totalWithDelivery),
+          shippingAddress,
+          status: 'pending_payment',
+          createdAt: serverTimestamp(),
+        });
+        orderId = guestOrderRef.id;
       }
 
-      const orderId = orderData.orderId;
+      const siteOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+      const guestReturnUrl = siteOrigin ? `${siteOrigin}/order/confirmation?orderId=${orderId}` : undefined;
 
       // Call Payfast checkout API
       const pfRes = await fetch('/api/payfast/checkout', {
@@ -141,9 +178,11 @@ export default function CheckoutPage() {
         body: JSON.stringify({
           amount: totalWithDelivery,
           item_name: `Order #${orderId}`,
-          item_description: items.map(i => i.name).join(', '),
-          email_address: form.email.trim() || String(user?.email || ''),
+          item_description: items.map((i) => i.name).join(', '),
+          email_address: buyerEmail,
           custom_str1: orderId,
+          return_url: user ? undefined : guestReturnUrl,
+          cancel_url: user ? undefined : guestReturnUrl,
         }),
       });
       const pfData = await pfRes.json();
