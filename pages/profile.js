@@ -92,17 +92,20 @@ export default function ProfilePage() {
   const [sellerProfileError, setSellerProfileError] = useState('');
   const [sellerProfileSuccess, setSellerProfileSuccess] = useState('');
   const [isEditingSellerProfile, setIsEditingSellerProfile] = useState(false);
-  const [sellerProfileForm, setSellerProfileForm] = useState({
+  const EMPTY_SELLER_PROFILE_FORM = {
     idNumber: '',
     streetAddress: '',
     suburb: '',
     city: '',
     postCode: '',
     bankName: '',
+    accountType: '',
     branchName: '',
     branchCode: '',
     accountNumber: '',
-  });
+  };
+  const [sellerProfileForm, setSellerProfileForm] = useState(EMPTY_SELLER_PROFILE_FORM);
+  const [savedSellerProfileForm, setSavedSellerProfileForm] = useState(EMPTY_SELLER_PROFILE_FORM);
 
   const currentPhoto = photoURL || profile?.photoURL || null;
   const initials = profile
@@ -202,17 +205,21 @@ export default function ProfilePage() {
           return;
         }
 
-        setSellerProfileForm({
+        const loadedSellerProfile = {
           idNumber: sellerPrivateProfile?.idNumber || '',
           streetAddress: sellerPrivateProfile?.streetAddress || '',
           suburb: sellerPrivateProfile?.suburb || '',
           city: sellerPrivateProfile?.city || '',
           postCode: sellerPrivateProfile?.postCode || '',
           bankName: sellerPrivateProfile?.bankName || '',
+          accountType: sellerPrivateProfile?.accountType || '',
           branchName: sellerPrivateProfile?.branchName || '',
           branchCode: sellerPrivateProfile?.branchCode || '',
           accountNumber: sellerPrivateProfile?.accountNumber || '',
-        });
+        };
+
+        setSellerProfileForm(loadedSellerProfile);
+        setSavedSellerProfileForm(loadedSellerProfile);
       } catch {
         if (isMounted) {
           setSellerProfileError('Could not load seller profile details.');
@@ -247,6 +254,7 @@ export default function ProfilePage() {
   const handleCancelSellerProfileEdit = () => {
     setSellerProfileError('');
     setSellerProfileSuccess('');
+    setSellerProfileForm(savedSellerProfileForm);
     setIsEditingSellerProfile(false);
   };
 
@@ -260,6 +268,7 @@ export default function ProfilePage() {
       'city',
       'postCode',
       'bankName',
+      'accountType',
       'branchName',
       'branchCode',
       'accountNumber',
@@ -279,6 +288,7 @@ export default function ProfilePage() {
     try {
       await upsertSellerPrivateProfile(user, sellerProfileForm);
       await refreshProfile(user);
+      setSavedSellerProfileForm(sellerProfileForm);
       setSellerProfileSuccess('Seller profile saved securely.');
       setIsEditingSellerProfile(false);
     } catch (error) {
@@ -543,6 +553,10 @@ export default function ProfilePage() {
                 <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.bankName || 'Not set'}</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Account Type</p>
+                <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.accountType || 'Not set'}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Branch Name</p>
                 <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.branchName || 'Not set'}</p>
               </div>
@@ -651,6 +665,17 @@ export default function ProfilePage() {
                   <option value="Current/Cheque">Current/Cheque</option>
                   <option value="Savings">Savings</option>
                 </select>
+              </label>
+
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Branch Name</span>
+                <input
+                  type="text"
+                  value={sellerProfileForm.branchName}
+                  onChange={(event) => handleSellerFieldChange('branchName', event.target.value)}
+                  required
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
+                />
               </label>
 
               <label className="block">
