@@ -323,12 +323,12 @@ function AdminDashboard() {
       {/* --- Submission Details Modal --- */}
       {selectedSubmission ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
-          {/* You can restore the full modal UI here as needed */}
-          <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-xl sm:p-8">
+          <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-xl sm:p-8">
             <div className="flex items-start justify-between gap-4">
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#00C5CD]">Submission details</p>
                 <h2 className="mt-2 text-2xl font-semibold text-slate-900">{selectedSubmission.name}</h2>
+                <p className="mt-1 text-sm text-slate-500">{selectedSubmission.category || 'Uncategorized'} · Submitted by {selectedSubmission.sellerEmail || 'Unknown'}</p>
               </div>
               <button
                 type="button"
@@ -338,7 +338,81 @@ function AdminDashboard() {
                 Close
               </button>
             </div>
-            {/* Add more submission details here as needed */}
+            <div className="mt-6 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+              <div className="space-y-6">
+                {getSubmissionImages(selectedSubmission).length > 0 ? (
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900">Images</h3>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {getSubmissionImages(selectedSubmission).map((imageSrc) => (
+                        <div key={imageSrc} className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+                          <img src={imageSrc} alt={selectedSubmission.name} className="h-44 w-full object-cover" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Description</h3>
+                  <p className="mt-3 whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+                    {selectedSubmission.description || 'No description provided.'}
+                  </p>
+                </div>
+
+                {Array.isArray(selectedSubmission.specifications) && selectedSubmission.specifications.length > 0 ? (
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900">Specifications</h3>
+                    <ul className="mt-3 list-disc space-y-2 rounded-2xl border border-slate-200 bg-slate-50 px-6 py-4 text-sm text-slate-700">
+                      {selectedSubmission.specifications.map((spec) => (
+                        <li key={spec}>{spec}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Submission fields</h3>
+                  <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {Object.entries(selectedSubmission)
+                          .filter(([key, value]) => {
+                            if (HIDDEN_SUBMISSION_KEYS.has(key)) return false;
+                            if (key === 'description' || key === 'specifications') return false;
+                            if (value === null || value === undefined) return false;
+                            if (typeof value === 'string' && value.trim() === '') return false;
+                            if (Array.isArray(value) && value.length === 0) return false;
+                            return true;
+                          })
+                          .map(([key, value]) => (
+                            <tr key={key}>
+                              <td className="w-1/3 px-4 py-3 align-top font-medium text-slate-600">{formatFieldLabel(key)}</td>
+                              <td className="px-4 py-3 text-slate-900">
+                                {Array.isArray(value)
+                                  ? value.join(', ')
+                                  : typeof value === 'object'
+                                    ? JSON.stringify(value)
+                                    : String(value)}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Record info</h3>
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 space-y-2">
+                    <p><span className="font-semibold text-slate-900">Status:</span> {selectedSubmission.status || 'pending'}</p>
+                    <p><span className="font-semibold text-slate-900">Created:</span> {selectedSubmission.createdAt?.toDate ? selectedSubmission.createdAt.toDate().toLocaleString() : 'Unknown'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       ) : null}
