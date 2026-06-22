@@ -91,7 +91,7 @@ export default function SellerSubmit() {
   const [brandOptions, setBrandOptions] = useState(GEAR_BRAND_OPTIONS);
   // Add missing state for manufacturer, model, otherManufacturer
   const [manufacturer, setManufacturer] = useState('');
-  const [model, setModel] = useState('');
+  const [model, setModel] = useState([]);
   const [otherManufacturer, setOtherManufacturer] = useState('');
 
   useEffect(() => {
@@ -321,6 +321,15 @@ export default function SellerSubmit() {
           return;
         }
 
+        const normalizedModels = Array.isArray(model)
+          ? model.map((item) => item.trim()).filter(Boolean)
+          : [];
+
+        if (normalizedManufacturer !== 'Universal' && normalizedManufacturer !== 'Other' && normalizedModels.length === 0) {
+          setStatus('Please select at least one bike model.');
+          return;
+        }
+
         resolvedName = name;
         resolvedSubcategory = subcategory;
         resolvedDescription = description;
@@ -328,7 +337,7 @@ export default function SellerSubmit() {
         resolvedCustomFields = {
           partsCondition,
           manufacturer: normalizedManufacturer,
-          model: normalizedManufacturer === 'Universal' || normalizedManufacturer === 'Other' ? '' : (model || '').trim(),
+          model: normalizedManufacturer === 'Universal' || normalizedManufacturer === 'Other' ? [] : normalizedModels,
           otherManufacturer: normalizedManufacturer === 'Other' ? normalizedOtherManufacturer : '',
           brand: resolvedPartsBrand,
           customPartsBrand: normalizedManufacturer === 'Other' ? normalizedOtherManufacturer : '',
@@ -373,7 +382,7 @@ export default function SellerSubmit() {
       setDescription('');
       setPartsCondition('');
       setManufacturer('');
-      setModel('');
+      setModel([]);
       setOtherManufacturer('');
       setFiles([]);
       if (fileInputRef.current) {
@@ -813,7 +822,7 @@ export default function SellerSubmit() {
               <span className="text-sm font-medium text-slate-700">Fits Bike Manufacturer</span>
               <select
                 value={manufacturer || ''}
-                onChange={e => { setManufacturer(e.target.value); setModel(''); setOtherManufacturer(''); }}
+                onChange={e => { setManufacturer(e.target.value); setModel([]); setOtherManufacturer(''); }}
                 required
                 className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
               >
@@ -835,15 +844,19 @@ export default function SellerSubmit() {
               )}
             </label>
             <label className="block">
-              <span className="text-sm font-medium text-slate-700">Fits Bike Model</span>
+              <span className="text-sm font-medium text-slate-700">Fits Bike Model(s)</span>
               <select
-                value={model || ''}
-                onChange={e => setModel(e.target.value)}
+                multiple
+                size={8}
+                value={model}
+                onChange={(event) => {
+                  const selectedModels = Array.from(event.target.selectedOptions).map((option) => option.value);
+                  setModel(selectedModels);
+                }}
                 disabled={manufacturer === 'Universal' || !manufacturer || manufacturer === 'Other'}
                 required={manufacturer !== 'Universal' && manufacturer !== 'Other'}
                 className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
               >
-                <option value="">{manufacturer === 'Universal' ? 'Not applicable' : 'Select model'}</option>
                 {(function() {
                   const MODELS = {
                     Honda: ['CRF450R','CRF450RWE','CRF250R','CRF250RWE','CRF450RX','CRF250RX','CRF450X','CRF250F','CRF125F','CRF110F','CRF50F'],
@@ -867,6 +880,7 @@ export default function SellerSubmit() {
                   )) : null;
                 })()}
               </select>
+              <p className="mt-2 text-xs text-slate-500">Hold Ctrl (Windows) or Cmd (Mac) to select multiple models.</p>
             </label>
             <label className="block">
               <span className="text-sm font-medium text-slate-700">Description</span>

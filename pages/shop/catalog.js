@@ -266,7 +266,12 @@ export default function Shop() {
         // For Parts, include if model matches or manufacturer is Universal
         const manufacturer = (product.manufacturer || '').toLowerCase();
         if (manufacturer === 'universal') return true;
-        return (product.model || '').toLowerCase() === selectedModel.toLowerCase();
+
+        const productModels = Array.isArray(product.model)
+          ? product.model.map((modelValue) => String(modelValue || '').toLowerCase().trim()).filter(Boolean)
+          : [String(product.model || '').toLowerCase().trim()].filter(Boolean);
+
+        return productModels.includes(selectedModel.toLowerCase());
       })
     : productsForManufacturer;
 

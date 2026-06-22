@@ -7,7 +7,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { buyerId, buyerEmail, items, totalAmount, shippingAddress } = req.body || {};
+    const { buyerId, buyerEmail, items, totalAmount, shippingAddress, deliveryFee, shippingSellerCount } = req.body || {};
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Cannot create an order with no items.' });
@@ -23,6 +23,8 @@ export default async function handler(req, res) {
       price: Number(item.price),
       quantity: Number(item.quantity),
       primaryImage: item.primaryImage || null,
+      sellerId: item.sellerId || '',
+      sellerEmail: item.sellerEmail || '',
     }));
 
     const orderRef = await adminDb.collection('orders').add({
@@ -30,6 +32,8 @@ export default async function handler(req, res) {
       buyerEmail: buyerEmail || '',
       items: sanitizedItems,
       totalAmount: Number(totalAmount),
+      deliveryFee: Number(deliveryFee || 0),
+      shippingSellerCount: Number(shippingSellerCount || 0),
       shippingAddress: shippingAddress || {},
       status: 'pending_payment',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),

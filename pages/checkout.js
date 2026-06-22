@@ -5,6 +5,7 @@ import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { useCart } from '../lib/cartContext';
 import useAuth from '../lib/useAuth';
 import { db } from '../lib/firebase';
+import { fetchProductById } from '../lib/firestoreHelpers';
 
 const PROVINCES = [
   'Eastern Cape',
@@ -46,13 +47,72 @@ export default function CheckoutPage() {
   const router = useRouter();
   const { user, profile } = useAuth();
   const { items, totalPrice, clearCart } = useCart();
-  const DELIVERY_FEE = 150;
-  const totalWithDelivery = totalPrice + DELIVERY_FEE;
+  const DELIVERY_FEE_PER_SELLER = 150;
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [touched, setTouched] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [resolvedItems, setResolvedItems] = useState(items);
+  const [isResolvingSellerInfo, setIsResolvingSellerInfo] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function resolveCartItems() {
+      const itemsMissingSeller = items.filter((item) => !(item.sellerId || '').trim());
+      if (itemsMissingSeller.length === 0) {
+        if (isMounted) {
+          setResolvedItems(items);
+          setIsResolvingSellerInfo(false);
+        }
+        return;
+      }
+
+      if (isMounted) {
+        setIsResolvingSellerInfo(true);
+      }
+
+      const resolved = await Promise.all(items.map(async (item) => {
+        if ((item.sellerId || '').trim()) {
+          return item;
+        }
+
+        try {
+          const product = await fetchProductById(item.id);
+          return {
+            ...item,
+            sellerId: product?.sellerId || '',
+            sellerEmail: product?.sellerEmail || '',
+          };
+        } catch {
+          return item;
+        }
+      }));
+
+      if (isMounted) {
+        setResolvedItems(resolved);
+        setIsResolvingSellerInfo(false);
+      }
+    }
+
+    resolveCartItems();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [items]);
+
+  const sellerKeys = Array.from(
+    new Set(
+      resolvedItems
+        .map((item) => (item.sellerId || item.sellerEmail || '').trim())
+        .filter(Boolean)
+    )
+  );
+  const deliverySellerCount = sellerKeys.length;
+  const deliveryFeeTotal = items.length === 0 ? 0 : (deliverySellerCount > 0 ? deliverySellerCount * DELIVERY_FEE_PER_SELLER : DELIVERY_FEE_PER_SELLER);
+  const totalWithDelivery = totalPrice + deliveryFeeTotal;
 
   useEffect(() => {
     if (!user) return;
@@ -100,6 +160,7 @@ export default function CheckoutPage() {
     touchAll();
     if (hasErrors) return;
     if (items.length === 0) return;
+    if (isResolvingSellerInfo) return;
 
     setIsSubmitting(true);
     setSubmitError('');
@@ -117,12 +178,14 @@ export default function CheckoutPage() {
         postalCode: form.postalCode.trim(),
       };
 
-      const sanitizedItems = items.map((item) => ({
+      const sanitizedItems = resolvedItems.map((item) => ({
         productId: item.id,
         name: item.name,
         price: Number(item.price),
         quantity: Number(item.quantity),
         primaryImage: item.primaryImage || null,
+        sellerId: item.sellerId || '',
+        sellerEmail: item.sellerEmail || '',
       }));
 
       let orderId = '';
@@ -134,10 +197,11 @@ export default function CheckoutPage() {
           body: JSON.stringify({
             buyerId: user ? user.uid : null,
             buyerEmail,
-            items,
+            items: resolvedItems,
             totalAmount: totalWithDelivery,
             shippingAddress,
-            deliveryFee: DELIVERY_FEE,
+            deliveryFee: deliveryFeeTotal,
+            shippingSellerCount: deliverySellerCount,
           }),
         });
 
@@ -162,6 +226,8 @@ export default function CheckoutPage() {
           items: sanitizedItems,
           totalAmount: Number(totalWithDelivery),
           shippingAddress,
+          deliveryFee: Number(deliveryFeeTotal),
+          shippingSellerCount: deliverySellerCount,
           status: 'pending_payment',
           createdAt: serverTimestamp(),
         });
@@ -296,15 +362,15 @@ export default function CheckoutPage() {
                   <span>R{totalPrice.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-base">
-                  <span>Delivery (nationwide)</span>
-                  <span>R{DELIVERY_FEE.toFixed(2)}</span>
+                    <span>Delivery ({deliverySellerCount || 1} seller{(deliverySellerCount || 1) === 1 ? '' : 's'})</span>
+                    <span>{isResolvingSellerInfo ? 'Calculating...' : `R${deliveryFeeTotal.toFixed(2)}`}</span>
                 </div>
                 <div className="flex justify-between text-base font-semibold text-slate-900 border-t border-slate-200 pt-2">
                   <span>Total</span>
                   <span>R{totalWithDelivery.toFixed(2)}</span>
                 </div>
               </div>
-              <p className="mt-2 text-xs text-slate-500">Nationwide delivery is a flat rate of R150.</p>
+                <p className="mt-2 text-xs text-slate-500">Nationwide delivery is charged at R150 per seller in the cart. Multiple items from the same seller share one delivery fee.</p>
             </div>
 
             {submitError && (
@@ -313,10 +379,10 @@ export default function CheckoutPage() {
 
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isResolvingSellerInfo}
               className="w-full rounded-full bg-[#00CED1] py-3.5 text-sm font-semibold uppercase tracking-[0.08em] text-white hover:bg-[#00C5CD] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isSubmitting ? 'Processing…' : 'Continue to payment'}
+              {isResolvingSellerInfo ? 'Calculating delivery…' : (isSubmitting ? 'Processing…' : 'Continue to payment')}
             </button>
 
             <Link href="/shop" className="block text-center text-xs text-slate-500 hover:text-slate-700 underline">

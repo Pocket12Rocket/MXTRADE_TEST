@@ -101,7 +101,7 @@ export default function SellerSubmissions() {
     specifications: '',
     subcategory: '',
     manufacturer: '',
-    model: '',
+    model: [],
     otherManufacturer: '',
     gearItem: '',
     gearCondition: '',
@@ -274,6 +274,10 @@ export default function SellerSubmissions() {
       ? brandOptions.some((brand) => brand.toLowerCase() === submissionAccessoriesBrand.toLowerCase())
       : false;
 
+    const submissionModels = Array.isArray(submission.model)
+      ? submission.model.map((item) => String(item || '').trim()).filter(Boolean)
+      : (typeof submission.model === 'string' && submission.model.trim() ? [submission.model.trim()] : []);
+
     setEditForm({
       name: submission.name || '',
       price: submission.price != null ? String(submission.price) : '',
@@ -283,7 +287,7 @@ export default function SellerSubmissions() {
         : submission.specifications || '',
       subcategory: submission.subcategory || '',
       manufacturer: submission.manufacturer || '',
-      model: submission.model || '',
+      model: submissionModels,
       otherManufacturer: submission.otherManufacturer || '',
       gearItem: submission.gearItem || '',
       gearCondition: submission.gearCondition || '',
@@ -438,6 +442,15 @@ export default function SellerSubmissions() {
       return null;
     }
 
+    const normalizedModels = Array.isArray(editForm.model)
+      ? editForm.model.map((item) => item.trim()).filter(Boolean)
+      : [];
+
+    if (normalizedManufacturer !== 'Universal' && normalizedManufacturer !== 'Other' && normalizedModels.length === 0) {
+      setError('Please select at least one bike model.');
+      return null;
+    }
+
     const existingSpecs = editForm.specifications
       .split('\n')
       .map((line) => line.trim())
@@ -453,7 +466,7 @@ export default function SellerSubmissions() {
       description: editForm.description.trim(),
       specifications: specificationsWithBrand,
       manufacturer: normalizedManufacturer,
-      model: normalizedManufacturer === 'Universal' || normalizedManufacturer === 'Other' ? '' : (editForm.model || '').trim(),
+      model: normalizedManufacturer === 'Universal' || normalizedManufacturer === 'Other' ? [] : normalizedModels,
       otherManufacturer: normalizedManufacturer === 'Other' ? normalizedOtherManufacturer : '',
       brand: resolvedPartsBrand,
       customPartsBrand: normalizedManufacturer === 'Other' ? normalizedOtherManufacturer : '',
@@ -1075,7 +1088,7 @@ export default function SellerSubmissions() {
                     <span className="text-sm font-medium text-slate-700">Fits Bike Manufacturer</span>
                     <select
                       value={editForm.manufacturer || ''}
-                      onChange={e => setEditForm(prev => ({ ...prev, manufacturer: e.target.value, model: '', otherManufacturer: '' }))}
+                      onChange={e => setEditForm(prev => ({ ...prev, manufacturer: e.target.value, model: [], otherManufacturer: '' }))}
                       required
                       className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                     >
@@ -1098,15 +1111,19 @@ export default function SellerSubmissions() {
                   </label>
 
                   <label className="block">
-                    <span className="text-sm font-medium text-slate-700">Fits Bike Model</span>
+                    <span className="text-sm font-medium text-slate-700">Fits Bike Model(s)</span>
                     <select
-                      value={editForm.model || ''}
-                      onChange={e => setEditForm(prev => ({ ...prev, model: e.target.value }))}
+                      multiple
+                      size={8}
+                      value={Array.isArray(editForm.model) ? editForm.model : []}
+                      onChange={event => {
+                        const selectedModels = Array.from(event.target.selectedOptions).map((option) => option.value);
+                        setEditForm(prev => ({ ...prev, model: selectedModels }));
+                      }}
                       disabled={editForm.manufacturer === 'Universal' || !editForm.manufacturer || editForm.manufacturer === 'Other'}
                       required={editForm.manufacturer !== 'Universal' && editForm.manufacturer !== 'Other'}
                       className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                     >
-                      <option value="">{editForm.manufacturer === 'Universal' ? 'Not applicable' : 'Select model'}</option>
                       {(function() {
                         const MODELS = {
                           Honda: ['CRF450R','CRF450RWE','CRF250R','CRF250RWE','CRF450RX','CRF250RX','CRF450X','CRF250F','CRF125F','CRF110F','CRF50F'],
@@ -1130,6 +1147,7 @@ export default function SellerSubmissions() {
                         )) : null;
                       })()}
                     </select>
+                    <p className="mt-2 text-xs text-slate-500">Hold Ctrl (Windows) or Cmd (Mac) to select multiple models.</p>
                   </label>
                 </>
               )}

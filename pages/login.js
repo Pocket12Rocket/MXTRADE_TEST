@@ -115,6 +115,15 @@ export default function Login() {
         setPendingVerification(true);
       }
     } catch (error) {
+      if (
+        error?.code === 'auth/invalid-credential' ||
+        error?.code === 'auth/user-not-found' ||
+        error?.code === 'auth/wrong-password'
+      ) {
+        setMessage('Incorrect email or password');
+        return;
+      }
+
       if (error?.code === 'auth/email-already-in-use') {
         setMode('login');
         setMessage('An account with this email address already exists. Please log in instead.');

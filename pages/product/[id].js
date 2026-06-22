@@ -208,7 +208,7 @@ export default function ProductDetail() {
             )}
             {displayDescription ? <p className="mt-4 text-slate-600">{displayDescription}</p> : null}
             <div className="mt-4 rounded-xl bg-blue-50 px-4 py-3 text-blue-700 text-sm font-medium">
-              <span className="font-semibold">Nationwide delivery:</span> Flat rate of R150 added at checkout.
+              <span className="font-semibold">Nationwide delivery:</span> R150 per seller added at checkout. Multiple items from the same seller share one delivery fee.
             </div>
             {displaySpecifications.length ? (
               <div className="mt-6 space-y-2">
