@@ -75,6 +75,8 @@ function AdminDashboard() {
           }, []);
         // Submission details modal state
         const [selectedSubmission, setSelectedSubmission] = useState(null);
+        const [rejectingSubmission, setRejectingSubmission] = useState(null);
+        const [rejectionReason, setRejectionReason] = useState('');
       // Auth state
       const { user, profile } = useAuth();
     // Unblock loading after mount (replace with real data loading logic as needed)
@@ -101,6 +103,42 @@ function AdminDashboard() {
       // Keep dashboard usable even if marking notifications read fails.
     });
   }, [user, profile?.role]);
+
+  const handleOpenRejectModal = (submission) => {
+    setError('');
+    setRejectingSubmission(submission);
+    setRejectionReason('');
+  };
+
+  const handleCancelReject = () => {
+    setRejectingSubmission(null);
+    setRejectionReason('');
+  };
+
+  const handleConfirmReject = async () => {
+    if (!rejectingSubmission) {
+      return;
+    }
+
+    const trimmedReason = rejectionReason.trim();
+    if (!trimmedReason) {
+      setError('Please provide a rejection reason for the seller.');
+      return;
+    }
+
+    setProcessingId(rejectingSubmission.id);
+    setError('');
+    try {
+      await rejectSubmission(rejectingSubmission.id, user?.uid || 'admin', trimmedReason);
+      setSubmissions((prev) => prev.filter((s) => s.id !== rejectingSubmission.id));
+      setRejectingSubmission(null);
+      setRejectionReason('');
+    } catch (err) {
+      setError(err?.message || 'Failed to reject submission. Please try again.');
+    } finally {
+      setProcessingId(null);
+    }
+  };
   // ...other state and handlers...
 
   // --- Main return block ---
@@ -170,23 +208,24 @@ function AdminDashboard() {
                     type="button"
                     onClick={async () => {
                       setProcessingId(submission.id);
-                      await approveSubmission(submission.id);
-                      setSubmissions((prev) => prev.filter((s) => s.id !== submission.id));
-                      setProcessingId(null);
+                      setError('');
+                      try {
+                        await approveSubmission(submission.id, user?.uid || 'admin');
+                        setSubmissions((prev) => prev.filter((s) => s.id !== submission.id));
+                      } catch (err) {
+                        setError(err?.message || 'Failed to approve submission. Please try again.');
+                      } finally {
+                        setProcessingId(null);
+                      }
                     }}
                     disabled={processingId === submission.id}
                     className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                   >
-                    Approve
+                    {processingId === submission.id ? 'Approving...' : 'Approve'}
                   </button>
                   <button
                     type="button"
-                    onClick={async () => {
-                      setProcessingId(submission.id);
-                      await rejectSubmission(submission.id);
-                      setSubmissions((prev) => prev.filter((s) => s.id !== submission.id));
-                      setProcessingId(null);
-                    }}
+                    onClick={() => handleOpenRejectModal(submission)}
                     disabled={processingId === submission.id}
                     className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
                   >
@@ -412,6 +451,57 @@ function AdminDashboard() {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* --- Reject Submission Modal --- */}
+      {rejectingSubmission ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
+          <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-6 shadow-xl sm:p-8">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-rose-600">Reject submission</p>
+                <h3 className="mt-2 text-xl font-semibold text-slate-900">{rejectingSubmission.name}</h3>
+                <p className="mt-1 text-sm text-slate-500">Provide feedback for the seller.</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCancelReject}
+                className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5">
+              <label className="block text-sm font-medium text-slate-700">Rejection reason</label>
+              <textarea
+                rows={5}
+                value={rejectionReason}
+                onChange={(event) => setRejectionReason(event.target.value)}
+                placeholder="Explain why this submission was rejected and what the seller should change."
+                className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
+              />
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleCancelReject}
+                className="rounded-3xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                disabled={processingId === rejectingSubmission.id}
+                className="rounded-3xl bg-rose-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+              >
+                {processingId === rejectingSubmission.id ? 'Rejecting...' : 'Reject submission'}
+              </button>
             </div>
           </div>
         </div>
