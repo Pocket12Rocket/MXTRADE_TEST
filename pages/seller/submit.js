@@ -305,12 +305,33 @@ export default function SellerSubmit() {
           customAccessoriesBrand: accessoriesBrand === OTHER_BRAND_VALUE ? resolvedAccessoriesBrand : '',
         };
       } else {
+        const normalizedManufacturer = (manufacturer || '').trim();
+        const normalizedOtherManufacturer = (otherManufacturer || '').trim();
+        const resolvedPartsBrand = normalizedManufacturer === 'Other'
+          ? normalizedOtherManufacturer
+          : normalizedManufacturer;
+
+        if (!normalizedManufacturer) {
+          setStatus('Please select a bike manufacturer.');
+          return;
+        }
+
+        if (normalizedManufacturer === 'Other' && !normalizedOtherManufacturer) {
+          setStatus('Please enter the manufacturer/brand name when selecting Other.');
+          return;
+        }
+
         resolvedName = name;
         resolvedSubcategory = subcategory;
         resolvedDescription = description;
-        resolvedSpecifications = `Condition: ${partsCondition}`;
+        resolvedSpecifications = `Condition: ${partsCondition}\nBrand: ${resolvedPartsBrand}`;
         resolvedCustomFields = {
           partsCondition,
+          manufacturer: normalizedManufacturer,
+          model: normalizedManufacturer === 'Universal' || normalizedManufacturer === 'Other' ? '' : (model || '').trim(),
+          otherManufacturer: normalizedManufacturer === 'Other' ? normalizedOtherManufacturer : '',
+          brand: resolvedPartsBrand,
+          customPartsBrand: normalizedManufacturer === 'Other' ? normalizedOtherManufacturer : '',
         };
       }
 

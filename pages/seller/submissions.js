@@ -100,6 +100,9 @@ export default function SellerSubmissions() {
     description: '',
     specifications: '',
     subcategory: '',
+    manufacturer: '',
+    model: '',
+    otherManufacturer: '',
     gearItem: '',
     gearCondition: '',
     gearBrand: '',
@@ -279,6 +282,9 @@ export default function SellerSubmissions() {
         ? submission.specifications.join('\n')
         : submission.specifications || '',
       subcategory: submission.subcategory || '',
+      manufacturer: submission.manufacturer || '',
+      model: submission.model || '',
+      otherManufacturer: submission.otherManufacturer || '',
       gearItem: submission.gearItem || '',
       gearCondition: submission.gearCondition || '',
       gearBrand: submissionGearBrand
@@ -416,15 +422,41 @@ export default function SellerSubmissions() {
       return null;
     }
 
+    const normalizedManufacturer = (editForm.manufacturer || '').trim();
+    const normalizedOtherManufacturer = (editForm.otherManufacturer || '').trim();
+    const resolvedPartsBrand = normalizedManufacturer === 'Other'
+      ? normalizedOtherManufacturer
+      : normalizedManufacturer;
+
+    if (!normalizedManufacturer) {
+      setError('Please select a bike manufacturer.');
+      return null;
+    }
+
+    if (normalizedManufacturer === 'Other' && !normalizedOtherManufacturer) {
+      setError('Please enter the manufacturer/brand name when selecting Other.');
+      return null;
+    }
+
+    const existingSpecs = editForm.specifications
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => !/^brand\s*:/i.test(line));
+
+    const specificationsWithBrand = [...existingSpecs, `Brand: ${resolvedPartsBrand}`];
+
     return {
       name: editForm.name.trim(),
       price: Number(editForm.price),
       subcategory: editForm.subcategory.trim(),
       description: editForm.description.trim(),
-      specifications: editForm.specifications
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean),
+      specifications: specificationsWithBrand,
+      manufacturer: normalizedManufacturer,
+      model: normalizedManufacturer === 'Universal' || normalizedManufacturer === 'Other' ? '' : (editForm.model || '').trim(),
+      otherManufacturer: normalizedManufacturer === 'Other' ? normalizedOtherManufacturer : '',
+      brand: resolvedPartsBrand,
+      customPartsBrand: normalizedManufacturer === 'Other' ? normalizedOtherManufacturer : '',
     };
   };
 
