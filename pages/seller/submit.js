@@ -371,7 +371,10 @@ export default function SellerSubmit() {
       setAccessoriesBrand('');
       setCustomAccessoriesBrand('');
       setDescription('');
-      setSpecifications('');
+      setPartsCondition('');
+      setManufacturer('');
+      setModel('');
+      setOtherManufacturer('');
       setFiles([]);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
