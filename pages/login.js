@@ -144,13 +144,24 @@ export default function Login() {
     event.preventDefault();
     setMessage('');
     try {
-      const actionCodeSettings = {
-        url: `${window.location.origin}/login`,
-        handleCodeInApp: false,
-      };
-      await sendPasswordResetEmail(auth, email, actionCodeSettings);
+      // Prefer Firebase default reset flow to avoid continue-url allowlist mismatches.
+      await sendPasswordResetEmail(auth, email);
       setResetSent(true);
     } catch (error) {
+      // Backward-compatible fallback in case a project requires explicit continue URL.
+      if (error?.code === 'auth/missing-continue-uri') {
+        try {
+          await sendPasswordResetEmail(auth, email, {
+            url: `${window.location.origin}/login`,
+            handleCodeInApp: false,
+          });
+          setResetSent(true);
+          return;
+        } catch (fallbackError) {
+          error = fallbackError;
+        }
+      }
+
       if (
         error?.code === 'auth/user-not-found' ||
         error?.code === 'auth/invalid-credential' ||
@@ -161,6 +172,10 @@ export default function Login() {
       }
       if (error?.code === 'auth/invalid-email') {
         setMessage('Please enter a valid email address.');
+        return;
+      }
+      if (error?.code === 'auth/unauthorized-continue-uri') {
+        setMessage('Password reset is blocked by Firebase Auth domain settings. Please contact support to allowlist this site domain.');
         return;
       }
       setMessage(error?.message || 'Something went wrong. Please try again.');
