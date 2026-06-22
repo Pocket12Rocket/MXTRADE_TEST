@@ -36,9 +36,21 @@ function AdminDashboard() {
           const [faqError, setFaqError] = useState('');
           const [faqLoading, setFaqLoading] = useState(true);
           const [error, setError] = useState('');
+          const [pricingError, setPricingError] = useState('');
           const [processingId, setProcessingId] = useState(null);
           const [removingProductId, setRemovingProductId] = useState(null);
           const [isRemovingDemoProducts, setIsRemovingDemoProducts] = useState(false);
+          const [pricingProduct, setPricingProduct] = useState(null);
+          const [isSavingPricing, setIsSavingPricing] = useState(false);
+          const [pricingForm, setPricingForm] = useState({
+            basePrice: '',
+            specialEnabled: false,
+            specialType: 'percent',
+            specialValue: '',
+            specialLabel: '',
+            specialStartAt: '',
+            specialEndAt: '',
+          });
           // Seller details modal state
           const [selectedSellerProfile, setSelectedSellerProfile] = useState(null);
           const [loadingDetails, setLoadingDetails] = useState(false);
@@ -137,6 +149,61 @@ function AdminDashboard() {
       setError(err?.message || 'Failed to reject submission. Please try again.');
     } finally {
       setProcessingId(null);
+    }
+  };
+
+  const handleOpenPricingEditor = (product) => {
+    setPricingError('');
+    setPricingProduct(product);
+    setPricingForm({
+      basePrice: String(product.basePrice ?? product.price ?? ''),
+      specialEnabled: Boolean(product.specialEnabled),
+      specialType: product.specialType || 'percent',
+      specialValue: product.specialValue != null ? String(product.specialValue) : '',
+      specialLabel: product.specialLabel || '',
+      specialStartAt: toDateTimeLocalValue(product.specialStartAt),
+      specialEndAt: toDateTimeLocalValue(product.specialEndAt),
+    });
+  };
+
+  const handleClosePricingEditor = () => {
+    setPricingProduct(null);
+    setPricingError('');
+    setIsSavingPricing(false);
+  };
+
+  const handleSavePricing = async () => {
+    if (!pricingProduct) {
+      return;
+    }
+
+    const basePriceNumber = Number(pricingForm.basePrice);
+    if (!Number.isFinite(basePriceNumber) || basePriceNumber <= 0) {
+      setPricingError('Base price must be greater than 0.');
+      return;
+    }
+
+    const payload = {
+      basePrice: basePriceNumber,
+      specialEnabled: pricingForm.specialEnabled,
+      specialType: pricingForm.specialType,
+      specialValue: pricingForm.specialEnabled ? Number(pricingForm.specialValue || 0) : 0,
+      specialLabel: pricingForm.specialLabel.trim(),
+      specialStartAt: pricingForm.specialEnabled ? toIsoFromDateTimeLocal(pricingForm.specialStartAt) : '',
+      specialEndAt: pricingForm.specialEnabled ? toIsoFromDateTimeLocal(pricingForm.specialEndAt) : '',
+    };
+
+    setIsSavingPricing(true);
+    setPricingError('');
+    try {
+      await updateProductPricingAsAdmin(pricingProduct.id, payload, user?.uid || 'admin');
+      const refreshedProducts = await fetchLiveProducts({ includeAllStatuses: true });
+      setProducts(refreshedProducts || []);
+      setPricingProduct(null);
+    } catch (err) {
+      setPricingError(err?.message || 'Failed to update pricing.');
+    } finally {
+      setIsSavingPricing(false);
     }
   };
   // ...other state and handlers...
@@ -329,13 +396,15 @@ function AdminDashboard() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {/* Pricing editor logic here */}}
-                          className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]"
-                        >
-                          Edit pricing
-                        </button>
+                        {(product.status || '').toLowerCase() === 'listed' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPricingEditor(product)}
+                            className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]"
+                          >
+                            Edit pricing
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={async () => {
@@ -501,6 +570,133 @@ function AdminDashboard() {
                 className="rounded-3xl bg-rose-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
               >
                 {processingId === rejectingSubmission.id ? 'Rejecting...' : 'Reject submission'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* --- Pricing Editor Modal --- */}
+      {pricingProduct ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
+          <div className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-xl sm:p-8">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#00C5CD]">Pricing editor</p>
+                <h3 className="mt-2 text-xl font-semibold text-slate-900">{pricingProduct.name}</h3>
+                <p className="mt-1 text-sm text-slate-500">Change base price and promotion settings for this listed product.</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleClosePricingEditor}
+                className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm font-medium text-slate-700">
+                Base price (R)
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={pricingForm.basePrice}
+                  onChange={(event) => setPricingForm((prev) => ({ ...prev, basePrice: event.target.value }))}
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"
+                />
+              </label>
+
+              <label className="mt-7 flex items-center gap-3 text-sm font-medium text-slate-700 sm:mt-0 sm:self-end">
+                <input
+                  type="checkbox"
+                  checked={pricingForm.specialEnabled}
+                  onChange={(event) => setPricingForm((prev) => ({ ...prev, specialEnabled: event.target.checked }))}
+                />
+                Enable promotion / discount tag
+              </label>
+
+              <label className="block text-sm font-medium text-slate-700">
+                Discount type
+                <select
+                  value={pricingForm.specialType}
+                  onChange={(event) => setPricingForm((prev) => ({ ...prev, specialType: event.target.value }))}
+                  disabled={!pricingForm.specialEnabled}
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm disabled:opacity-60"
+                >
+                  <option value="percent">Percent off</option>
+                  <option value="amount">Amount off (R)</option>
+                  <option value="fixed">Fixed promo price (R)</option>
+                </select>
+              </label>
+
+              <label className="block text-sm font-medium text-slate-700">
+                Discount value
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={pricingForm.specialValue}
+                  onChange={(event) => setPricingForm((prev) => ({ ...prev, specialValue: event.target.value }))}
+                  disabled={!pricingForm.specialEnabled}
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm disabled:opacity-60"
+                />
+              </label>
+
+              <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+                Discount tag label
+                <input
+                  type="text"
+                  maxLength={40}
+                  value={pricingForm.specialLabel}
+                  onChange={(event) => setPricingForm((prev) => ({ ...prev, specialLabel: event.target.value }))}
+                  disabled={!pricingForm.specialEnabled}
+                  placeholder="Example: Winter Sale"
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm disabled:opacity-60"
+                />
+              </label>
+
+              <label className="block text-sm font-medium text-slate-700">
+                Promo start
+                <input
+                  type="datetime-local"
+                  value={pricingForm.specialStartAt}
+                  onChange={(event) => setPricingForm((prev) => ({ ...prev, specialStartAt: event.target.value }))}
+                  disabled={!pricingForm.specialEnabled}
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm disabled:opacity-60"
+                />
+              </label>
+
+              <label className="block text-sm font-medium text-slate-700">
+                Promo end
+                <input
+                  type="datetime-local"
+                  value={pricingForm.specialEndAt}
+                  onChange={(event) => setPricingForm((prev) => ({ ...prev, specialEndAt: event.target.value }))}
+                  disabled={!pricingForm.specialEnabled}
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm disabled:opacity-60"
+                />
+              </label>
+            </div>
+
+            {pricingError ? <p className="mt-4 text-sm text-red-600">{pricingError}</p> : null}
+
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleClosePricingEditor}
+                className="rounded-3xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSavePricing}
+                disabled={isSavingPricing}
+                className="rounded-3xl bg-[#00CED1] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#00C5CD] disabled:opacity-60"
+              >
+                {isSavingPricing ? 'Saving...' : 'Save pricing'}
               </button>
             </div>
           </div>
