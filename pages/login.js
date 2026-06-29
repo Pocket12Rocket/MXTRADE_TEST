@@ -203,58 +203,71 @@ export default function Login() {
   if (mode === 'forgot') {
     if (resetSent) {
       return (
-        <div className="mx-auto max-w-md space-y-6 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm text-center">
-          <div className="flex flex-col items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#00C5CD]/10">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-[#00C5CD]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5H4.5a2.25 2.25 0 00-2.25 2.25m19.5 0l-9.75 6.75L2.25 6.75" />
-              </svg>
+        <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(0,197,205,0.16),_transparent_45%),linear-gradient(135deg,_#f8fafc_0%,_#ffffff_55%,_#f0fdfa_100%)] px-4 py-12 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-md rounded-[2rem] border border-slate-200 bg-white/95 p-8 shadow-[0_24px_80px_-24px_rgba(15,23,42,0.35)] backdrop-blur">
+            <div className="flex flex-col items-center gap-4 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#00C5CD]/10">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-[#00C5CD]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25H4.5a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5H4.5a2.25 2.25 0 00-2.25 2.25m19.5 0l-9.75 6.75L2.25 6.75" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm uppercase tracking-[0.3em] text-slate-500">Password recovery</p>
+                <h1 className="mt-2 text-2xl font-semibold text-slate-900">Check your inbox</h1>
+                <p className="mt-3 text-slate-600">
+                  We sent a secure reset link to <span className="font-medium text-slate-900">{email}</span>. Follow it to choose a new password.
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl font-semibold text-slate-900">Check your email</h1>
-              <p className="mt-3 text-slate-600">
-                We sent a password reset link to <span className="font-medium text-slate-900">{email}</span>. Follow the link to choose a new password.
-              </p>
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              If you don’t see the email within a few minutes, please check your spam or junk folder.
             </div>
+            <button
+              onClick={() => { setMode('login'); setResetSent(false); setMessage(''); }}
+              className="mt-6 w-full rounded-3xl bg-[#00C5CD] px-4 py-3 font-medium text-white transition hover:bg-[#00CED1]"
+            >
+              Back to log in
+            </button>
           </div>
-          <button
-            onClick={() => { setMode('login'); setResetSent(false); setMessage(''); }}
-            className="w-full rounded-3xl bg-slate-900 px-4 py-3 text-white hover:bg-slate-800"
-          >
-            Back to log in
-          </button>
         </div>
       );
     }
 
     return (
-      <div className="mx-auto max-w-md space-y-6 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-        <div>
-          <p className="text-sm uppercase tracking-[0.3em] text-slate-500">Account</p>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-900">Forgot password</h1>
-          <p className="mt-3 text-slate-600">Enter the email address linked to your account and we will send you a reset link.</p>
-        </div>
-        <form onSubmit={handleForgotPassword} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
-              className={defaultInputClass}
-            />
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(0,197,205,0.16),_transparent_45%),linear-gradient(135deg,_#f8fafc_0%,_#ffffff_55%,_#f0fdfa_100%)] px-4 py-12 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-md rounded-[2rem] border border-slate-200 bg-white/95 p-8 shadow-[0_24px_80px_-24px_rgba(15,23,42,0.35)] backdrop-blur">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#00C5CD]/10">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-[#00C5CD]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V7.5a4.5 4.5 0 00-9 0v3M6.75 10.5h10.5a1.5 1.5 0 011.5 1.5v6a1.5 1.5 0 01-1.5 1.5H6.75a1.5 1.5 0 01-1.5-1.5v-6a1.5 1.5 0 011.5-1.5z" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm uppercase tracking-[0.3em] text-slate-500">Account</p>
+              <h1 className="text-2xl font-semibold text-slate-900">Forgot password</h1>
+            </div>
           </div>
-          <button className="w-full rounded-3xl bg-slate-900 px-4 py-3 text-white hover:bg-slate-800">
-            Send reset link
-          </button>
-          <p className="text-center text-sm text-slate-600">
-            <button type="button" onClick={() => { setMode('login'); setMessage(''); }} className="font-semibold text-[#00C5CD] hover:text-[#00CED1]">
-              Back to log in
+          <p className="mt-5 text-slate-600">Enter the email address linked to your account and we will send you a secure reset link.</p>
+          <form onSubmit={handleForgotPassword} className="mt-6 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+                className={defaultInputClass}
+              />
+            </div>
+            <button className="w-full rounded-3xl bg-[#00C5CD] px-4 py-3 font-medium text-white transition hover:bg-[#00CED1]">
+              Send reset link
             </button>
-          </p>
-        </form>
-        {message ? <p className="text-sm text-red-500">{message}</p> : null}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+              Need to sign in instead? <button type="button" onClick={() => { setMode('login'); setMessage(''); }} className="font-semibold text-[#00C5CD] hover:text-[#00CED1]">Return to log in</button>
+            </div>
+          </form>
+          {message ? <p className="mt-4 text-sm text-red-500">{message}</p> : null}
+        </div>
       </div>
     );
   }

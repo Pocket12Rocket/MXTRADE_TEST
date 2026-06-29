@@ -22,7 +22,7 @@ function getSiteBaseUrl(req) {
   return `${proto}://${host}`;
 }
 
-async function sendEmail({ to, subject, html }) {
+async function sendEmail({ to, subject, html, text }) {
   const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
   const smtpUser = (process.env.SMTP_USER || '').trim();
   const smtpPass = (process.env.SMTP_PASS || '').trim();
@@ -39,7 +39,7 @@ async function sendEmail({ to, subject, html }) {
         Authorization: `Bearer ${resendApiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ from: fromEmail, to: [to], subject, html }),
+      body: JSON.stringify({ from: fromEmail, to: [to], subject, html, ...(text ? { text } : {}) }),
     });
 
     if (response.ok) {
@@ -61,6 +61,7 @@ async function sendEmail({ to, subject, html }) {
       to,
       subject,
       html,
+      text,
     });
     return;
   }
@@ -87,6 +88,7 @@ export default async function handler(req, res) {
     });
 
     const subject = 'Reset your FastSport password';
+    const text = `Hello,\n\nWe received a request to reset the password for your FastSport account.\n\nFollow this link to reset your FastSport password for your account:\n${resetLink}\n\nIf you did not request this change, you can safely ignore this email.\n\nThanks,\nFastSport Team`;
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; color: #111827;">
         <h2 style="margin-bottom: 12px; color: #0f172a;">Reset your FastSport password</h2>
@@ -104,7 +106,7 @@ export default async function handler(req, res) {
       </div>
     `;
 
-    await sendEmail({ to: email, subject, html });
+    await sendEmail({ to: email, subject, html, text });
     return res.status(200).json({ message: 'Password reset email sent.' });
   } catch (error) {
     const code = error?.code || '';
