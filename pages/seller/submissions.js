@@ -114,6 +114,9 @@ export default function SellerSubmissions() {
     accessoriesCondition: '',
     accessoriesBrand: '',
     customAccessoriesBrand: '',
+    partsCondition: '',
+    partsBrand: '',
+    customPartsBrand: '',
   });
 
   useEffect(() => {
@@ -273,6 +276,11 @@ export default function SellerSubmissions() {
     const hasSubmissionAccessoriesBrand = submissionAccessoriesBrand
       ? brandOptions.some((brand) => brand.toLowerCase() === submissionAccessoriesBrand.toLowerCase())
       : false;
+    
+    const submissionPartsBrand = submission.customFields?.partsBrand || submission.customFields?.customPartsBrandOptional || '';
+    const hasSubmissionPartsBrand = submissionPartsBrand
+      ? brandOptions.some((brand) => brand.toLowerCase() === submissionPartsBrand.toLowerCase())
+      : false;
 
     const submissionModels = Array.isArray(submission.model)
       ? submission.model.map((item) => String(item || '').trim()).filter(Boolean)
@@ -308,6 +316,13 @@ export default function SellerSubmissions() {
           : OTHER_BRAND_VALUE
         : '',
       customAccessoriesBrand: submissionAccessoriesBrand && !hasSubmissionAccessoriesBrand ? submissionAccessoriesBrand : '',
+      partsCondition: submission.customFields?.partsCondition || '',
+      partsBrand: submissionPartsBrand
+        ? hasSubmissionPartsBrand
+          ? submissionPartsBrand
+          : OTHER_BRAND_VALUE
+        : '',
+      customPartsBrand: submissionPartsBrand && !hasSubmissionPartsBrand ? submissionPartsBrand : '',
     });
   };
 
@@ -398,17 +413,21 @@ export default function SellerSubmissions() {
     if (submissionCategory === 'Accessories') {
       const resolvedAccessoriesBrand = editForm.accessoriesBrand === OTHER_BRAND_VALUE ? editForm.customAccessoriesBrand.trim() : editForm.accessoriesBrand.trim();
 
-      if (!editForm.accessoriesSubcategory || !editForm.accessoriesCondition || !resolvedAccessoriesBrand || !editForm.description.trim()) {
+      if (!editForm.accessoriesSubcategory || !editForm.accessoriesCondition || !editForm.description.trim()) {
         setError('Please complete all required accessories fields before saving.');
         return null;
       }
 
+      const accessoriesName = resolvedAccessoriesBrand ? `${resolvedAccessoriesBrand} ${editForm.accessoriesSubcategory.trim()}` : editForm.accessoriesSubcategory.trim();
+      const specLines = [`Condition: ${editForm.accessoriesCondition.trim()}`];
+      if (resolvedAccessoriesBrand) specLines.push(`Brand: ${resolvedAccessoriesBrand}`);
+
       return {
-        name: `${resolvedAccessoriesBrand} ${editForm.accessoriesSubcategory.trim()}`,
+        name: accessoriesName,
         price: Number(editForm.price),
         subcategory: editForm.accessoriesSubcategory.trim(),
         description: editForm.description.trim(),
-        specifications: [`Condition: ${editForm.accessoriesCondition.trim()}`, `Brand: ${resolvedAccessoriesBrand}`],
+        specifications: specLines,
         accessoriesSubcategory: editForm.accessoriesSubcategory.trim(),
         accessoriesCondition: editForm.accessoriesCondition.trim(),
         accessoriesBrand: resolvedAccessoriesBrand,
@@ -992,13 +1011,13 @@ export default function SellerSubmissions() {
 
                   <div className="grid gap-4 sm:grid-cols-2">
                     <label className="block">
-                      <span className="text-sm font-medium text-slate-700">What brand is the item?</span>
+                      <span className="text-sm font-medium text-slate-700">Brand <span className="text-xs text-slate-500">(optional)</span></span>
                       <select
                         value={editForm.accessoriesBrand}
                         onChange={(event) => setEditForm((prev) => ({ ...prev, accessoriesBrand: event.target.value }))}
-                        required
                         className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                       >
+                        <option value="">-- Select or leave blank --</option>
                         {brandOptions.map((item) => (
                           <option key={item} value={item}>
                             {item}
@@ -1015,7 +1034,6 @@ export default function SellerSubmissions() {
                           type="text"
                           value={editForm.customAccessoriesBrand}
                           onChange={(event) => setEditForm((prev) => ({ ...prev, customAccessoriesBrand: event.target.value }))}
-                          required
                           maxLength={60}
                           className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                         />

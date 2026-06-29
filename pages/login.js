@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { auth } from '../lib/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { createUserProfile } from '../lib/firestoreHelpers';
 
 export default function Login() {
@@ -152,41 +152,27 @@ export default function Login() {
   const handleForgotPassword = async (event) => {
     event.preventDefault();
     setMessage('');
+
+    if (!email.trim()) {
+      setMessage('Please enter your email address.');
+      return;
+    }
+
     try {
-      // Prefer Firebase default reset flow to avoid continue-url allowlist mismatches.
-      await sendPasswordResetEmail(auth, email);
-      setResetSent(true);
-    } catch (error) {
-      // Backward-compatible fallback in case a project requires explicit continue URL.
-      if (error?.code === 'auth/missing-continue-uri') {
-        try {
-          await sendPasswordResetEmail(auth, email, {
-            url: `${window.location.origin}/login`,
-            handleCodeInApp: false,
-          });
-          setResetSent(true);
-          return;
-        } catch (fallbackError) {
-          error = fallbackError;
-        }
+      const response = await fetch('/api/auth/password-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(data?.message || 'We could not send the password reset email right now.');
+        return;
       }
 
-      if (
-        error?.code === 'auth/user-not-found' ||
-        error?.code === 'auth/invalid-credential' ||
-        error?.code === 'auth/missing-email'
-      ) {
-        setMessage('No account found with this email address.');
-        return;
-      }
-      if (error?.code === 'auth/invalid-email') {
-        setMessage('Please enter a valid email address.');
-        return;
-      }
-      if (error?.code === 'auth/unauthorized-continue-uri') {
-        setMessage('Password reset is blocked by Firebase Auth domain settings. Please contact support to allowlist this site domain.');
-        return;
-      }
+      setResetSent(true);
+    } catch (error) {
       setMessage(error?.message || 'Something went wrong. Please try again.');
     }
   };

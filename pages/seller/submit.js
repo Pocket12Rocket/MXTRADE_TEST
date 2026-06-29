@@ -84,6 +84,8 @@ export default function SellerSubmit() {
   const [description, setDescription] = useState('');
   // Remove specifications for parts, add condition
   const [partsCondition, setPartsCondition] = useState('');
+  const [partsBrand, setPartsBrand] = useState('');
+  const [customPartsBrand, setCustomPartsBrand] = useState('');
   const [files, setFiles] = useState([]);
   const [status, setStatus] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -243,8 +245,7 @@ export default function SellerSubmit() {
     }
 
     if (category === 'Accessories') {
-      const resolvedBrand = accessoriesBrand === OTHER_BRAND_VALUE ? customAccessoriesBrand.trim() : accessoriesBrand.trim();
-      if (!accessoriesSubcategory || !accessoriesCondition || !resolvedBrand || !description.trim()) {
+      if (!accessoriesSubcategory || !accessoriesCondition || !description.trim()) {
         setStatus('Please complete all required accessories fields before submitting.');
         return;
       }
@@ -294,15 +295,17 @@ export default function SellerSubmit() {
           gearComboPantsSize: gearItem === 'Gear Combo' ? gearComboPantsSize : '',
         };
       } else if (category === 'Accessories') {
-        resolvedName = `${resolvedAccessoriesBrand} ${accessoriesSubcategory}`;
+        const resolvedAccessoriesBrandForDisplay = (accessoriesBrand && accessoriesBrand !== OTHER_BRAND_VALUE) ? accessoriesBrand : (accessoriesBrand === OTHER_BRAND_VALUE ? customAccessoriesBrand.trim() : '');
+        resolvedName = resolvedAccessoriesBrandForDisplay ? `${resolvedAccessoriesBrandForDisplay} ${accessoriesSubcategory}` : accessoriesSubcategory;
         resolvedSubcategory = accessoriesSubcategory;
         resolvedDescription = description;
-        resolvedSpecifications = `Condition: ${accessoriesCondition}\nBrand: ${resolvedAccessoriesBrand}`;
+        const brandSpecLine = resolvedAccessoriesBrandForDisplay ? `Brand: ${resolvedAccessoriesBrandForDisplay}` : '';
+        resolvedSpecifications = brandSpecLine ? `Condition: ${accessoriesCondition}\n${brandSpecLine}` : `Condition: ${accessoriesCondition}`;
         resolvedCustomFields = {
           accessoriesSubcategory,
           accessoriesCondition,
-          accessoriesBrand: resolvedAccessoriesBrand,
-          customAccessoriesBrand: accessoriesBrand === OTHER_BRAND_VALUE ? resolvedAccessoriesBrand : '',
+          accessoriesBrand: resolvedAccessoriesBrandForDisplay,
+          customAccessoriesBrand: accessoriesBrand === OTHER_BRAND_VALUE ? resolvedAccessoriesBrandForDisplay : '',
         };
       } else {
         const normalizedManufacturer = (manufacturer || '').trim();
@@ -330,10 +333,12 @@ export default function SellerSubmit() {
           return;
         }
 
+        const resolvedOptionalPartsBrand = partsBrand === OTHER_BRAND_VALUE ? customPartsBrand.trim() : partsBrand.trim();
         resolvedName = name;
         resolvedSubcategory = subcategory;
         resolvedDescription = description;
-        resolvedSpecifications = `Condition: ${partsCondition}\nBrand: ${resolvedPartsBrand}`;
+        const brandSpecLine = resolvedOptionalPartsBrand ? `Brand: ${resolvedOptionalPartsBrand}` : `Brand: ${resolvedPartsBrand}`;
+        resolvedSpecifications = `Condition: ${partsCondition}\n${brandSpecLine}`;
         resolvedCustomFields = {
           partsCondition,
           manufacturer: normalizedManufacturer,
@@ -341,6 +346,8 @@ export default function SellerSubmit() {
           otherManufacturer: normalizedManufacturer === 'Other' ? normalizedOtherManufacturer : '',
           brand: resolvedPartsBrand,
           customPartsBrand: normalizedManufacturer === 'Other' ? normalizedOtherManufacturer : '',
+          partsBrand: resolvedOptionalPartsBrand,
+          customPartsBrandOptional: partsBrand === OTHER_BRAND_VALUE ? resolvedOptionalPartsBrand : '',
         };
       }
 
@@ -381,6 +388,8 @@ export default function SellerSubmit() {
       setCustomAccessoriesBrand('');
       setDescription('');
       setPartsCondition('');
+      setPartsBrand('');
+      setCustomPartsBrand('');
       setManufacturer('');
       setModel([]);
       setOtherManufacturer('');
@@ -709,13 +718,13 @@ export default function SellerSubmit() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block">
-                <span className="text-sm font-medium text-slate-700">What brand is the item?</span>
+                <span className="text-sm font-medium text-slate-700">Brand <span className="text-xs text-slate-500">(optional)</span></span>
                 <select
                   value={accessoriesBrand}
                   onChange={(event) => setAccessoriesBrand(event.target.value)}
-                  required
                   className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                 >
+                  <option value="">-- Select or leave blank --</option>
                   {brandOptions.map((item) => (
                     <option key={item} value={item}>
                       {item}
@@ -732,7 +741,6 @@ export default function SellerSubmit() {
                     type="text"
                     value={customAccessoriesBrand}
                     onChange={(event) => setCustomAccessoriesBrand(event.target.value)}
-                    required
                     maxLength={60}
                     placeholder="Type the brand name"
                     className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
@@ -803,6 +811,37 @@ export default function SellerSubmit() {
                   ))}
                 </select>
               </label>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Part Brand <span className="text-xs text-slate-500">(optional)</span></span>
+                <select
+                  value={partsBrand}
+                  onChange={e => setPartsBrand(e.target.value)}
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
+                >
+                  <option value="">-- Select or leave blank --</option>
+                  {brandOptions.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                  <option value={OTHER_BRAND_VALUE}>Other (Add New Brand)</option>
+                </select>
+              </label>
+              {partsBrand === OTHER_BRAND_VALUE ? (
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-700">Enter brand name</span>
+                  <input
+                    type="text"
+                    value={customPartsBrand}
+                    onChange={e => setCustomPartsBrand(e.target.value)}
+                    maxLength={60}
+                    placeholder="Type the brand name"
+                    className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
+                  />
+                </label>
+              ) : null}
             </div>
             <label className="block">
               <span className="text-sm font-medium text-slate-700">Dirt Bike Category</span>
