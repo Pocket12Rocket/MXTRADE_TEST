@@ -191,7 +191,7 @@ export default function Login() {
           return;
         }
         if (fallbackCode === 'auth/unauthorized-continue-uri') {
-          setMessage('Password reset is currently blocked by your authentication domain settings. Please contact support for help.');
+          setMessage('Password reset could not be completed because your authentication domain is not configured for this redirect. Please contact support for help.');
           return;
         }
         setMessage(fallbackMessage || fallbackError?.message || 'Something went wrong. Please try again.');
@@ -214,7 +214,7 @@ export default function Login() {
           return;
         }
         if (fallbackCode === 'auth/unauthorized-continue-uri') {
-          setMessage('Password reset is currently blocked by your authentication domain settings. Please contact support for help.');
+          setMessage('Password reset could not be completed because your authentication domain is not configured for this redirect. Please contact support for help.');
           return;
         }
         setMessage(error?.message || fallbackError?.message || 'Something went wrong. Please try again.');
