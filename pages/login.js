@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { auth } from '../lib/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { createUserProfile } from '../lib/firestoreHelpers';
 
 export default function Login() {
@@ -173,52 +173,10 @@ export default function Login() {
         return;
       }
 
-      const fallbackMessage = data?.message || 'We could not send the password reset email right now.';
-      try {
-        await sendPasswordResetEmail(auth, normalizedEmail, {
-          url: `${window.location.origin}/login`,
-          handleCodeInApp: false,
-        });
-        setResetSent(true);
-      } catch (fallbackError) {
-        const fallbackCode = fallbackError?.code || '';
-        if (fallbackCode === 'auth/user-not-found' || fallbackCode === 'auth/invalid-credential' || fallbackCode === 'auth/missing-email') {
-          setMessage('No account found with this email address.');
-          return;
-        }
-        if (fallbackCode === 'auth/invalid-email') {
-          setMessage('Please enter a valid email address.');
-          return;
-        }
-        if (fallbackCode === 'auth/unauthorized-continue-uri') {
-          setMessage('Password reset could not be completed because your authentication domain is not configured for this redirect. Please contact support for help.');
-          return;
-        }
-        setMessage(fallbackMessage || fallbackError?.message || 'Something went wrong. Please try again.');
-      }
+      const detailMessage = data?.detail ? ` ${data.detail}` : '';
+      setMessage(`${data?.message || 'We could not send the password reset email right now. Please try again later.'}${detailMessage}`);
     } catch (error) {
-      try {
-        await sendPasswordResetEmail(auth, normalizedEmail, {
-          url: `${window.location.origin}/login`,
-          handleCodeInApp: false,
-        });
-        setResetSent(true);
-      } catch (fallbackError) {
-        const fallbackCode = fallbackError?.code || '';
-        if (fallbackCode === 'auth/user-not-found' || fallbackCode === 'auth/invalid-credential' || fallbackCode === 'auth/missing-email') {
-          setMessage('No account found with this email address.');
-          return;
-        }
-        if (fallbackCode === 'auth/invalid-email') {
-          setMessage('Please enter a valid email address.');
-          return;
-        }
-        if (fallbackCode === 'auth/unauthorized-continue-uri') {
-          setMessage('Password reset could not be completed because your authentication domain is not configured for this redirect. Please contact support for help.');
-          return;
-        }
-        setMessage(error?.message || fallbackError?.message || 'Something went wrong. Please try again.');
-      }
+      setMessage(error?.message || 'We could not send the password reset email right now. Please try again later.');
     }
   };
 

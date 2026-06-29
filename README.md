@@ -50,6 +50,18 @@ This starter project is built as a clean ecommerce MVP using **Next.js**, **Tail
    npm run dev
    ```
 
+## Email deliverability for FastSport
+
+To reduce password-reset emails landing in spam, configure your mail provider and DNS for the FastSport domain:
+
+1. Use a real sending address on the FastSport domain, such as `support@fastsport.co.za`.
+2. Add SPF records for your mail provider so the provider is authorized to send on behalf of FastSport.
+3. Set up DKIM signing for the same provider.
+4. Add DMARC policy (for example `p=quarantine` or `p=reject`) to help mailbox providers trust the domain.
+5. Make sure the `CONTACT_FROM_EMAIL` and `CONTACT_REPLY_TO_EMAIL` values in your environment match the verified domain.
+
+Example DNS values vary by provider, but the goal is to publish SPF, DKIM, and DMARC records for `fastsport.co.za`.
+
 ## Notes
 
 - This scaffold is intentionally simple for a clean MVP.
