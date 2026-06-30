@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import crypto from 'crypto';
+import admin from '../../../lib/firebaseAdmin';
 
 function escapeHtml(value) {
   return String(value || '')
@@ -22,12 +22,7 @@ function getSiteBaseUrl(req) {
   return `${proto}://${host}`;
 }
 
-function getAllowedRedirectUrl(req) {
-  const configured = (process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || '').trim();
-  if (configured) {
-    return `https://${configured}/login`;
-  }
-
+function getPasswordResetContinueUrl(req) {
   return `${getSiteBaseUrl(req)}/login`;
 }
 
@@ -181,10 +176,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    const redirectUrl = getAllowedRedirectUrl(req);
-
-    const token = crypto.randomBytes(32).toString('hex');
-    const actionLink = `${redirectUrl}?resetToken=${token}&email=${encodeURIComponent(email)}`;
+    const actionLink = await admin.auth().generatePasswordResetLink(email, {
+      url: getPasswordResetContinueUrl(req),
+      handleCodeInApp: false,
+    });
 
     const subject = 'Reset your FastSport password';
     const text = `Hello,\n\nWe received a request to reset the password for your FastSport account.\n\nFollow this link to reset your FastSport password for your account:\n${actionLink}\n\nIf you did not request this change, you can safely ignore this email.\n\nThanks,\nFastSport Team`;
@@ -221,6 +216,13 @@ export default async function handler(req, res) {
       return res.status(429).json({
         message: 'Too many password reset requests were sent recently. Please wait a few minutes before trying again.',
         detail: 'Firebase: Error (auth/too-many-requests).',
+      });
+    }
+
+    if (code === 'auth/unauthorized-continue-uri' || code === 'auth/invalid-continue-uri') {
+      return res.status(500).json({
+        message: 'Password reset is not fully configured yet. Please ask support to allowlist the site domain in Firebase Authentication authorized domains.',
+        detail: error?.message || code,
       });
     }
 
