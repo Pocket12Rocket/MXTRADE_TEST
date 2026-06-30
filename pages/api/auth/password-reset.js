@@ -176,10 +176,23 @@ export default async function handler(req, res) {
   }
 
   try {
-    const actionLink = await admin.auth().generatePasswordResetLink(email, {
-      url: getPasswordResetContinueUrl(req),
-      handleCodeInApp: false,
-    });
+    let actionLink;
+    try {
+      actionLink = await admin.auth().generatePasswordResetLink(email, {
+        url: getPasswordResetContinueUrl(req),
+        handleCodeInApp: false,
+      });
+    } catch (linkError) {
+      const linkCode = linkError?.code || '';
+      const isContinueUrlBlocked = linkCode === 'auth/unauthorized-continue-uri' || linkCode === 'auth/invalid-continue-uri';
+
+      if (!isContinueUrlBlocked) {
+        throw linkError;
+      }
+
+      // Fallback to the default Firebase-hosted reset flow when continue URL domain is not allowlisted yet.
+      actionLink = await admin.auth().generatePasswordResetLink(email);
+    }
 
     const subject = 'Reset your FastSport password';
     const text = `Hello,\n\nWe received a request to reset the password for your FastSport account.\n\nFollow this link to reset your FastSport password for your account:\n${actionLink}\n\nIf you did not request this change, you can safely ignore this email.\n\nThanks,\nFastSport Team`;
@@ -216,13 +229,6 @@ export default async function handler(req, res) {
       return res.status(429).json({
         message: 'Too many password reset requests were sent recently. Please wait a few minutes before trying again.',
         detail: 'Firebase: Error (auth/too-many-requests).',
-      });
-    }
-
-    if (code === 'auth/unauthorized-continue-uri' || code === 'auth/invalid-continue-uri') {
-      return res.status(500).json({
-        message: 'Password reset is not fully configured yet. Please ask support to allowlist the site domain in Firebase Authentication authorized domains.',
-        detail: error?.message || code,
       });
     }
 
