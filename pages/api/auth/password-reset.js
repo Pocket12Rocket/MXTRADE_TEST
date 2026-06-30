@@ -34,6 +34,10 @@ function getAllowedRedirectUrl(req) {
 const resetRequestCooldownMs = 3 * 60 * 1000;
 const resetRequestCooldowns = new Map();
 
+function isLikelyResendApiKey(value) {
+  return /^re_[A-Za-z0-9]+$/.test(String(value || '').trim());
+}
+
 function getResetThrottleKey(req, email) {
   const forwardedFor = req.headers['x-forwarded-for'];
   const ip = Array.isArray(forwardedFor)
@@ -70,7 +74,16 @@ async function sendEmail({ to, subject, html, text }) {
     return;
   }
 
+  const hasSmtpFallback = Boolean((smtpHost && smtpUser && smtpPass) || (smtpUser && smtpPass));
+
   if (resendApiKey) {
+    if (!isLikelyResendApiKey(resendApiKey)) {
+      if (!hasSmtpFallback) {
+        throw new Error('RESEND_API_KEY is set but does not look valid, and no SMTP fallback is configured.');
+      }
+
+      console.warn('[Password Reset] RESEND_API_KEY format looks invalid. Skipping Resend and falling back to SMTP transport.');
+    } else {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -95,7 +108,15 @@ async function sendEmail({ to, subject, html, text }) {
     }
 
     const errorBody = await response.text();
-    throw new Error(`Resend email failed: ${response.status} ${errorBody}`);
+    const resendError = `Resend email failed: ${response.status} ${errorBody}`;
+    const isInvalidResendKey = response.status === 401 && /api key is invalid/i.test(errorBody);
+
+    if (!isInvalidResendKey || !hasSmtpFallback) {
+      throw new Error(resendError);
+    }
+
+    console.warn('[Password Reset] Invalid RESEND_API_KEY. Falling back to SMTP transport.');
+    }
   }
 
   if (smtpHost && smtpUser && smtpPass) {
