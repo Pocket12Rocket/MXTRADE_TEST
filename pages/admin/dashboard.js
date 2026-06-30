@@ -26,6 +26,47 @@ import {
 
 
 
+function parseDateValue(value) {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value?.toDate === 'function') {
+    return value.toDate();
+  }
+
+  if (typeof value?.seconds === 'number') {
+    return new Date(value.seconds * 1000);
+  }
+
+  if (typeof value === 'string') {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  return null;
+}
+
+function getProductSortTimestamp(product) {
+  return parseDateValue(product?.statusUpdatedAt)
+    || parseDateValue(product?.updatedAt)
+    || parseDateValue(product?.createdAt)
+    || null;
+}
+
+function isRecentPurchase(product) {
+  if (String(product?.status || '').toLowerCase() !== 'purchased') {
+    return false;
+  }
+
+  const timestamp = getProductSortTimestamp(product);
+  if (!timestamp) {
+    return true;
+  }
+
+  return Date.now() - timestamp.getTime() <= 24 * 60 * 60 * 1000;
+}
+
 function AdminDashboard() {
           // State for products, submissions, faqs
           const [products, setProducts] = useState([]);
@@ -221,6 +262,16 @@ function AdminDashboard() {
     );
   }
 
+  const sortedProducts = [...products].sort((a, b) => {
+    const aTime = getProductSortTimestamp(a)?.getTime?.() ?? 0;
+    const bTime = getProductSortTimestamp(b)?.getTime?.() ?? 0;
+    if (aTime !== bTime) {
+      return bTime - aTime;
+    }
+
+    return String(a?.name || '').localeCompare(String(b?.name || ''));
+  });
+
   return (
     <div className="space-y-8">
       {/* --- Top section: admin info, submissions, sellers, products --- */}
@@ -367,8 +418,11 @@ function AdminDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {products.map((product) => (
-                  <tr key={product.id} className="hover:bg-slate-50">
+                {sortedProducts.map((product) => (
+                  <tr
+                    key={product.id}
+                    className={`hover:bg-slate-50 ${isRecentPurchase(product) ? 'border-2 border-rose-500 bg-rose-50/70' : ''}`}
+                  >
                     <td className="px-4 py-3 text-slate-900">{product.name}</td>
                     <td className="px-4 py-3 text-slate-600">{product.sellerEmail || 'Unknown'}</td>
                     <td className="px-4 py-3 text-slate-900">
