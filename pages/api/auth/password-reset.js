@@ -176,6 +176,18 @@ export default async function handler(req, res) {
   }
 
   try {
+    await admin.auth().getUserByEmail(email);
+  } catch (userLookupError) {
+    if (userLookupError?.code === 'auth/user-not-found') {
+      return res.status(404).json({
+        message: 'This email is not registered on the system.',
+      });
+    }
+
+    throw userLookupError;
+  }
+
+  try {
     let actionLink;
     try {
       actionLink = await admin.auth().generatePasswordResetLink(email, {

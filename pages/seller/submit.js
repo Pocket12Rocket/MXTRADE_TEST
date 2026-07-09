@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 // Tooltip for selling price info
 function SellingPriceInfo({ price }) {
   const [show, setShow] = useState(false);
@@ -48,6 +48,7 @@ const SELL_CATEGORY_OPTIONS = [
 ];
 
 const ALPHA_SIZE_GEAR_ITEMS = ['Helmet', 'Jersey', 'Socks', 'Protection'];
+const SIZELESS_GEAR_ITEMS = ['Goggles'];
 
 const ALPHA_SIZE_OPTIONS = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '4XL', 'Youth S', 'Youth M', 'Youth L', 'Youth XL'];
 
@@ -58,6 +59,22 @@ const BOOTS_SIZE_OPTIONS = ['UK1', 'UK2', 'UK3', 'UK4', 'UK5', 'UK6', 'UK7', 'UK
 const GLOVES_SIZE_OPTIONS = ['YOUTH S', 'YOUTH M', 'YOUTH L', 'YOUTH XL', 'XS', 'M', 'L', 'XL', 'XXL'];
 
 const OTHER_BRAND_VALUE = '__other__';
+const MAX_LISTING_IMAGES = 5;
+
+function mergeUniqueFiles(existingFiles, incomingFiles) {
+  const seen = new Set((existingFiles || []).map((file) => `${file.name}-${file.size}-${file.lastModified}`));
+  const merged = [...(existingFiles || [])];
+
+  (incomingFiles || []).forEach((file) => {
+    const key = `${file.name}-${file.size}-${file.lastModified}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      merged.push(file);
+    }
+  });
+
+  return merged;
+}
 
 function getCategoryLabel(categoryValue) {
   return SELL_CATEGORY_OPTIONS.find((option) => option.value === categoryValue)?.label || categoryValue;
@@ -222,6 +239,45 @@ export default function SellerSubmit() {
     setStatus('');
   };
 
+  const selectedFilePreviews = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return [];
+    }
+
+    return files.map((file, index) => ({
+      id: `${file.name}-${file.size}-${file.lastModified}-${index}`,
+      name: file.name,
+      previewUrl: URL.createObjectURL(file),
+    }));
+  }, [files]);
+
+  useEffect(() => {
+    return () => {
+      selectedFilePreviews.forEach((item) => {
+        URL.revokeObjectURL(item.previewUrl);
+      });
+    };
+  }, [selectedFilePreviews]);
+
+  const handleFilesChange = (event) => {
+    const incomingFiles = Array.from(event.target.files || []);
+
+    setFiles((prev) => {
+      const mergedFiles = mergeUniqueFiles(prev, incomingFiles);
+
+      if (mergedFiles.length > MAX_LISTING_IMAGES) {
+        setStatus('You can upload a maximum of 5 images per listing.');
+        return mergedFiles.slice(0, MAX_LISTING_IMAGES);
+      }
+
+      setStatus('');
+      return mergedFiles;
+    });
+
+    // Allow selecting the same file again in a later pick.
+    event.target.value = '';
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!user) return;
@@ -233,7 +289,7 @@ export default function SellerSubmit() {
 
     if (category === 'Gear') {
       const resolvedGearBrand = gearBrand === OTHER_BRAND_VALUE ? customGearBrand.trim() : gearBrand.trim();
-      const needsSingleSize = gearItem !== 'Gear Combo';
+      const needsSingleSize = gearItem !== 'Gear Combo' && !SIZELESS_GEAR_ITEMS.includes(gearItem);
       const missingSingleSize = needsSingleSize && !gearSize.trim();
       const missingComboSizes = gearItem === 'Gear Combo' && (!gearComboShirtSize || !gearComboPantsSize);
       const missingBrand = !resolvedGearBrand;
@@ -280,11 +336,15 @@ export default function SellerSubmit() {
       if (category === 'Gear') {
         const resolvedGearSize = gearItem === 'Gear Combo'
           ? `Shirt: ${gearComboShirtSize}, Pants: ${gearComboPantsSize}`
+          : SIZELESS_GEAR_ITEMS.includes(gearItem)
+            ? ''
           : gearSize.trim();
         resolvedName = `${resolvedGearBrand} ${gearItem}`;
         resolvedSubcategory = gearItem;
         resolvedDescription = '';
-        resolvedSpecifications = `Condition: ${gearCondition}\nBrand: ${resolvedGearBrand}\nSize: ${resolvedGearSize}`;
+        resolvedSpecifications = SIZELESS_GEAR_ITEMS.includes(gearItem)
+          ? `Condition: ${gearCondition}\nBrand: ${resolvedGearBrand}`
+          : `Condition: ${gearCondition}\nBrand: ${resolvedGearBrand}\nSize: ${resolvedGearSize}`;
         resolvedCustomFields = {
           gearItem,
           gearCondition,
@@ -654,7 +714,7 @@ export default function SellerSubmit() {
                 </div>
               ) : null}
 
-              {gearItem !== 'Gear Combo' && !ALPHA_SIZE_GEAR_ITEMS.includes(gearItem) && gearItem !== 'Pants' ? (
+              {gearItem !== 'Gear Combo' && !ALPHA_SIZE_GEAR_ITEMS.includes(gearItem) && !SIZELESS_GEAR_ITEMS.includes(gearItem) && gearItem !== 'Pants' && gearItem !== 'Boots' && gearItem !== 'Gloves' ? (
                 <label className="block">
                   <span className="text-sm font-medium text-slate-700">Please provide the size of the gear</span>
                   <input
@@ -941,7 +1001,7 @@ export default function SellerSubmit() {
             type="file"
             accept="image/*"
             multiple
-            onChange={(event) => setFiles(event.target.files)}
+            onChange={handleFilesChange}
             required
             className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
           />
@@ -950,6 +1010,35 @@ export default function SellerSubmit() {
               ? 'Please upload between 3 and 5 images. Files are stored in Firebase Storage.'
               : 'Upload up to 5 images. Files are stored in Firebase Storage.'}
           </p>
+
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700">Selected images</p>
+              <p className="text-xs text-slate-600">{files.length}/5 selected</p>
+            </div>
+
+            {selectedFilePreviews.length > 0 ? (
+              <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {selectedFilePreviews.map((item, index) => (
+                  <div key={item.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                    <img src={item.previewUrl} alt={item.name} className="h-32 w-full object-cover" />
+                    <div className="flex items-center justify-between gap-2 border-t border-slate-200 px-3 py-2">
+                      <p className="truncate text-xs text-slate-600" title={item.name}>{item.name}</p>
+                      <button
+                        type="button"
+                        onClick={() => setFiles((prev) => prev.filter((_, fileIndex) => fileIndex !== index))}
+                        className="text-xs font-semibold uppercase tracking-[0.06em] text-rose-700 hover:text-rose-800"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-slate-600">No images selected yet.</p>
+            )}
+          </div>
         </label>
         <button disabled={isSubmitting} className="rounded-3xl bg-slate-900 px-6 py-3 text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60">
           {isSubmitting ? 'Submitting…' : 'Submit for review'}

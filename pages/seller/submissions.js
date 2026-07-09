@@ -29,11 +29,28 @@ const HIDDEN_SUBMISSION_KEYS = new Set([
 ]);
 
 const ALPHA_SIZE_GEAR_ITEMS = ['Helmet', 'Jersey', 'Socks', 'Protection'];
+const SIZELESS_GEAR_ITEMS = ['Goggles'];
 const ALPHA_SIZE_OPTIONS = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '4XL', 'Youth S', 'Youth M', 'Youth L', 'Youth XL'];
 const PANTS_SIZE_OPTIONS = ['4', '6', '8', '10', '12', '14', '22', '24', '26', '28', '30', '32', '34', '36', '38', '40', '42'];
 const BOOTS_SIZE_OPTIONS = ['UK1', 'UK2', 'UK3', 'UK4', 'UK5', 'UK6', 'UK7', 'UK8', 'UK9', 'UK10', 'UK11', 'UK12', 'UK13', 'UK14', 'UK15', 'UK16', '10j', '11j', '12j', '13j', '14j'];
 const GLOVES_SIZE_OPTIONS = ['YOUTH S', 'YOUTH M', 'YOUTH L', 'YOUTH XL', 'XS', 'M', 'L', 'XL', 'XXL'];
 const OTHER_BRAND_VALUE = '__other__';
+const MAX_LISTING_IMAGES = 5;
+
+function mergeUniqueFiles(existingFiles, incomingFiles) {
+  const seen = new Set((existingFiles || []).map((file) => `${file.name}-${file.size}-${file.lastModified}`));
+  const merged = [...(existingFiles || [])];
+
+  (incomingFiles || []).forEach((file) => {
+    const key = `${file.name}-${file.size}-${file.lastModified}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      merged.push(file);
+    }
+  });
+
+  return merged;
+}
 
 function formatFieldLabel(fieldName) {
   return fieldName
@@ -334,6 +351,26 @@ export default function SellerSubmissions() {
     setIsResubmitting(false);
   };
 
+  const handleEditNewFilesChange = (event) => {
+    const incomingFiles = Array.from(event.target.files || []);
+
+    setEditNewFiles((prev) => {
+      const mergedFiles = mergeUniqueFiles(prev, incomingFiles);
+      const maxAllowedNewFiles = Math.max(0, MAX_LISTING_IMAGES - editImageUrls.length);
+
+      if (mergedFiles.length > maxAllowedNewFiles) {
+        setError(`You can add up to ${maxAllowedNewFiles} more image${maxAllowedNewFiles === 1 ? '' : 's'} for this listing.`);
+        return mergedFiles.slice(0, maxAllowedNewFiles);
+      }
+
+      setError('');
+      return mergedFiles;
+    });
+
+    // Allow selecting the same file again in a later pick.
+    event.target.value = '';
+  };
+
   const getImageValidationError = () => {
     const totalImages = editImageUrls.length + editNewFiles.length;
     const isGearOrAccessories = editingSubmission?.category === 'Gear' || editingSubmission?.category === 'Accessories';
@@ -371,6 +408,26 @@ export default function SellerSubmissions() {
     return { ...baseUpdates, ...imageUpdates };
   };
 
+  const editNewFilePreviews = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return [];
+    }
+
+    return editNewFiles.map((file, index) => ({
+      id: `${file.name}-${file.size}-${file.lastModified}-${index}`,
+      name: file.name,
+      previewUrl: URL.createObjectURL(file),
+    }));
+  }, [editNewFiles]);
+
+  useEffect(() => {
+    return () => {
+      editNewFilePreviews.forEach((item) => {
+        URL.revokeObjectURL(item.previewUrl);
+      });
+    };
+  }, [editNewFilePreviews]);
+
   const getValidatedEditUpdates = () => {
     if (!editForm.price || Number(editForm.price) <= 0) {
       setError('Please enter a valid price greater than 0.');
@@ -381,7 +438,7 @@ export default function SellerSubmissions() {
 
     if (submissionCategory === 'Gear') {
       const resolvedGearBrand = editForm.gearBrand === OTHER_BRAND_VALUE ? editForm.customGearBrand.trim() : editForm.gearBrand.trim();
-      const needsSingleSize = editForm.gearItem !== 'Gear Combo';
+      const needsSingleSize = editForm.gearItem !== 'Gear Combo' && !SIZELESS_GEAR_ITEMS.includes(editForm.gearItem);
       const missingSingleSize = needsSingleSize && !editForm.gearSize.trim();
       const missingComboSizes = editForm.gearItem === 'Gear Combo' && (!editForm.gearComboShirtSize.trim() || !editForm.gearComboPantsSize.trim());
 
@@ -392,14 +449,21 @@ export default function SellerSubmissions() {
 
       const resolvedGearSize = editForm.gearItem === 'Gear Combo'
         ? `Shirt: ${editForm.gearComboShirtSize.trim()}, Pants: ${editForm.gearComboPantsSize.trim()}`
+        : SIZELESS_GEAR_ITEMS.includes(editForm.gearItem)
+          ? ''
         : editForm.gearSize.trim();
+
+      const specificationLines = [`Condition: ${editForm.gearCondition.trim()}`, `Brand: ${resolvedGearBrand}`];
+      if (!SIZELESS_GEAR_ITEMS.includes(editForm.gearItem)) {
+        specificationLines.push(`Size: ${resolvedGearSize}`);
+      }
 
       return {
         name: `${resolvedGearBrand} ${editForm.gearItem.trim()}`,
         price: Number(editForm.price),
         subcategory: editForm.gearItem.trim(),
         description: '',
-        specifications: [`Condition: ${editForm.gearCondition.trim()}`, `Brand: ${resolvedGearBrand}`, `Size: ${resolvedGearSize}`],
+        specifications: specificationLines,
         gearItem: editForm.gearItem.trim(),
         gearCondition: editForm.gearCondition.trim(),
         gearBrand: resolvedGearBrand,
@@ -950,7 +1014,7 @@ export default function SellerSubmissions() {
                     </div>
                   ) : null}
 
-                  {editForm.gearItem !== 'Gear Combo' && !ALPHA_SIZE_GEAR_ITEMS.includes(editForm.gearItem) && editForm.gearItem !== 'Pants' && editForm.gearItem !== 'Boots' && editForm.gearItem !== 'Gloves' ? (
+                  {editForm.gearItem !== 'Gear Combo' && !ALPHA_SIZE_GEAR_ITEMS.includes(editForm.gearItem) && !SIZELESS_GEAR_ITEMS.includes(editForm.gearItem) && editForm.gearItem !== 'Pants' && editForm.gearItem !== 'Boots' && editForm.gearItem !== 'Gloves' ? (
                     <label className="block">
                       <span className="text-sm font-medium text-slate-700">Please provide the size of the gear</span>
                       <input
@@ -1201,23 +1265,26 @@ export default function SellerSubmissions() {
                     type="file"
                     accept="image/*"
                     multiple
-                    onChange={(event) => setEditNewFiles(Array.from(event.target.files || []))}
+                    onChange={handleEditNewFilesChange}
                     className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-4 py-3"
                   />
                 </label>
 
-                {editNewFiles.length > 0 ? (
-                  <div className="mt-3 space-y-2">
-                    {editNewFiles.map((file, index) => (
-                      <div key={`${file.name}-${index}`} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
-                        <p className="truncate text-sm text-slate-700">{file.name}</p>
-                        <button
-                          type="button"
-                          onClick={() => setEditNewFiles((prev) => prev.filter((_, fileIndex) => fileIndex !== index))}
-                          className="text-xs font-semibold uppercase tracking-[0.06em] text-rose-700"
-                        >
-                          Remove
-                        </button>
+                {editNewFilePreviews.length > 0 ? (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    {editNewFilePreviews.map((item, index) => (
+                      <div key={item.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <img src={item.previewUrl} alt={item.name} className="h-32 w-full object-cover" />
+                        <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-3 py-2">
+                          <p className="truncate text-xs text-slate-600" title={item.name}>{item.name}</p>
+                          <button
+                            type="button"
+                            onClick={() => setEditNewFiles((prev) => prev.filter((_, fileIndex) => fileIndex !== index))}
+                            className="text-xs font-semibold uppercase tracking-[0.06em] text-rose-700"
+                          >
+                            Remove
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
