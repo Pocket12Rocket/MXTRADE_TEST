@@ -11,7 +11,7 @@ function escapeHtml(value) {
 }
 
 function buildAdminRecipients() {
-  const supportEmail = (process.env.SUPPORT_EMAIL || 'support@fastsport.co.za').trim();
+  const supportEmail = 'support@fastsport.co.za';
   const adminEmailsCsv = process.env.CONTACT_ADMIN_EMAILS || process.env.ADMIN_NOTIFICATION_EMAILS || '';
   const singleAdmin = process.env.CONTACT_ADMIN_EMAIL || '';
 
@@ -23,11 +23,70 @@ function buildAdminRecipients() {
   return Array.from(new Set([supportEmail, ...parsed, ...(singleAdmin ? [singleAdmin] : [])].filter(Boolean)));
 }
 
+async function fetchAdminEmailsFromUsers() {
+  const [lowerRoleSnapshot, titleRoleSnapshot, upperRoleSnapshot] = await Promise.all([
+    adminDb.collection('users').where('role', '==', 'admin').get(),
+    adminDb.collection('users').where('role', '==', 'Admin').get(),
+    adminDb.collection('users').where('role', '==', 'ADMIN').get(),
+  ]);
+
+  const adminDocsByUid = new Map();
+  [lowerRoleSnapshot, titleRoleSnapshot, upperRoleSnapshot].forEach((snapshot) => {
+    snapshot.docs.forEach((docItem) => {
+      adminDocsByUid.set(docItem.id, docItem.data() || {});
+    });
+  });
+
+  if (adminDocsByUid.size === 0) {
+    return [];
+  }
+
+  const emails = [];
+  const missingEmailUids = [];
+
+  adminDocsByUid.forEach((data, uid) => {
+    const email = String(data?.email || '').trim();
+    if (email) {
+      emails.push(email);
+      return;
+    }
+    missingEmailUids.push(uid);
+  });
+
+  if (missingEmailUids.length > 0) {
+    const lookedUpEmails = await Promise.all(
+      missingEmailUids.map(async (uid) => {
+        try {
+          const userRecord = await admin.auth().getUser(uid);
+          return String(userRecord?.email || '').trim();
+        } catch {
+          return '';
+        }
+      })
+    );
+
+    lookedUpEmails.forEach((email) => {
+      if (email) {
+        emails.push(email);
+      }
+    });
+  }
+
+  return Array.from(new Set(emails));
+}
+
+async function buildAdminRecipientsFromDatabaseAndEnv() {
+  const supportEmail = 'support@fastsport.co.za';
+  const configuredRecipients = buildAdminRecipients();
+  const adminEmails = await fetchAdminEmailsFromUsers();
+  return Array.from(new Set([supportEmail, ...adminEmails, ...configuredRecipients].filter(Boolean)));
+}
+
 async function sendEmail({ to, subject, html }) {
   const resendApiKey = (process.env.RESEND_API_KEY || '').trim();
   const smtpUser = (process.env.SMTP_USER || '').trim();
   const smtpPass = (process.env.SMTP_PASS || '').trim();
-  const fromEmail = process.env.CONTACT_FROM_EMAIL || 'Fast Sports <noreply@fastsport.co.za>';
+  const fromEmail = 'Fast Sport <support@fastsport.co.za>';
 
   if (!to || to.length === 0) {
     return;
@@ -115,14 +174,14 @@ async function handleSubmissionCreated({ actorUid, submission }) {
     throw new Error('Forbidden: seller does not match submission owner.');
   }
 
-  const recipients = buildAdminRecipients();
+  const recipients = await buildAdminRecipientsFromDatabaseAndEnv();
   if (recipients.length === 0) {
     console.warn('[Submission Notifications] Admin notification skipped: no recipient configured');
     return;
   }
 
   const submittedAt = submission.createdAt?.toDate?.() || new Date();
-  const subject = `New Product Submission Needs Review: ${submission.name || 'Untitled product'}`;
+  const subject = 'New Product Listing';
   const html = `
     <div style="font-family:sans-serif;max-width:640px;margin:0 auto;color:#1f2937">
       <h2 style="margin:0 0 8px;color:#0f172a">New Product Submission Requires Attention</h2>
