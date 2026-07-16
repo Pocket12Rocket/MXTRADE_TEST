@@ -1071,7 +1071,6 @@ export default function SellerSubmit() {
             accept="image/*"
             multiple
             onChange={handleFilesChange}
-            required
             className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
           />
           <p className="mt-2 text-sm text-slate-500">
