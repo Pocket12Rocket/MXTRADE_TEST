@@ -60,6 +60,7 @@ const GLOVES_SIZE_OPTIONS = ['YOUTH S', 'YOUTH M', 'YOUTH L', 'YOUTH XL', 'XS', 
 
 const OTHER_BRAND_VALUE = '__other__';
 const MAX_LISTING_IMAGES = 5;
+const MAX_DESCRIPTION_LENGTH = 75;
 
 function mergeUniqueFiles(existingFiles, incomingFiles) {
   const seen = new Set((existingFiles || []).map((file) => `${file.name}-${file.size}-${file.lastModified}`));
@@ -340,6 +341,8 @@ export default function SellerSubmit() {
     event.preventDefault();
     if (!user) return;
 
+    const normalizedDescription = description.trim();
+
     if (!price || Number(price) <= 0) {
       setStatus('Please enter a valid price greater than 0.');
       return;
@@ -359,17 +362,22 @@ export default function SellerSubmit() {
     }
 
     if (category === 'Accessories') {
-      if (!accessoriesSubcategory || !accessoriesCondition || !description.trim()) {
+      if (!accessoriesSubcategory || !accessoriesCondition || !normalizedDescription) {
         setStatus('Please complete all required accessories fields before submitting.');
         return;
       }
     }
 
     if (category === 'Parts') {
-      if (!name.trim() || !subcategory || !description.trim()) {
+      if (!name.trim() || !subcategory || !normalizedDescription) {
         setStatus('Please complete all required parts fields before submitting.');
         return;
       }
+    }
+
+    if (category !== 'Gear' && normalizedDescription.length > MAX_DESCRIPTION_LENGTH) {
+      setStatus(`Description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer.`);
+      return;
     }
 
     if (!files || files.length === 0) {
@@ -416,7 +424,7 @@ export default function SellerSubmit() {
         const resolvedAccessoriesBrandForDisplay = (accessoriesBrand && accessoriesBrand !== OTHER_BRAND_VALUE) ? accessoriesBrand : (accessoriesBrand === OTHER_BRAND_VALUE ? customAccessoriesBrand.trim() : '');
         resolvedName = resolvedAccessoriesBrandForDisplay ? `${resolvedAccessoriesBrandForDisplay} ${accessoriesSubcategory}` : accessoriesSubcategory;
         resolvedSubcategory = accessoriesSubcategory;
-        resolvedDescription = description;
+        resolvedDescription = normalizedDescription;
         const brandSpecLine = resolvedAccessoriesBrandForDisplay ? `Brand: ${resolvedAccessoriesBrandForDisplay}` : '';
         resolvedSpecifications = brandSpecLine ? `Condition: ${accessoriesCondition}\n${brandSpecLine}` : `Condition: ${accessoriesCondition}`;
         resolvedCustomFields = {
@@ -448,9 +456,10 @@ export default function SellerSubmit() {
 
         const normalizedCustomModels = parseModelInput(customModel);
 
-        const resolvedModels = hasPresetModels
-          ? normalizedModels
-          : normalizedCustomModels;
+        const resolvedModels = Array.from(new Set([
+          ...normalizedModels,
+          ...normalizedCustomModels,
+        ]));
 
         if (requiresModelSelection && resolvedModels.length === 0) {
           setStatus(hasPresetModels ? 'Please select at least one bike model.' : 'Please enter a bike model for this manufacturer.');
@@ -460,7 +469,7 @@ export default function SellerSubmit() {
         const resolvedOptionalPartsBrand = partsBrand === OTHER_BRAND_VALUE ? customPartsBrand.trim() : partsBrand.trim();
         resolvedName = name;
         resolvedSubcategory = subcategory;
-        resolvedDescription = description;
+        resolvedDescription = normalizedDescription;
         const brandSpecLine = resolvedOptionalPartsBrand ? `Brand: ${resolvedOptionalPartsBrand}` : `Brand: ${resolvedPartsBrand}`;
         resolvedSpecifications = `Condition: ${partsCondition}\n${brandSpecLine}`;
         resolvedCustomFields = {
@@ -586,7 +595,6 @@ export default function SellerSubmit() {
       <div>
         <p className="text-sm uppercase tracking-[0.3em] text-slate-500">Seller</p>
         <h1 className="mt-3 text-3xl font-semibold text-slate-900">Submit new product</h1>
-        <p className="mt-3 text-slate-600">Fill in details for your {getCategoryLabel(category).toLowerCase()} product and submit for admin approval.</p>
       </div>
       <form onSubmit={handleSubmit} className="mt-8 space-y-6">
         <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -880,6 +888,7 @@ export default function SellerSubmit() {
                 rows="5"
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
+                maxLength={MAX_DESCRIPTION_LENGTH}
                 required
                 className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
               />
@@ -1036,17 +1045,16 @@ export default function SellerSubmit() {
                   </div>
                 </div>
               ) : null}
-              {requiresModelSelection && !hasPresetModels ? (
+
+              {requiresModelSelection ? (
                 <div className="mt-3 space-y-2">
-                  <p className="text-xs text-slate-500">No approved models exist yet for this manufacturer. Add one or more below. If your listing is approved, these models will be available for future sellers.</p>
+                  <p className="text-xs text-slate-500">Can't find your model here? Add it below!</p>
                   <input
                     value={customModel}
                     onChange={(event) => setCustomModel(event.target.value)}
-                    required
-                    placeholder="Type model names (comma separated)"
+                    placeholder="Type additional model names (comma separated)"
                     className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                   />
-                  <p className="text-xs text-slate-500">Example: K4 250, K6 250</p>
                 </div>
               ) : null}
             </label>
@@ -1056,6 +1064,7 @@ export default function SellerSubmit() {
                 rows="5"
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
+                maxLength={MAX_DESCRIPTION_LENGTH}
                 required
                 className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
               />
@@ -1075,8 +1084,8 @@ export default function SellerSubmit() {
           />
           <p className="mt-2 text-sm text-slate-500">
             {category === 'Gear' || category === 'Accessories'
-              ? 'Please upload between 3 and 5 images. Files are stored in Firebase Storage.'
-              : 'Upload up to 5 images. Files are stored in Firebase Storage.'}
+              ? 'Please upload between 3 and 5 images.'
+              : 'Upload up to 5 images.'}
           </p>
 
           <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">

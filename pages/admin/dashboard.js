@@ -67,6 +67,19 @@ function isRecentPurchase(product) {
   return Date.now() - timestamp.getTime() <= 24 * 60 * 60 * 1000;
 }
 
+function getDescriptionPreview(value, maxLength = 140) {
+  const text = String(value || '').trim();
+  if (!text) {
+    return 'No description provided.';
+  }
+
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return `${text.slice(0, maxLength)}...`;
+}
+
 function AdminDashboard() {
           // State for products, submissions, faqs
           const [products, setProducts] = useState([]);
@@ -308,13 +321,13 @@ function AdminDashboard() {
           {submissions.map((submission) => (
             <div key={submission.id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div>
+                <div className="min-w-0 sm:flex-1">
                   <p className="text-sm text-slate-500">{submission.category}</p>
                   <h2 className="text-xl font-semibold text-slate-900">{submission.name}</h2>
-                  <p className="mt-2 text-slate-600">{submission.description}</p>
+                  <p className="mt-2 break-all text-slate-600">{getDescriptionPreview(submission.description)}</p>
                   <p className="mt-2 text-sm text-slate-500">Submitted by {submission.sellerEmail}</p>
                 </div>
-                <div className="flex flex-wrap gap-3">
+                <div className="flex shrink-0 flex-wrap gap-3">
                   <button
                     type="button"
                     onClick={() => setSelectedSubmission(submission)}

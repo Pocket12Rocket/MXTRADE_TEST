@@ -37,6 +37,7 @@ const BOOTS_SIZE_OPTIONS = ['UK1', 'UK2', 'UK3', 'UK4', 'UK5', 'UK6', 'UK7', 'UK
 const GLOVES_SIZE_OPTIONS = ['YOUTH S', 'YOUTH M', 'YOUTH L', 'YOUTH XL', 'XS', 'M', 'L', 'XL', 'XXL'];
 const OTHER_BRAND_VALUE = '__other__';
 const MAX_LISTING_IMAGES = 5;
+const MAX_DESCRIPTION_LENGTH = 75;
 
 function mergeUniqueFiles(existingFiles, incomingFiles) {
   const seen = new Set((existingFiles || []).map((file) => `${file.name}-${file.size}-${file.lastModified}`));
@@ -503,6 +504,12 @@ export default function SellerSubmissions() {
     }
 
     const submissionCategory = editingSubmission?.category || '';
+    const normalizedDescription = editForm.description.trim();
+
+    if (submissionCategory !== 'Gear' && normalizedDescription.length > MAX_DESCRIPTION_LENGTH) {
+      setError(`Description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer.`);
+      return null;
+    }
 
     if (submissionCategory === 'Gear') {
       const resolvedGearBrand = editForm.gearBrand === OTHER_BRAND_VALUE ? editForm.customGearBrand.trim() : editForm.gearBrand.trim();
@@ -545,7 +552,7 @@ export default function SellerSubmissions() {
     if (submissionCategory === 'Accessories') {
       const resolvedAccessoriesBrand = editForm.accessoriesBrand === OTHER_BRAND_VALUE ? editForm.customAccessoriesBrand.trim() : editForm.accessoriesBrand.trim();
 
-      if (!editForm.accessoriesSubcategory || !editForm.accessoriesCondition || !editForm.description.trim()) {
+      if (!editForm.accessoriesSubcategory || !editForm.accessoriesCondition || !normalizedDescription) {
         setError('Please complete all required accessories fields before saving.');
         return null;
       }
@@ -558,7 +565,7 @@ export default function SellerSubmissions() {
         name: accessoriesName,
         price: Number(editForm.price),
         subcategory: editForm.accessoriesSubcategory.trim(),
-        description: editForm.description.trim(),
+        description: normalizedDescription,
         specifications: specLines,
         accessoriesSubcategory: editForm.accessoriesSubcategory.trim(),
         accessoriesCondition: editForm.accessoriesCondition.trim(),
@@ -572,7 +579,7 @@ export default function SellerSubmissions() {
       return null;
     }
 
-    if (!editForm.subcategory.trim() || !editForm.description.trim()) {
+    if (!editForm.subcategory.trim() || !normalizedDescription) {
       setError('Please complete all required parts fields before saving.');
       return null;
     }
@@ -603,12 +610,13 @@ export default function SellerSubmissions() {
     const hasPresetEditModelsForManufacturer = availableEditModels.length > 0;
     const requiresEditModel = normalizedManufacturer && normalizedManufacturer !== 'Universal' && normalizedManufacturer !== 'Other';
     const normalizedCustomModels = parseModelInput(editForm.customModel);
-    const resolvedModels = hasPresetEditModelsForManufacturer
-      ? normalizedModels
-      : normalizedCustomModels;
+    const resolvedModels = Array.from(new Set([
+      ...normalizedModels,
+      ...normalizedCustomModels,
+    ]));
 
     if (requiresEditModel && resolvedModels.length === 0) {
-      setError(hasPresetEditModelsForManufacturer ? 'Please select at least one bike model.' : 'Please enter a bike model for this manufacturer.');
+      setError('Please select and/or enter at least one bike model.');
       return null;
     }
 
@@ -624,7 +632,7 @@ export default function SellerSubmissions() {
       name: editForm.name.trim(),
       price: Number(editForm.price),
       subcategory: editForm.subcategory.trim(),
-      description: editForm.description.trim(),
+      description: normalizedDescription,
       specifications: specificationsWithBrand,
       manufacturer: normalizedManufacturer,
       model: normalizedManufacturer === 'Universal' || normalizedManufacturer === 'Other' ? [] : resolvedModels,
@@ -1189,6 +1197,7 @@ export default function SellerSubmissions() {
                       rows="4"
                       value={editForm.description}
                       onChange={(event) => setEditForm((prev) => ({ ...prev, description: event.target.value }))}
+                      maxLength={MAX_DESCRIPTION_LENGTH}
                       required
                       className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                     />
@@ -1301,17 +1310,16 @@ export default function SellerSubmissions() {
                         </div>
                       </div>
                     ) : null}
-                    {requiresEditModelSelection && !hasPresetEditModels ? (
+
+                    {requiresEditModelSelection ? (
                       <div className="mt-3 space-y-2">
-                        <p className="text-xs text-slate-500">No approved models exist yet for this manufacturer. Add one or more below. If your listing is approved, these models will be available for future sellers.</p>
+                        <p className="text-xs text-slate-500">Can't find your model here? Add it below!</p>
                         <input
                           value={editForm.customModel || ''}
                           onChange={(event) => setEditForm((prev) => ({ ...prev, customModel: event.target.value }))}
-                          required
-                          placeholder="Type model names (comma separated)"
+                          placeholder="Type additional model names (comma separated)"
                           className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                         />
-                        <p className="text-xs text-slate-500">Example: K4 250, K6 250</p>
                       </div>
                     ) : null}
                   </label>
