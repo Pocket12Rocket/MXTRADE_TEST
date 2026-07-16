@@ -506,7 +506,7 @@ export default function SellerSubmissions() {
     const submissionCategory = editingSubmission?.category || '';
     const normalizedDescription = editForm.description.trim();
 
-    if (submissionCategory !== 'Gear' && normalizedDescription.length > MAX_DESCRIPTION_LENGTH) {
+    if (normalizedDescription.length > MAX_DESCRIPTION_LENGTH) {
       setError(`Description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer.`);
       return null;
     }
@@ -517,7 +517,7 @@ export default function SellerSubmissions() {
       const missingSingleSize = needsSingleSize && !editForm.gearSize.trim();
       const missingComboSizes = editForm.gearItem === 'Gear Combo' && (!editForm.gearComboShirtSize.trim() || !editForm.gearComboPantsSize.trim());
 
-      if (!editForm.gearItem || !editForm.gearCondition || !resolvedGearBrand || missingSingleSize || missingComboSizes) {
+      if (!editForm.gearItem || !editForm.gearCondition || !resolvedGearBrand || missingSingleSize || missingComboSizes || !normalizedDescription) {
         setError('Please complete all required gear fields before saving.');
         return null;
       }
@@ -537,7 +537,7 @@ export default function SellerSubmissions() {
         name: `${resolvedGearBrand} ${editForm.gearItem.trim()}`,
         price: Number(editForm.price),
         subcategory: editForm.gearItem.trim(),
-        description: '',
+        description: normalizedDescription,
         specifications: specificationLines,
         gearItem: editForm.gearItem.trim(),
         gearCondition: editForm.gearCondition.trim(),
@@ -1111,6 +1111,18 @@ export default function SellerSubmissions() {
                       />
                     </label>
                   ) : null}
+
+                  <label className="block">
+                    <span className="text-sm font-medium text-slate-700">Description</span>
+                    <textarea
+                      rows="4"
+                      value={editForm.description}
+                      onChange={(event) => setEditForm((prev) => ({ ...prev, description: event.target.value }))}
+                      maxLength={MAX_DESCRIPTION_LENGTH}
+                      required
+                      className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
+                    />
+                  </label>
 
                   <label className="block">
                     <span className="text-sm font-medium text-slate-700">Price</span>

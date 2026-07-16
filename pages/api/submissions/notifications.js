@@ -218,13 +218,14 @@ async function handleSubmissionApproved({ submission, productId }) {
   const html = `
     <div style="font-family:sans-serif;max-width:640px;margin:0 auto;color:#1f2937">
       <h2 style="margin:0 0 8px;color:#0f172a">Your product has been approved</h2>
-      <p style="margin:0 0 14px;color:#374151">Good news. Your listing is now approved and live in the shop.</p>
+      <p style="margin:0 0 14px;color:#374151">Your product listing has been approved by an admin and is now live in the store.</p>
       <p style="margin:0 0 8px"><strong>Product:</strong> ${escapeHtml(submission.name || 'Untitled product')}</p>
+      <p style="margin:0 0 16px"><strong>Status:</strong> Approved</p>
       <p style="margin:0 0 16px"><strong>Category:</strong> ${escapeHtml(submission.category || 'Uncategorized')}</p>
       <p style="margin:0 0 16px">
-        <a href="${escapeHtml(productUrl)}" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px">View Product in Shop</a>
+        <a href="${escapeHtml(productUrl)}" style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px">View Product in Store</a>
       </p>
-      <p style="margin:0;color:#64748b;font-size:13px">If you cannot open the product directly, visit <a href="${escapeHtml(siteUrl)}/shop" style="color:#0f766e">Shop</a>.</p>
+      <p style="margin:0;color:#64748b;font-size:13px">If you cannot open the product directly, visit <a href="${escapeHtml(siteUrl)}/shop" style="color:#0f766e">the store</a>.</p>
     </div>
   `;
 
@@ -239,18 +240,19 @@ async function handleSubmissionRejected({ submission, rejectionReason }) {
   }
 
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://fastsport.co.za').trim();
-  const editUrl = `${siteUrl}/seller/submissions`;
+  const listingsUrl = `${siteUrl}/seller/submissions`;
   const reasonText = (rejectionReason || submission.rejectionReason || 'No reason provided.').trim();
   const subject = `Your Product Was Rejected: ${submission.name || 'Untitled product'}`;
   const html = `
     <div style="font-family:sans-serif;max-width:640px;margin:0 auto;color:#1f2937">
       <h2 style="margin:0 0 8px;color:#7f1d1d">Your product submission was rejected</h2>
-      <p style="margin:0 0 14px;color:#374151">Please review the feedback below, update the listing, and resubmit.</p>
+      <p style="margin:0 0 14px;color:#374151">An admin reviewed your product listing and rejected it. Please review the feedback below, update the listing, and resubmit it.</p>
       <p style="margin:0 0 8px"><strong>Product:</strong> ${escapeHtml(submission.name || 'Untitled product')}</p>
+      <p style="margin:0 0 8px"><strong>Status:</strong> Rejected</p>
       <p style="margin:0 0 8px"><strong>Category:</strong> ${escapeHtml(submission.category || 'Uncategorized')}</p>
-      <p style="margin:0 0 16px"><strong>Reason:</strong><br/>${escapeHtml(reasonText)}</p>
+      <p style="margin:0 0 16px"><strong>Admin feedback:</strong><br/>${escapeHtml(reasonText)}</p>
       <p style="margin:0 0 16px">
-        <a href="${escapeHtml(editUrl)}" style="display:inline-block;background:#7f1d1d;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px">Edit Submission</a>
+        <a href="${escapeHtml(listingsUrl)}" style="display:inline-block;background:#7f1d1d;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px">View My Listings</a>
       </p>
     </div>
   `;

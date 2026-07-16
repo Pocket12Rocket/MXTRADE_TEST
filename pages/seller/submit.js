@@ -348,6 +348,11 @@ export default function SellerSubmit() {
       return;
     }
 
+    if (normalizedDescription.length > MAX_DESCRIPTION_LENGTH) {
+      setStatus(`Description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer.`);
+      return;
+    }
+
     if (category === 'Gear') {
       const resolvedGearBrand = gearBrand === OTHER_BRAND_VALUE ? customGearBrand.trim() : gearBrand.trim();
       const needsSingleSize = gearItem !== 'Gear Combo' && !SIZELESS_GEAR_ITEMS.includes(gearItem);
@@ -355,7 +360,7 @@ export default function SellerSubmit() {
       const missingComboSizes = gearItem === 'Gear Combo' && (!gearComboShirtSize || !gearComboPantsSize);
       const missingBrand = !resolvedGearBrand;
 
-      if (!gearItem || !gearCondition || missingBrand || missingSingleSize || missingComboSizes) {
+      if (!gearItem || !gearCondition || missingBrand || missingSingleSize || missingComboSizes || !normalizedDescription) {
         setStatus('Please complete all required gear fields before submitting.');
         return;
       }
@@ -373,11 +378,6 @@ export default function SellerSubmit() {
         setStatus('Please complete all required parts fields before submitting.');
         return;
       }
-    }
-
-    if (category !== 'Gear' && normalizedDescription.length > MAX_DESCRIPTION_LENGTH) {
-      setStatus(`Description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer.`);
-      return;
     }
 
     if (!files || files.length === 0) {
@@ -407,7 +407,7 @@ export default function SellerSubmit() {
           : gearSize.trim();
         resolvedName = `${resolvedGearBrand} ${gearItem}`;
         resolvedSubcategory = gearItem;
-        resolvedDescription = '';
+        resolvedDescription = normalizedDescription;
         resolvedSpecifications = SIZELESS_GEAR_ITEMS.includes(gearItem)
           ? `Condition: ${gearCondition}\nBrand: ${resolvedGearBrand}`
           : `Condition: ${gearCondition}\nBrand: ${resolvedGearBrand}\nSize: ${resolvedGearSize}`;
@@ -799,6 +799,18 @@ export default function SellerSubmit() {
                 </label>
               ) : null}
             </div>
+
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Description</span>
+              <textarea
+                rows="5"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                maxLength={MAX_DESCRIPTION_LENGTH}
+                required
+                className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
+              />
+            </label>
 
             <label className="block">
               <span className="text-sm font-medium text-slate-700">Price</span>
