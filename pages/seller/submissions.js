@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import useAuth from '../../lib/useAuth';
 import {
+  fetchBikeModelOptions,
   fetchSellerSubmissions,
   fetchSellerLiveProducts,
   removeSellerSubmission,
@@ -11,7 +12,7 @@ import {
   updateSellerSubmission,
   updateSellerSubmissionImages,
 } from '../../lib/firestoreHelpers';
-import { DIRT_BIKE_CATEGORIES, GEAR_BRAND_OPTIONS, GEAR_CONDITION_OPTIONS, GEAR_ITEM_OPTIONS } from '../../lib/dirtBikeCategories';
+import { BIKE_MODELS_BY_MANUFACTURER, DIRT_BIKE_CATEGORIES, GEAR_BRAND_OPTIONS, GEAR_CONDITION_OPTIONS, GEAR_ITEM_OPTIONS } from '../../lib/dirtBikeCategories';
 
 const HIDDEN_SUBMISSION_KEYS = new Set([
   'id',
@@ -50,6 +51,34 @@ function mergeUniqueFiles(existingFiles, incomingFiles) {
   });
 
   return merged;
+}
+
+function mergeBikeModelOptions(defaultOptions = {}, approvedOptions = {}) {
+  const merged = { ...defaultOptions };
+
+  Object.entries(approvedOptions || {}).forEach(([manufacturer, models]) => {
+    const key = String(manufacturer || '').trim();
+    if (!key || !Array.isArray(models)) {
+      return;
+    }
+
+    const existing = Array.isArray(merged[key]) ? merged[key] : [];
+    merged[key] = Array.from(new Set([
+      ...existing,
+      ...models.map((model) => String(model || '').trim()).filter(Boolean),
+    ])).sort((a, b) => a.localeCompare(b));
+  });
+
+  return merged;
+}
+
+function parseModelInput(value) {
+  return Array.from(new Set(
+    String(value || '')
+      .split(/[\n,;]+/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+  ));
 }
 
 function formatFieldLabel(fieldName) {
@@ -109,6 +138,7 @@ export default function SellerSubmissions() {
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isResubmitting, setIsResubmitting] = useState(false);
   const [brandOptions, setBrandOptions] = useState(GEAR_BRAND_OPTIONS);
+  const [bikeModelOptionsByManufacturer, setBikeModelOptionsByManufacturer] = useState(BIKE_MODELS_BY_MANUFACTURER);
   const [editImageUrls, setEditImageUrls] = useState([]);
   const [editNewFiles, setEditNewFiles] = useState([]);
   const [editForm, setEditForm] = useState({
@@ -119,6 +149,7 @@ export default function SellerSubmissions() {
     subcategory: '',
     manufacturer: '',
     model: [],
+    customModel: '',
     otherManufacturer: '',
     gearItem: '',
     gearCondition: '',
@@ -159,6 +190,28 @@ export default function SellerSubmissions() {
       .catch(() => {
         if (isMounted) {
           setBrandOptions(GEAR_BRAND_OPTIONS);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    fetchBikeModelOptions()
+      .then((approvedOptions) => {
+        if (!isMounted) {
+          return;
+        }
+
+        setBikeModelOptionsByManufacturer(mergeBikeModelOptions(BIKE_MODELS_BY_MANUFACTURER, approvedOptions));
+      })
+      .catch(() => {
+        if (isMounted) {
+          setBikeModelOptionsByManufacturer(BIKE_MODELS_BY_MANUFACTURER);
         }
       });
 
@@ -313,6 +366,7 @@ export default function SellerSubmissions() {
       subcategory: submission.subcategory || '',
       manufacturer: submission.manufacturer || '',
       model: submissionModels,
+      customModel: submissionModels.join(', '),
       otherManufacturer: submission.otherManufacturer || '',
       gearItem: submission.gearItem || '',
       gearCondition: submission.gearCondition || '',
@@ -419,6 +473,20 @@ export default function SellerSubmissions() {
       previewUrl: URL.createObjectURL(file),
     }));
   }, [editNewFiles]);
+
+  const availableEditModelsForManufacturer = useMemo(() => {
+    const manufacturerKey = String(editForm.manufacturer || '').trim();
+    if (!manufacturerKey) {
+      return [];
+    }
+
+    return Array.isArray(bikeModelOptionsByManufacturer[manufacturerKey])
+      ? bikeModelOptionsByManufacturer[manufacturerKey]
+      : [];
+  }, [bikeModelOptionsByManufacturer, editForm.manufacturer]);
+
+  const requiresEditModelSelection = editForm.manufacturer && editForm.manufacturer !== 'Universal' && editForm.manufacturer !== 'Other';
+  const hasPresetEditModels = availableEditModelsForManufacturer.length > 0;
 
   useEffect(() => {
     return () => {
@@ -529,8 +597,18 @@ export default function SellerSubmissions() {
       ? editForm.model.map((item) => item.trim()).filter(Boolean)
       : [];
 
-    if (normalizedManufacturer !== 'Universal' && normalizedManufacturer !== 'Other' && normalizedModels.length === 0) {
-      setError('Please select at least one bike model.');
+    const availableEditModels = Array.isArray(bikeModelOptionsByManufacturer[normalizedManufacturer])
+      ? bikeModelOptionsByManufacturer[normalizedManufacturer]
+      : [];
+    const hasPresetEditModelsForManufacturer = availableEditModels.length > 0;
+    const requiresEditModel = normalizedManufacturer && normalizedManufacturer !== 'Universal' && normalizedManufacturer !== 'Other';
+    const normalizedCustomModels = parseModelInput(editForm.customModel);
+    const resolvedModels = hasPresetEditModelsForManufacturer
+      ? normalizedModels
+      : normalizedCustomModels;
+
+    if (requiresEditModel && resolvedModels.length === 0) {
+      setError(hasPresetEditModelsForManufacturer ? 'Please select at least one bike model.' : 'Please enter a bike model for this manufacturer.');
       return null;
     }
 
@@ -549,7 +627,7 @@ export default function SellerSubmissions() {
       description: editForm.description.trim(),
       specifications: specificationsWithBrand,
       manufacturer: normalizedManufacturer,
-      model: normalizedManufacturer === 'Universal' || normalizedManufacturer === 'Other' ? [] : normalizedModels,
+      model: normalizedManufacturer === 'Universal' || normalizedManufacturer === 'Other' ? [] : resolvedModels,
       otherManufacturer: normalizedManufacturer === 'Other' ? normalizedOtherManufacturer : '',
       brand: resolvedPartsBrand,
       customPartsBrand: normalizedManufacturer === 'Other' ? normalizedOtherManufacturer : '',
@@ -1170,7 +1248,7 @@ export default function SellerSubmissions() {
                     <span className="text-sm font-medium text-slate-700">Fits Bike Manufacturer</span>
                     <select
                       value={editForm.manufacturer || ''}
-                      onChange={e => setEditForm(prev => ({ ...prev, manufacturer: e.target.value, model: [], otherManufacturer: '' }))}
+                      onChange={e => setEditForm(prev => ({ ...prev, manufacturer: e.target.value, model: [], customModel: '', otherManufacturer: '' }))}
                       required
                       className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                     >
@@ -1194,42 +1272,48 @@ export default function SellerSubmissions() {
 
                   <label className="block">
                     <span className="text-sm font-medium text-slate-700">Fits Bike Model(s)</span>
-                    <select
-                      multiple
-                      size={8}
-                      value={Array.isArray(editForm.model) ? editForm.model : []}
-                      onChange={event => {
-                        const selectedModels = Array.from(event.target.selectedOptions).map((option) => option.value);
-                        setEditForm(prev => ({ ...prev, model: selectedModels }));
-                      }}
-                      disabled={editForm.manufacturer === 'Universal' || !editForm.manufacturer || editForm.manufacturer === 'Other'}
-                      required={editForm.manufacturer !== 'Universal' && editForm.manufacturer !== 'Other'}
-                      className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                    >
-                      {(function() {
-                        const MODELS = {
-                          Honda: ['CRF450R','CRF450RWE','CRF250R','CRF250RWE','CRF450RX','CRF250RX','CRF450X','CRF250F','CRF125F','CRF110F','CRF50F'],
-                          Yamaha: ['YZ450F','YZ250F','YZ250','YZ125','YZ450FX','YZ250FX','WR450F','WR250F','TT-R230','TT-R125LE','TT-R110E','TT-R50E','PW50','YZ65','YZ85'],
-                          KTM: ['450 SX-F','350 SX-F','250 SX-F','300 SX','250 SX','125 SX','85 SX','65 SX','50 SX','450 XC-F','350 XC-F','250 XC-F','300 XC','250 XC'],
-                          Kawasaki: ['KX450','KX250','KX112','KX85','KX65','KX450X','KX250X','KLX300R','KLX230R','KLX140R','KLX110R'],
-                          Suzuki: ['RM-Z450','RM-Z250','DR-Z125L','DR-Z50','RM-250','RM-125','RM-85'],
-                          Husqvarna: ['FC 450','FC 350','FC 250','TC 300','TC 250','TC 125','TC 85','TC 65','TC 50','TE 300','FE 350','FE 501','FE 450','FE 350','FE 250','TE 300','TE 250','TE 150','TE 125'],
-                          GasGas: ['MC 450F','MC 250F','MC 250','MC 125','MC 85','MC 65','MC 50','EC 500F','EC 350F','EC 300.','EX 300'],
-                          Beta: ['RX 350','RX 250','RX 450','125 RR Race','200 RR Race','250 RR Race','300 RR Race','350 RR Race','390 RR Race','430 RR Race','480 RR Race'],
-                          Sherco: ['125 SE Factory','250 SE Factory','300 SE Factory','4-Stroke Models','250 SEF Factory','300 SEF Factory','450 SEF Factory','500 SEF Factory','250 SE Xtrem'],
-                          'TM Racing': ['EN 125 Fi','EN 144 Fi','EN 250 Fi','EN 300 Fi','EN 250Fi','EN 300Fi','EN 450Fi','MX 85','MX 125','MX 144','MX 250','MX 300','MX 250Fi','MX 300Fi','MX 450Fi'],
-                          'Stark Future': ['VARG MX','VARG EX'],
-                          Fantic: ['XEF 450','XEF 310','XEF 250','XE 300','XE 125','XEF 125','XE 50','XXF 450','XXF 250','XX 250','XX 125'],
-                          'Sur-Ron': ['Light Bee X','Light Bee L1E','Light Bee S','Ultra Bee','Ultra Bee T','Ultra Bee R','Storm Bee F','Storm Bee E','Storm Bee R'],
-                          Osset: ['TXP-24','TXP-20','TXP-16','TXP-12'],
-                          Triumph: ['TF 450-X','TF 250-X','TF 250-C','TF 450-C','TF 250-E','TF 450-E'],
-                        };
-                        return MODELS[editForm.manufacturer] ? MODELS[editForm.manufacturer].map(mod => (
-                          <option key={mod} value={mod}>{mod}</option>
-                        )) : null;
-                      })()}
-                    </select>
-                    <p className="mt-2 text-xs text-slate-500">Hold Ctrl (Windows) or Cmd (Mac) to select multiple models.</p>
+                    {requiresEditModelSelection && hasPresetEditModels ? (
+                      <div className="mt-2 max-h-60 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {availableEditModelsForManufacturer.map((mod) => {
+                            const selectedModels = Array.isArray(editForm.model) ? editForm.model : [];
+                            const isChecked = selectedModels.includes(mod);
+                            return (
+                              <label key={mod} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={(event) => {
+                                    setEditForm((prev) => {
+                                      const currentModels = Array.isArray(prev.model) ? prev.model : [];
+                                      if (event.target.checked) {
+                                        return { ...prev, model: Array.from(new Set([...currentModels, mod])) };
+                                      }
+                                      return { ...prev, model: currentModels.filter((item) => item !== mod) };
+                                    });
+                                  }}
+                                  className="h-4 w-4 rounded border-slate-300"
+                                />
+                                <span>{mod}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                    {requiresEditModelSelection && !hasPresetEditModels ? (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs text-slate-500">No approved models exist yet for this manufacturer. Add one or more below. If your listing is approved, these models will be available for future sellers.</p>
+                        <input
+                          value={editForm.customModel || ''}
+                          onChange={(event) => setEditForm((prev) => ({ ...prev, customModel: event.target.value }))}
+                          required
+                          placeholder="Type model names (comma separated)"
+                          className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
+                        />
+                        <p className="text-xs text-slate-500">Example: K4 250, K6 250</p>
+                      </div>
+                    ) : null}
                   </label>
                 </>
               )}
