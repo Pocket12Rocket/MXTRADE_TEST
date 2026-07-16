@@ -87,6 +87,7 @@ async function sendEmail({ to, subject, html }) {
   const smtpUser = (process.env.SMTP_USER || '').trim();
   const smtpPass = (process.env.SMTP_PASS || '').trim();
   const fromEmail = 'Fast Sport <support@fastsport.co.za>';
+  const fromAddress = 'support@fastsport.co.za';
 
   if (!to || to.length === 0) {
     return;
@@ -130,7 +131,9 @@ async function sendEmail({ to, subject, html }) {
     });
 
     await transporter.sendMail({
-      from: smtpUser,
+      from: fromEmail,
+      sender: fromAddress,
+      replyTo: fromAddress,
       to,
       subject,
       html,
