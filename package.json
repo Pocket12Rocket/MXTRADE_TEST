@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "migrate:brands": "node scripts/migrate-approved-brands.js",
-    "migrate:brands:apply": "node scripts/migrate-approved-brands.js --apply"
+    "migrate:brands:apply": "node scripts/migrate-approved-brands.js --apply",
+    "migrate:seller-public-profiles": "node scripts/migrate-seller-public-profiles.js",
+    "migrate:seller-public-profiles:apply": "node scripts/migrate-seller-public-profiles.js --apply"
   },
   "dependencies": {
     "firebase": "^12.13.0",

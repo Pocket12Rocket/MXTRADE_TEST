@@ -2,6 +2,175 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function adminUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && (
+          adminUserDoc().data.role == 'admin'
+          || adminUserDoc().data.role == 'Admin'
+          || adminUserDoc().data.role == 'ADMIN'
+        );
+    }
+
+    function sellerProfileExists(userId) {
+      return exists(/databases/$(database)/documents/sellerPrivateProfiles/$(userId));
+    }
+
+    function publicProductVisible() {
+      return (!('status' in resource.data) || resource.data.status == 'listed' || resource.data.status == 'active' || resource.data.status == '')
+        && resource.data.marketSold != true;
+    }
+
+    function isOrderOwner(orderData) {
+      return signedIn() && (
+        orderData.buyerId == request.auth.uid ||
+        orderData.buyerEmail == request.auth.token.email
+      );
+    }
+
+    function isUserCreate() {
+      return signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.role == 'customer'
+        && request.resource.data.canSell == false
+        && request.resource.data.sellerProfileComplete == false
+        && request.resource.data.keys().hasOnly([
+          'uid',
+          'email',
+          'role',
+          'createdAt',
+          'displayName',
+          'firstName',
+          'lastName',
+          'phone',
+          'countryCode',
+          'canSell',
+          'sellerProfileComplete'
+        ]);
+    }
+
+    function isUserSelfUpdate(userId) {
+      return isOwner(userId)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName',
+          'firstName',
+          'lastName',
+          'phone',
+          'countryCode',
+          'photoURL',
+          'sellerProfileComplete',
+          'canSell'
+        ])
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sellerProfileComplete', 'canSell'])
+          || sellerProfileExists(userId)
+        )
+        && (!('sellerProfileComplete' in request.resource.data) || request.resource.data.sellerProfileComplete in [resource.data.sellerProfileComplete, true])
+        && (!('canSell' in request.resource.data) || request.resource.data.canSell in [resource.data.canSell, true]);
+    }
+
+    function isSellerPrivateProfileSelfWrite(userId) {
+      return isOwner(userId)
+        && request.resource.data.uid == userId
+        && request.resource.data.keys().hasOnly([
+          'uid',
+          'idNumber',
+          'streetAddress',
+          'suburb',
+          'city',
+          'postCode',
+          'bankName',
+          'accountType',
+          'branchName',
+          'branchCode',
+          'accountNumber',
+          'createdAt',
+          'updatedAt'
+        ]);
+    }
+
+    function isSellerPublicProfileSelfWrite(userId) {
+      return isOwner(userId)
+        && request.resource.data.uid == userId
+        && request.resource.data.keys().hasOnly([
+          'uid',
+          'suburb',
+          'city',
+          'updatedAt'
+        ]);
+    }
+
+    function isSubmissionOwner() {
+      return signedIn() && resource.data.sellerId == request.auth.uid;
+    }
+
+    function isSubmissionCreate() {
+      return signedIn()
+        && request.resource.data.sellerId == request.auth.uid
+        && request.resource.data.sellerEmail == request.auth.token.email;
+    }
+
+    function isSellerSubmissionUpdate() {
+      return isSubmissionOwner()
+        && request.resource.data.sellerId == resource.data.sellerId
+        && request.resource.data.sellerEmail == resource.data.sellerEmail
+        && request.resource.data.approvedAt == resource.data.approvedAt
+        && request.resource.data.approvedBy == resource.data.approvedBy
+        && request.resource.data.productId == resource.data.productId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name',
+          'price',
+          'category',
+          'subcategory',
+          'description',
+          'specifications',
+          'status',
+          'marketSold',
+          'primaryImage',
+          'images',
+          'gearItem',
+          'gearCondition',
+          'gearBrand',
+          'customGearBrand',
+          'gearSize',
+          'gearComboShirtSize',
+          'gearComboPantsSize',
+          'accessoriesSubcategory',
+          'accessoriesCondition',
+          'accessoriesBrand',
+          'customAccessoriesBrand',
+          'partsCondition',
+          'manufacturer',
+          'model',
+          'otherManufacturer',
+          'brand',
+          'partsBrand',
+          'customPartsBrand',
+          'customPartsBrandOptional',
+          'rejectedAt',
+          'rejectedBy',
+          'rejectionReason',
+          'updatedAt'
+        ])
+        && (request.resource.data.status == resource.data.status || request.resource.data.status == 'pending' || request.resource.data.status == 'rejected');
+    }
+
     function isOrderCreate() {
       return request.resource.data.status == 'pending_payment'
         && request.resource.data.buyerEmail is string
@@ -10,19 +179,70 @@ service cloud.firestore {
         && request.resource.data.shippingAddress is map;
     }
 
+    match /users/{userId} {
+      allow create: if isOwner(userId) && isUserCreate();
+      allow read: if isOwner(userId) || isAdmin();
+      allow update: if isAdmin() || isUserSelfUpdate(userId);
+      allow delete: if isAdmin();
+    }
+
+    match /sellerPrivateProfiles/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create, update: if isAdmin() || isSellerPrivateProfileSelfWrite(userId);
+      allow delete: if isAdmin();
+    }
+
+    match /sellerPublicProfiles/{userId} {
+      allow read: if true;
+      allow create, update: if isAdmin() || isSellerPublicProfileSelfWrite(userId);
+      allow delete: if isAdmin();
+    }
+
+    match /productSubmissions/{submissionId} {
+      allow create: if isSubmissionCreate();
+      allow read: if isAdmin() || isSubmissionOwner();
+      allow update: if isAdmin() || isSellerSubmissionUpdate();
+      allow delete: if isAdmin() || isSubmissionOwner();
+    }
+
+    match /products/{productId} {
+      allow read: if publicProductVisible() || (signedIn() && (resource.data.sellerId == request.auth.uid || isAdmin()));
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clickCount']);
+    }
+
     match /orders/{orderId} {
       allow create: if isOrderCreate();
-      allow read: if request.auth != null && (
-        resource.data.buyerId == request.auth.uid ||
-        resource.data.buyerEmail == request.auth.token.email ||
-        request.auth.token.admin == true
-      );
-      allow update, delete: if request.auth != null && request.auth.token.admin == true;
+      allow read: if isOrderOwner(resource.data) || isAdmin();
+      allow update, delete: if isAdmin();
+
+      match /refundRequests/{refundRequestId} {
+        allow create: if signedIn()
+          && isOrderOwner(get(/databases/$(database)/documents/orders/$(orderId)).data)
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.userEmail == request.auth.token.email;
+        allow read: if isOrderOwner(get(/databases/$(database)/documents/orders/$(orderId)).data) || isAdmin();
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    match /faqs/{faqId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /adminNotifications/{notificationId} {
+      allow read, create, update, delete: if isAdmin();
+    }
+
+    match /catalogConfig/{configId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
     }
 
     match /{document=**} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }

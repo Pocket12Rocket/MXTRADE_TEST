@@ -325,7 +325,6 @@ export default function ProfilePage() {
         <div>
           <p className="text-sm uppercase tracking-[0.3em] text-slate-500">Profile</p>
           <h1 className="mt-3 text-3xl font-semibold text-slate-900">My profile</h1>
-          <p className="mt-3 text-slate-600">Your account is active. Selling permissions are managed separately from basic signup.</p>
           {/* Seller badge and trust score */}
           {profile?.canSell && (
             <div className="mt-3 flex items-center gap-3">
@@ -351,7 +350,7 @@ export default function ProfilePage() {
           <button
             type="button"
             onClick={openEdit}
-            className="mt-3 flex-shrink-0 inline-flex rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="mt-3 inline-flex flex-shrink-0 rounded-full border border-[#00CED1] bg-[#00C5CD] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#00b7be]"
           >
             Edit profile
           </button>
@@ -508,21 +507,16 @@ export default function ProfilePage() {
       )}
 
       {(!profile?.sellerProfileComplete || !profile?.canSell) && (
-        <div className="rounded-3xl border border-dashed border-slate-300 bg-[#eceff3] p-6">
+        <div className="py-2">
           <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#00C5CD]">Next step</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-900">Complete your seller profile</h2>
-          <p className="mt-3 text-slate-600">This profile page will be where you enter the additional information required to sell on the marketplace. Once that information is completed and approved, selling can be enabled on your account.</p>
-          <p className="mt-4 text-sm text-slate-500">You can still browse, search, add items to cart, and manage your account with this basic profile.</p>
+          <p className="mt-3 text-slate-600">To start selling on the marketplace, you'll need to complete your seller profile. The information requested is required to ensure the safety and security of both buyers and sellers, enable FastSport to securely distribute payments, and facilitate smooth product delivery. Once your profile has been completed and approved, selling will be activated on your account.</p>
+          <p className="mt-4 text-sm text-slate-500">In the meantime, you can still browse the marketplace, search for products, add items to your cart, and manage your account using your basic profile.</p>
         </div>
       )}
 
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#00C5CD]">Seller profile details</p>
-        <h2 className="mt-2 text-2xl font-semibold text-slate-900">Sensitive verification information</h2>
-        <p className="mt-2 text-sm text-slate-600">
-          This information is stored in a private seller profile record and should be protected by Firestore security rules.
-        </p>
-
         {sellerProfileLoading ? <p className="mt-4 text-sm text-slate-600">Loading seller profile...</p> : null}
 
         {!isEditingSellerProfile ? (
