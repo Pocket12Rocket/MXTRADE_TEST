@@ -100,9 +100,21 @@ service cloud.firestore {
           'branchName',
           'branchCode',
           'accountNumber',
+          'sellerTrustScore',
+          'sellerBadge',
           'createdAt',
           'updatedAt'
-        ]);
+        ])
+        && (
+          !('sellerTrustScore' in request.resource.data)
+          || request.method == 'create'
+          || request.resource.data.sellerTrustScore == resource.data.sellerTrustScore
+        )
+        && (
+          !('sellerBadge' in request.resource.data)
+          || request.method == 'create'
+          || request.resource.data.sellerBadge == resource.data.sellerBadge
+        );
     }
 
     function isSellerPublicProfileSelfWrite(userId) {
