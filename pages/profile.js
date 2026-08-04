@@ -301,6 +301,7 @@ export default function ProfilePage() {
   const maskedAccountNumber = sellerProfileForm.accountNumber
     ? `****${sellerProfileForm.accountNumber.slice(-4)}`
     : 'Not set';
+  const hasCompletedSellerProfile = Boolean(profile?.sellerProfileComplete && profile?.canSell);
 
   if (loading) {
     return <p>Loading profile...</p>;
@@ -386,7 +387,6 @@ export default function ProfilePage() {
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium text-slate-700">Profile picture</p>
-          <p className="text-xs text-slate-500">Optional. JPG, PNG, WEBP or GIF · Max 5 MB</p>
           <input
             ref={fileInputRef}
             type="file"
@@ -511,58 +511,59 @@ export default function ProfilePage() {
           <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#00C5CD]">Next step</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-900">Complete your seller profile</h2>
           <p className="mt-3 text-slate-600">To start selling on the marketplace, you'll need to complete your seller profile. The information requested is required to ensure the safety and security of both buyers and sellers, enable FastSport to securely distribute payments, and facilitate smooth product delivery. Once your profile has been completed and approved, selling will be activated on your account.</p>
-          <p className="mt-4 text-sm text-slate-500">In the meantime, you can still browse the marketplace, search for products, add items to your cart, and manage your account using your basic profile.</p>
+          <p className="mt-4 text-slate-600">In the meantime, you can still browse the marketplace, search for products, add items to your cart, and manage your account using your basic profile.</p>
         </div>
       )}
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#00C5CD]">Seller profile details</p>
-        {sellerProfileLoading ? <p className="mt-4 text-sm text-slate-600">Loading seller profile...</p> : null}
+      <div className="py-2">
+        {sellerProfileLoading ? <p className="text-sm text-slate-600">Loading seller profile...</p> : null}
 
         {!isEditingSellerProfile ? (
-          <div className="mt-5 space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">ID Number</p>
-                <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.idNumber || 'Not set'}</p>
+          <div className="space-y-4">
+            {hasCompletedSellerProfile ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">ID Number</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.idNumber || 'Not set'}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Street Address</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.streetAddress || 'Not set'}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Suburb</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.suburb || 'Not set'}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">City</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.city || 'Not set'}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Post Code</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.postCode || 'Not set'}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Bank Name</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.bankName || 'Not set'}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Account Type</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.accountType || 'Not set'}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Branch Name</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.branchName || 'Not set'}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Branch Code</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.branchCode || 'Not set'}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:col-span-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Account Number</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{maskedAccountNumber}</p>
+                </div>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Street Address</p>
-                <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.streetAddress || 'Not set'}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Suburb</p>
-                <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.suburb || 'Not set'}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">City</p>
-                <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.city || 'Not set'}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Post Code</p>
-                <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.postCode || 'Not set'}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Bank Name</p>
-                <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.bankName || 'Not set'}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Account Type</p>
-                <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.accountType || 'Not set'}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Branch Name</p>
-                <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.branchName || 'Not set'}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Branch Code</p>
-                <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.branchCode || 'Not set'}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:col-span-2">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Account Number</p>
-                <p className="mt-2 text-sm font-semibold text-slate-900">{maskedAccountNumber}</p>
-              </div>
-            </div>
+            ) : null}
 
             {sellerProfileError ? <p className="text-sm text-red-600">{sellerProfileError}</p> : null}
             {sellerProfileSuccess ? <p className="text-sm text-emerald-700">{sellerProfileSuccess}</p> : null}
@@ -572,11 +573,11 @@ export default function ProfilePage() {
               onClick={handleOpenSellerProfileEdit}
               className="rounded-3xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800"
             >
-              {sellerProfileForm.idNumber ? 'Edit seller profile' : 'Complete seller profile'}
+              {hasCompletedSellerProfile ? 'Edit seller profile' : 'Complete seller profile'}
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSellerProfileSubmit} className="mt-5 space-y-4">
+          <form onSubmit={handleSellerProfileSubmit} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block sm:col-span-2">
                 <span className="text-sm font-medium text-slate-700">ID Number</span>
