@@ -39,14 +39,6 @@ export default function ShopLanding() {
 
   return (
     <div className="space-y-8">
-      <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-        <p className="text-sm uppercase tracking-[0.28em] text-slate-500">Shop</p>
-        <h1 className="mt-3 text-3xl font-semibold text-slate-900">Choose a category to shop</h1>
-        <p className="mt-3 max-w-2xl text-slate-600">
-          Start by selecting the section you want to browse. Each category opens a tailored shopping view.
-        </p>
-      </section>
-
       <section className="grid gap-5 md:grid-cols-3">
         {SHOP_CATEGORY_OPTIONS.map((option) => (
           <Link

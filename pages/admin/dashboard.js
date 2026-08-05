@@ -18,6 +18,8 @@ import {
   addFaq,
   updateFaq,
   deleteFaq,
+  fetchAboutContent,
+  updateAboutContent,
   fetchRefundPendingOrders,
   fetchRefundRequestForOrder,
   markAdminNotificationsRead,
@@ -89,6 +91,11 @@ function AdminDashboard() {
           const [faqEditId, setFaqEditId] = useState(null);
           const [faqError, setFaqError] = useState('');
           const [faqLoading, setFaqLoading] = useState(true);
+          const [aboutForm, setAboutForm] = useState({ aboutUsBody: '', howItWorksBody: '' });
+          const [aboutLoading, setAboutLoading] = useState(true);
+          const [aboutSaving, setAboutSaving] = useState(false);
+          const [aboutError, setAboutError] = useState('');
+          const [aboutSuccess, setAboutSuccess] = useState('');
           const [error, setError] = useState('');
           const [pricingError, setPricingError] = useState('');
           const [processingId, setProcessingId] = useState(null);
@@ -117,21 +124,28 @@ function AdminDashboard() {
             let isMounted = true;
             async function fetchData() {
               try {
-                const [subs, prods, faqList] = await Promise.all([
+                const [subs, prods, faqList, aboutContent] = await Promise.all([
                   fetchPendingSubmissions(),
                   fetchLiveProducts({ includeAllStatuses: true }),
                   fetchFaqs(),
+                  fetchAboutContent(),
                 ]);
                 if (isMounted) {
                   setSubmissions(subs || []);
                   setProducts(prods || []);
                   setFaqs(faqList || []);
+                  setAboutForm({
+                    aboutUsBody: aboutContent?.aboutUsBody || '',
+                    howItWorksBody: aboutContent?.howItWorksBody || '',
+                  });
                   setFaqLoading(false);
+                  setAboutLoading(false);
                   setLoading(false);
                 }
               } catch (err) {
                 if (isMounted) {
                   setError('Failed to load dashboard data.');
+                  setAboutLoading(false);
                   setLoading(false);
                 }
               }
@@ -771,6 +785,64 @@ function AdminDashboard() {
       ) : null}
 
       {/* --- FAQ Management Section --- */}
+      <div className="mb-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-xl font-semibold text-slate-900">About Page Blog Content</h2>
+        <p className="mt-1 text-sm text-slate-600">Update the public About page article content anytime.</p>
+
+        {aboutLoading ? <p className="mt-4 text-slate-600">Loading about content...</p> : null}
+        {aboutError ? <p className="mt-4 text-sm text-red-600">{aboutError}</p> : null}
+        {aboutSuccess ? <p className="mt-4 text-sm text-emerald-700">{aboutSuccess}</p> : null}
+
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault();
+            setAboutError('');
+            setAboutSuccess('');
+            setAboutSaving(true);
+
+            try {
+              await updateAboutContent(aboutForm, user?.uid || 'admin');
+              setAboutSuccess('About page content updated successfully.');
+            } catch (err) {
+              setAboutError(err?.message || 'Failed to update About page content.');
+            } finally {
+              setAboutSaving(false);
+            }
+          }}
+          className="mt-4 space-y-4"
+        >
+          <label className="block text-sm font-medium text-slate-700">
+            About us (Use a blank line between paragraphs)
+            <textarea
+              value={aboutForm.aboutUsBody}
+              onChange={(event) => setAboutForm((prev) => ({ ...prev, aboutUsBody: event.target.value }))}
+              rows={8}
+              required
+              className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-slate-700">
+            How it works (Use a blank line between paragraphs)
+            <textarea
+              value={aboutForm.howItWorksBody}
+              onChange={(event) => setAboutForm((prev) => ({ ...prev, howItWorksBody: event.target.value }))}
+              rows={10}
+              required
+              className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+            />
+          </label>
+
+          <button
+            type="submit"
+            disabled={aboutSaving || aboutLoading}
+            className="rounded-3xl bg-[#00CED1] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#00C5CD] disabled:opacity-60"
+          >
+            {aboutSaving ? 'Saving...' : 'Save About page content'}
+          </button>
+        </form>
+      </div>
+
       <div className="mb-8">
         <h2 className="text-xl font-semibold text-slate-900">FAQs</h2>
         <p className="mt-1 text-sm text-slate-600">Manage Frequently Asked Questions displayed on the public FAQ page.</p>

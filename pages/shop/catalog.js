@@ -278,11 +278,25 @@ export default function Shop() {
   // Use static subcategories for Parts, Gear, Accessories
   let subcategoryOptions = [];
   if (selectedCategory === 'Parts') {
-    subcategoryOptions = DIRT_BIKE_CATEGORIES.Parts;
+    subcategoryOptions = Array.from(
+      new Set([
+        ...DIRT_BIKE_CATEGORIES.Parts,
+        ...productsForSubcategories
+          .map((product) => (product.subcategory || '').trim())
+          .filter(Boolean),
+      ])
+    ).sort((a, b) => a.localeCompare(b));
   } else if (selectedCategory === 'Gear') {
     subcategoryOptions = DIRT_BIKE_CATEGORIES.Gear;
   } else if (selectedCategory === 'Accessories') {
-    subcategoryOptions = DIRT_BIKE_CATEGORIES.Accessories;
+    subcategoryOptions = Array.from(
+      new Set([
+        ...DIRT_BIKE_CATEGORIES.Accessories,
+        ...productsForSubcategories
+          .map((product) => (product.subcategory || '').trim())
+          .filter(Boolean),
+      ])
+    ).sort((a, b) => a.localeCompare(b));
   } else {
     subcategoryOptions = Array.from(
       new Set(

@@ -50,7 +50,9 @@ service cloud.firestore {
           'phone',
           'countryCode',
           'canSell',
-          'sellerProfileComplete'
+          'sellerProfileComplete',
+          'termsAcceptedAt',
+          'termsAcceptedVersion'
         ])
         && (
           !('role' in request.resource.data)
@@ -73,7 +75,9 @@ service cloud.firestore {
           'countryCode',
           'photoURL',
           'sellerProfileComplete',
-          'canSell'
+          'canSell',
+          'termsAcceptedAt',
+          'termsAcceptedVersion'
         ])
         && (
           !('uid' in request.resource.data)
@@ -216,12 +220,52 @@ service cloud.firestore {
           'partsBrand',
           'customPartsBrand',
           'customPartsBrandOptional',
+          'customSubcategory',
           'rejectedAt',
           'rejectedBy',
           'rejectionReason',
           'updatedAt'
         ])
         && (request.resource.data.status == resource.data.status || request.resource.data.status == 'pending' || request.resource.data.status == 'rejected');
+    }
+
+    function isSellerProductUpdate() {
+      return signedIn()
+        && resource.data.sellerId == request.auth.uid
+        && request.resource.data.sellerId == resource.data.sellerId
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.marketSold == resource.data.marketSold
+        && (resource.data.status == 'listed' || resource.data.status == 'active')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name',
+          'price',
+          'subcategory',
+          'description',
+          'specifications',
+          'primaryImage',
+          'images',
+          'gearItem',
+          'gearCondition',
+          'gearBrand',
+          'customGearBrand',
+          'gearSize',
+          'gearComboShirtSize',
+          'gearComboPantsSize',
+          'accessoriesSubcategory',
+          'accessoriesCondition',
+          'accessoriesBrand',
+          'customAccessoriesBrand',
+          'partsCondition',
+          'manufacturer',
+          'model',
+          'otherManufacturer',
+          'brand',
+          'partsBrand',
+          'customPartsBrand',
+          'customPartsBrandOptional',
+          'customSubcategory',
+          'updatedAt'
+        ]);
     }
 
     function isOrderCreate() {
@@ -262,6 +306,7 @@ service cloud.firestore {
       allow read: if publicProductVisible() || (signedIn() && (resource.data.sellerId == request.auth.uid || isAdmin()));
       allow create, delete: if isAdmin();
       allow update: if isAdmin()
+        || isSellerProductUpdate()
         || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clickCount']);
     }
 
@@ -291,6 +336,11 @@ service cloud.firestore {
 
     match /catalogConfig/{configId} {
       allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /siteContent/{contentId} {
+      allow read: if true;
       allow create, update, delete: if isAdmin();
     }
 

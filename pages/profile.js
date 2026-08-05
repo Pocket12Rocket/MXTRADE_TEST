@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import useAuth from '../lib/useAuth';
+import TermsAndConditionsModal from '../components/TermsAndConditionsModal';
 import {
+  acceptTermsAndConditions,
   fetchSellerPrivateProfile,
   upsertSellerPrivateProfile,
   uploadProfilePicture,
@@ -106,6 +108,9 @@ export default function ProfilePage() {
   };
   const [sellerProfileForm, setSellerProfileForm] = useState(EMPTY_SELLER_PROFILE_FORM);
   const [savedSellerProfileForm, setSavedSellerProfileForm] = useState(EMPTY_SELLER_PROFILE_FORM);
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
+  const [pendingTermsAction, setPendingTermsAction] = useState(null);
 
   const currentPhoto = photoURL || profile?.photoURL || null;
   const initials = profile
@@ -128,12 +133,7 @@ export default function ProfilePage() {
     setSaveSuccess(false);
   };
 
-  const handleSave = async (event) => {
-    event.preventDefault();
-    if (!editFirstName.trim() || !editLastName.trim()) {
-      setSaveError('First name and last name are required.');
-      return;
-    }
+  const saveBasicProfile = async () => {
     setSaveError('');
     setSaving(true);
     try {
@@ -151,6 +151,23 @@ export default function ProfilePage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSave = async (event) => {
+    event.preventDefault();
+    if (!editFirstName.trim() || !editLastName.trim()) {
+      setSaveError('First name and last name are required.');
+      return;
+    }
+
+    if (hasAcceptedTermsOnce) {
+      await saveBasicProfile();
+      return;
+    }
+
+    setPendingTermsAction('profile');
+    setHasAcceptedTerms(false);
+    setShowTermsModal(true);
   };
 
   const handleFileChange = async (event) => {
@@ -258,6 +275,24 @@ export default function ProfilePage() {
     setIsEditingSellerProfile(false);
   };
 
+  const saveSellerProfile = async () => {
+    setSellerProfileSaving(true);
+    setSellerProfileError('');
+    setSellerProfileSuccess('');
+
+    try {
+      await upsertSellerPrivateProfile(user, sellerProfileForm);
+      await refreshProfile(user);
+      setSavedSellerProfileForm(sellerProfileForm);
+      setSellerProfileSuccess('Seller profile saved securely.');
+      setIsEditingSellerProfile(false);
+    } catch (error) {
+      setSellerProfileError(error?.message || 'Failed to save seller profile.');
+    } finally {
+      setSellerProfileSaving(false);
+    }
+  };
+
   const handleSellerProfileSubmit = async (event) => {
     event.preventDefault();
 
@@ -281,20 +316,41 @@ export default function ProfilePage() {
       return;
     }
 
-    setSellerProfileSaving(true);
-    setSellerProfileError('');
-    setSellerProfileSuccess('');
+    if (hasAcceptedTermsOnce) {
+      await saveSellerProfile();
+      return;
+    }
+
+    setPendingTermsAction('seller');
+    setHasAcceptedTerms(false);
+    setShowTermsModal(true);
+  };
+
+  const handleTermsConfirm = async () => {
+    if (!hasAcceptedTerms) {
+      return;
+    }
 
     try {
-      await upsertSellerPrivateProfile(user, sellerProfileForm);
+      await acceptTermsAndConditions(user);
       await refreshProfile(user);
-      setSavedSellerProfileForm(sellerProfileForm);
-      setSellerProfileSuccess('Seller profile saved securely.');
-      setIsEditingSellerProfile(false);
-    } catch (error) {
-      setSellerProfileError(error?.message || 'Failed to save seller profile.');
-    } finally {
-      setSellerProfileSaving(false);
+    } catch {
+      setSaveError('Could not record terms acceptance. Please try again.');
+      setSellerProfileError('Could not record terms acceptance. Please try again.');
+      return;
+    }
+
+    if (pendingTermsAction === 'profile') {
+      await saveBasicProfile();
+      setShowTermsModal(false);
+      setPendingTermsAction(null);
+      return;
+    }
+
+    if (pendingTermsAction === 'seller') {
+      await saveSellerProfile();
+      setShowTermsModal(false);
+      setPendingTermsAction(null);
     }
   };
 
@@ -302,6 +358,7 @@ export default function ProfilePage() {
     ? `****${sellerProfileForm.accountNumber.slice(-4)}`
     : 'Not set';
   const hasCompletedSellerProfile = Boolean(profile?.sellerProfileComplete && profile?.canSell);
+  const hasAcceptedTermsOnce = Boolean(profile?.termsAcceptedAt || profile?.termsAcceptedVersion);
 
   if (loading) {
     return <p>Loading profile...</p>;
@@ -720,6 +777,21 @@ export default function ProfilePage() {
           </form>
         )}
       </div>
+
+      <TermsAndConditionsModal
+        isOpen={showTermsModal}
+        onClose={() => {
+          if (saving || sellerProfileSaving) return;
+          setShowTermsModal(false);
+          setPendingTermsAction(null);
+          setHasAcceptedTerms(false);
+        }}
+        onConfirm={handleTermsConfirm}
+        isChecked={hasAcceptedTerms}
+        onCheckedChange={setHasAcceptedTerms}
+        isSubmitting={saving || sellerProfileSaving}
+        confirmLabel={pendingTermsAction === 'seller' ? 'I agree and save seller profile' : 'I agree and save profile'}
+      />
     </div>
   );
 }

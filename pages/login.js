@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { auth } from '../lib/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { createUserProfile } from '../lib/firestoreHelpers';
+import TermsAndConditionsModal from '../components/TermsAndConditionsModal';
 
 export default function Login() {
       // Handle confirm password change and blur
@@ -36,6 +37,9 @@ export default function Login() {
   const [pendingVerification, setPendingVerification] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [passwordMismatchError, setPasswordMismatchError] = useState('');
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
+  const [registering, setRegistering] = useState(false);
 
   const countryCodes = [
     { cc: 'ZA', code: '+27', name: 'South Africa' },
@@ -78,10 +82,71 @@ export default function Login() {
 
   // useEffect for message removed (no default info message)
 
+  const handleAuthError = (error) => {
+    if (
+      error?.code === 'auth/invalid-credential' ||
+      error?.code === 'auth/user-not-found' ||
+      error?.code === 'auth/wrong-password'
+    ) {
+      setMessage('Incorrect email or password');
+      return;
+    }
+
+    if (error?.code === 'auth/email-already-in-use') {
+      setMode('login');
+      setMessage('An account with this email address already exists. Please log in instead.');
+      return;
+    }
+
+    if (error?.code === 'auth/invalid-email') {
+      setMessage('Please enter a valid email address.');
+      return;
+    }
+
+    if (error?.code === 'auth/weak-password') {
+      setMessage('Password is too weak. Please use at least 6 characters.');
+      return;
+    }
+
+    if (error?.code === 'auth/too-many-requests') {
+      setMessage('Too many requests. Please wait a few minutes and try again.');
+      return;
+    }
+
+    setMessage(error?.message || 'Something went wrong. Please try again.');
+  };
+
+  const handleRegisterWithAcceptedTerms = async () => {
+    if (!hasAcceptedTerms) {
+      return;
+    }
+
+    setRegistering(true);
+    setMessage('');
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      await createUserProfile(userCredential.user, 'customer', {
+        firstName,
+        lastName,
+        phone,
+        countryCode,
+        hasAcceptedTerms: true,
+      });
+      await sendEmailVerification(userCredential.user);
+      await auth.signOut();
+      setPendingVerification(true);
+      setShowTermsModal(false);
+    } catch (error) {
+      handleAuthError(error);
+    } finally {
+      setRegistering(false);
+    }
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
-    try {
-      if (mode === 'login') {
+    if (mode === 'login') {
+      try {
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         if (!userCredential.user.emailVerified) {
           await sendEmailVerification(userCredential.user);
@@ -92,61 +157,25 @@ export default function Login() {
         }
         setMessage('Signed in successfully. Redirecting...');
         await router.push('/');
-      } else {
-        if (!firstName.trim() || !lastName.trim()) {
-          setMessage('First name and last name are required.');
-          return;
-        }
-
-        if (password !== confirmPassword) {
-          setMessage('Passwords do not match. Please re-enter your password.');
-          return;
-        }
-
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        await createUserProfile(userCredential.user, 'customer', {
-          firstName,
-          lastName,
-          phone,
-          countryCode,
-        });
-        await sendEmailVerification(userCredential.user);
-        await auth.signOut();
-        setPendingVerification(true);
+      } catch (error) {
+        handleAuthError(error);
       }
-    } catch (error) {
-      if (
-        error?.code === 'auth/invalid-credential' ||
-        error?.code === 'auth/user-not-found' ||
-        error?.code === 'auth/wrong-password'
-      ) {
-        setMessage('Incorrect email or password');
-        return;
-      }
-
-      if (error?.code === 'auth/email-already-in-use') {
-        setMode('login');
-        setMessage('An account with this email address already exists. Please log in instead.');
-        return;
-      }
-
-      if (error?.code === 'auth/invalid-email') {
-        setMessage('Please enter a valid email address.');
-        return;
-      }
-
-      if (error?.code === 'auth/weak-password') {
-        setMessage('Password is too weak. Please use at least 6 characters.');
-        return;
-      }
-
-      if (error?.code === 'auth/too-many-requests') {
-        setMessage('Too many requests. Please wait a few minutes and try again.');
-        return;
-      }
-
-      setMessage(error.message);
+      return;
     }
+
+    if (!firstName.trim() || !lastName.trim()) {
+      setMessage('First name and last name are required.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setMessage('Passwords do not match. Please re-enter your password.');
+      return;
+    }
+
+    setMessage('');
+    setHasAcceptedTerms(false);
+    setShowTermsModal(true);
   };
 
   const handleForgotPassword = async (event) => {
@@ -426,6 +455,20 @@ export default function Login() {
         </p>
       </form>
       <p className="text-sm text-slate-500">{message}</p>
+
+      <TermsAndConditionsModal
+        isOpen={showTermsModal}
+        onClose={() => {
+          if (registering) return;
+          setShowTermsModal(false);
+          setHasAcceptedTerms(false);
+        }}
+        onConfirm={handleRegisterWithAcceptedTerms}
+        isChecked={hasAcceptedTerms}
+        onCheckedChange={setHasAcceptedTerms}
+        isSubmitting={registering}
+        confirmLabel="I agree and create profile"
+      />
     </div>
   );
 }

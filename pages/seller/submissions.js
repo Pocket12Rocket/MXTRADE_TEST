@@ -8,8 +8,10 @@ import {
   fetchSellerLiveProducts,
   removeSellerSubmission,
   removeSellerProduct,
+  fetchSubcategoryOptions,
   fetchGearBrandOptions,
   updateSellerSubmission,
+  updateSellerProduct,
   updateSellerSubmissionImages,
 } from '../../lib/firestoreHelpers';
 import { BIKE_MODELS_BY_MANUFACTURER, DIRT_BIKE_CATEGORIES, GEAR_BRAND_OPTIONS, GEAR_CONDITION_OPTIONS, GEAR_ITEM_OPTIONS } from '../../lib/dirtBikeCategories';
@@ -36,8 +38,26 @@ const PANTS_SIZE_OPTIONS = ['4', '6', '8', '10', '12', '14', '22', '24', '26', '
 const BOOTS_SIZE_OPTIONS = ['UK1', 'UK2', 'UK3', 'UK4', 'UK5', 'UK6', 'UK7', 'UK8', 'UK9', 'UK10', 'UK11', 'UK12', 'UK13', 'UK14', 'UK15', 'UK16', '10j', '11j', '12j', '13j', '14j'];
 const GLOVES_SIZE_OPTIONS = ['YOUTH S', 'YOUTH M', 'YOUTH L', 'YOUTH XL', 'XS', 'M', 'L', 'XL', 'XXL'];
 const OTHER_BRAND_VALUE = '__other__';
+const OTHER_SUBCATEGORY_VALUE = '__other_subcategory__';
 const MAX_LISTING_IMAGES = 5;
 const MAX_DESCRIPTION_LENGTH = 75;
+
+function mergeOptionList(defaultValues = [], approvedValues = []) {
+  const merged = [...(defaultValues || [])];
+  (approvedValues || []).forEach((item) => {
+    const normalized = String(item || '').trim();
+    if (!normalized) {
+      return;
+    }
+
+    const exists = merged.some((existing) => existing.toLowerCase() === normalized.toLowerCase());
+    if (!exists) {
+      merged.push(normalized);
+    }
+  });
+
+  return merged.sort((a, b) => a.localeCompare(b));
+}
 
 function mergeUniqueFiles(existingFiles, incomingFiles) {
   const seen = new Set((existingFiles || []).map((file) => `${file.name}-${file.size}-${file.lastModified}`));
@@ -136,10 +156,13 @@ export default function SellerSubmissions() {
   const [deletingId, setDeletingId] = useState('');
   const [selectedSubmission, setSelectedSubmission] = useState(null);
   const [editingSubmission, setEditingSubmission] = useState(null);
+  const [editingListingType, setEditingListingType] = useState(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isResubmitting, setIsResubmitting] = useState(false);
   const [brandOptions, setBrandOptions] = useState(GEAR_BRAND_OPTIONS);
   const [bikeModelOptionsByManufacturer, setBikeModelOptionsByManufacturer] = useState(BIKE_MODELS_BY_MANUFACTURER);
+  const [accessoriesSubcategoryOptions, setAccessoriesSubcategoryOptions] = useState(DIRT_BIKE_CATEGORIES.Accessories);
+  const [partsSubcategoryOptions, setPartsSubcategoryOptions] = useState(DIRT_BIKE_CATEGORIES.Parts);
   const [editImageUrls, setEditImageUrls] = useState([]);
   const [editNewFiles, setEditNewFiles] = useState([]);
   const [editForm, setEditForm] = useState({
@@ -163,9 +186,11 @@ export default function SellerSubmissions() {
     accessoriesCondition: '',
     accessoriesBrand: '',
     customAccessoriesBrand: '',
+    customAccessoriesSubcategory: '',
     partsCondition: '',
     partsBrand: '',
     customPartsBrand: '',
+    customPartsSubcategory: '',
   });
 
   useEffect(() => {
@@ -192,6 +217,34 @@ export default function SellerSubmissions() {
         if (isMounted) {
           setBrandOptions(GEAR_BRAND_OPTIONS);
         }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    Promise.all([
+      fetchSubcategoryOptions('Accessories'),
+      fetchSubcategoryOptions('Parts'),
+    ])
+      .then(([approvedAccessories, approvedParts]) => {
+        if (!isMounted) {
+          return;
+        }
+
+        setAccessoriesSubcategoryOptions(mergeOptionList(DIRT_BIKE_CATEGORIES.Accessories, approvedAccessories));
+        setPartsSubcategoryOptions(mergeOptionList(DIRT_BIKE_CATEGORIES.Parts, approvedParts));
+      })
+      .catch(() => {
+        if (!isMounted) {
+          return;
+        }
+        setAccessoriesSubcategoryOptions(DIRT_BIKE_CATEGORIES.Accessories);
+        setPartsSubcategoryOptions(DIRT_BIKE_CATEGORIES.Parts);
       });
 
     return () => {
@@ -243,13 +296,14 @@ export default function SellerSubmissions() {
         createdAtMillis: getCreatedAtMillis(submission.createdAt),
         listingType: 'submission',
         viewType: 'modal',
-        canEdit: true,
+        canEdit: submission.status === 'pending',
         submission,
       }));
 
     const liveProductRows = products.map((product) => {
       const normalizedProductStatus = product.status
         || (product.marketSold ? 'purchased' : 'listed');
+      const canEditListedProduct = normalizedProductStatus === 'listed' || normalizedProductStatus === 'active';
 
       return ({
       id: product.id,
@@ -258,7 +312,7 @@ export default function SellerSubmissions() {
       createdAtMillis: getCreatedAtMillis(product.createdAt),
       listingType: 'product',
       viewType: normalizedProductStatus === 'listed' ? 'shop' : 'disabled',
-      canEdit: false,
+      canEdit: canEditListedProduct,
       product,
     });
     });
@@ -330,12 +384,14 @@ export default function SellerSubmissions() {
   };
 
   const handleOpenEdit = (listing) => {
-    if (!listing.canEdit || !listing.submission) {
+    const sourceListing = listing.listingType === 'submission' ? listing.submission : listing.product;
+    if (!listing.canEdit || !sourceListing) {
       return;
     }
 
-    const submission = listing.submission;
+    const submission = sourceListing;
     setEditingSubmission(submission);
+    setEditingListingType(listing.listingType);
     setEditImageUrls(getSubmissionImages(submission));
     setEditNewFiles([]);
 
@@ -357,6 +413,12 @@ export default function SellerSubmissions() {
       ? submission.model.map((item) => String(item || '').trim()).filter(Boolean)
       : (typeof submission.model === 'string' && submission.model.trim() ? [submission.model.trim()] : []);
 
+    const submissionSubcategory = String(submission.subcategory || '').trim();
+    const isAccessoriesOtherSubcategory = submission.category === 'Accessories' && submissionSubcategory
+      && !accessoriesSubcategoryOptions.some((option) => option.toLowerCase() === submissionSubcategory.toLowerCase());
+    const isPartsOtherSubcategory = submission.category === 'Parts' && submissionSubcategory
+      && !partsSubcategoryOptions.some((option) => option.toLowerCase() === submissionSubcategory.toLowerCase());
+
     setEditForm({
       name: submission.name || '',
       price: submission.price != null ? String(submission.price) : '',
@@ -364,7 +426,7 @@ export default function SellerSubmissions() {
       specifications: Array.isArray(submission.specifications)
         ? submission.specifications.join('\n')
         : submission.specifications || '',
-      subcategory: submission.subcategory || '',
+      subcategory: isPartsOtherSubcategory ? OTHER_SUBCATEGORY_VALUE : (submission.subcategory || ''),
       manufacturer: submission.manufacturer || '',
       model: submissionModels,
       customModel: submissionModels.join(', '),
@@ -380,7 +442,9 @@ export default function SellerSubmissions() {
       gearSize: submission.gearSize || '',
       gearComboShirtSize: submission.gearComboShirtSize || '',
       gearComboPantsSize: submission.gearComboPantsSize || '',
-      accessoriesSubcategory: submission.accessoriesSubcategory || submission.subcategory || '',
+      accessoriesSubcategory: isAccessoriesOtherSubcategory
+        ? OTHER_SUBCATEGORY_VALUE
+        : (submission.accessoriesSubcategory || submission.subcategory || ''),
       accessoriesCondition: submission.accessoriesCondition || '',
       accessoriesBrand: submissionAccessoriesBrand
         ? hasSubmissionAccessoriesBrand
@@ -388,6 +452,7 @@ export default function SellerSubmissions() {
           : OTHER_BRAND_VALUE
         : '',
       customAccessoriesBrand: submissionAccessoriesBrand && !hasSubmissionAccessoriesBrand ? submissionAccessoriesBrand : '',
+      customAccessoriesSubcategory: isAccessoriesOtherSubcategory ? submissionSubcategory : '',
       partsCondition: submission.customFields?.partsCondition || '',
       partsBrand: submissionPartsBrand
         ? hasSubmissionPartsBrand
@@ -395,11 +460,13 @@ export default function SellerSubmissions() {
           : OTHER_BRAND_VALUE
         : '',
       customPartsBrand: submissionPartsBrand && !hasSubmissionPartsBrand ? submissionPartsBrand : '',
+      customPartsSubcategory: isPartsOtherSubcategory ? submissionSubcategory : '',
     });
   };
 
   const handleCloseEdit = () => {
     setEditingSubmission(null);
+    setEditingListingType(null);
     setEditImageUrls([]);
     setEditNewFiles([]);
     setIsSavingEdit(false);
@@ -550,36 +617,44 @@ export default function SellerSubmissions() {
     }
 
     if (submissionCategory === 'Accessories') {
+      const resolvedAccessoriesSubcategory = editForm.accessoriesSubcategory === OTHER_SUBCATEGORY_VALUE
+        ? editForm.customAccessoriesSubcategory.trim()
+        : editForm.accessoriesSubcategory.trim();
       const resolvedAccessoriesBrand = editForm.accessoriesBrand === OTHER_BRAND_VALUE ? editForm.customAccessoriesBrand.trim() : editForm.accessoriesBrand.trim();
 
-      if (!editForm.accessoriesSubcategory || !editForm.accessoriesCondition || !normalizedDescription) {
+      if (!resolvedAccessoriesSubcategory || !editForm.accessoriesCondition || !normalizedDescription) {
         setError('Please complete all required accessories fields before saving.');
         return null;
       }
 
-      const accessoriesName = resolvedAccessoriesBrand ? `${resolvedAccessoriesBrand} ${editForm.accessoriesSubcategory.trim()}` : editForm.accessoriesSubcategory.trim();
+      const accessoriesName = resolvedAccessoriesBrand ? `${resolvedAccessoriesBrand} ${resolvedAccessoriesSubcategory}` : resolvedAccessoriesSubcategory;
       const specLines = [`Condition: ${editForm.accessoriesCondition.trim()}`];
       if (resolvedAccessoriesBrand) specLines.push(`Brand: ${resolvedAccessoriesBrand}`);
 
       return {
         name: accessoriesName,
         price: Number(editForm.price),
-        subcategory: editForm.accessoriesSubcategory.trim(),
+        subcategory: resolvedAccessoriesSubcategory,
         description: normalizedDescription,
         specifications: specLines,
-        accessoriesSubcategory: editForm.accessoriesSubcategory.trim(),
+        accessoriesSubcategory: resolvedAccessoriesSubcategory,
         accessoriesCondition: editForm.accessoriesCondition.trim(),
         accessoriesBrand: resolvedAccessoriesBrand,
         customAccessoriesBrand: editForm.accessoriesBrand === OTHER_BRAND_VALUE ? resolvedAccessoriesBrand : '',
+        customSubcategory: editForm.accessoriesSubcategory === OTHER_SUBCATEGORY_VALUE ? resolvedAccessoriesSubcategory : '',
       };
     }
+
+    const resolvedPartsSubcategory = editForm.subcategory === OTHER_SUBCATEGORY_VALUE
+      ? editForm.customPartsSubcategory.trim()
+      : editForm.subcategory.trim();
 
     if (!editForm.name.trim()) {
       setError('Product name is required.');
       return null;
     }
 
-    if (!editForm.subcategory.trim() || !normalizedDescription) {
+    if (!resolvedPartsSubcategory || !normalizedDescription) {
       setError('Please complete all required parts fields before saving.');
       return null;
     }
@@ -631,7 +706,7 @@ export default function SellerSubmissions() {
     return {
       name: editForm.name.trim(),
       price: Number(editForm.price),
-      subcategory: editForm.subcategory.trim(),
+      subcategory: resolvedPartsSubcategory,
       description: normalizedDescription,
       specifications: specificationsWithBrand,
       manufacturer: normalizedManufacturer,
@@ -639,6 +714,7 @@ export default function SellerSubmissions() {
       otherManufacturer: normalizedManufacturer === 'Other' ? normalizedOtherManufacturer : '',
       brand: resolvedPartsBrand,
       customPartsBrand: normalizedManufacturer === 'Other' ? normalizedOtherManufacturer : '',
+      customSubcategory: editForm.subcategory === OTHER_SUBCATEGORY_VALUE ? resolvedPartsSubcategory : '',
     };
   };
 
@@ -664,11 +740,17 @@ export default function SellerSubmissions() {
         return;
       }
 
-      await updateSellerSubmission(editingSubmission.id, updatesWithImages);
-
-      setSubmissions((prev) =>
-        prev.map((item) => (item.id === editingSubmission.id ? { ...item, ...updatesWithImages } : item))
-      );
+      if (editingListingType === 'product') {
+        await updateSellerProduct(editingSubmission.id, updatesWithImages);
+        setProducts((prev) =>
+          prev.map((item) => (item.id === editingSubmission.id ? { ...item, ...updatesWithImages } : item))
+        );
+      } else {
+        await updateSellerSubmission(editingSubmission.id, updatesWithImages);
+        setSubmissions((prev) =>
+          prev.map((item) => (item.id === editingSubmission.id ? { ...item, ...updatesWithImages } : item))
+        );
+      }
 
       if (selectedSubmission?.id === editingSubmission.id) {
         setSelectedSubmission((prev) => (prev ? { ...prev, ...updatesWithImages } : prev));
@@ -683,7 +765,7 @@ export default function SellerSubmissions() {
   };
 
   const handleResubmit = async () => {
-    if (!editingSubmission) {
+    if (!editingSubmission || editingListingType !== 'submission' || editingSubmission.status !== 'rejected') {
       return;
     }
 
@@ -1142,17 +1224,36 @@ export default function SellerSubmissions() {
                       <span className="text-sm font-medium text-slate-700">What type of accessory is this?</span>
                       <select
                         value={editForm.accessoriesSubcategory}
-                        onChange={(event) => setEditForm((prev) => ({ ...prev, accessoriesSubcategory: event.target.value }))}
+                        onChange={(event) => setEditForm((prev) => ({
+                          ...prev,
+                          accessoriesSubcategory: event.target.value,
+                          customAccessoriesSubcategory: event.target.value === OTHER_SUBCATEGORY_VALUE ? prev.customAccessoriesSubcategory : '',
+                        }))}
                         required
                         className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                       >
-                        {DIRT_BIKE_CATEGORIES.Accessories.map((item) => (
+                        {accessoriesSubcategoryOptions.map((item) => (
                           <option key={item} value={item}>
                             {item}
                           </option>
                         ))}
+                        <option value={OTHER_SUBCATEGORY_VALUE}>Other</option>
                       </select>
                     </label>
+
+                    {editForm.accessoriesSubcategory === OTHER_SUBCATEGORY_VALUE ? (
+                      <label className="block">
+                        <span className="text-sm font-medium text-slate-700">Enter accessory type</span>
+                        <input
+                          type="text"
+                          value={editForm.customAccessoriesSubcategory || ''}
+                          onChange={(event) => setEditForm((prev) => ({ ...prev, customAccessoriesSubcategory: event.target.value }))}
+                          required
+                          maxLength={60}
+                          className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
+                        />
+                      </label>
+                    ) : null}
 
                     <label className="block">
                       <span className="text-sm font-medium text-slate-700">Please describe the condition of the item</span>
@@ -1254,16 +1355,35 @@ export default function SellerSubmissions() {
                     <span className="text-sm font-medium text-slate-700">Dirt Bike Category</span>
                     <select
                       value={editForm.subcategory}
-                      onChange={e => setEditForm(prev => ({ ...prev, subcategory: e.target.value }))}
+                      onChange={e => setEditForm(prev => ({
+                        ...prev,
+                        subcategory: e.target.value,
+                        customPartsSubcategory: e.target.value === OTHER_SUBCATEGORY_VALUE ? prev.customPartsSubcategory : '',
+                      }))}
                       required
                       className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                     >
                       <option value="">Select a category</option>
-                      {DIRT_BIKE_CATEGORIES.Parts.map(cat => (
+                      {partsSubcategoryOptions.map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
                       ))}
+                      <option value={OTHER_SUBCATEGORY_VALUE}>Other</option>
                     </select>
                   </label>
+
+                  {editForm.subcategory === OTHER_SUBCATEGORY_VALUE ? (
+                    <label className="block">
+                      <span className="text-sm font-medium text-slate-700">Enter parts category</span>
+                      <input
+                        type="text"
+                        value={editForm.customPartsSubcategory || ''}
+                        onChange={e => setEditForm(prev => ({ ...prev, customPartsSubcategory: e.target.value }))}
+                        required
+                        maxLength={60}
+                        className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
+                      />
+                    </label>
+                  ) : null}
 
                   <label className="block">
                     <span className="text-sm font-medium text-slate-700">Fits Bike Manufacturer</span>
@@ -1407,7 +1527,9 @@ export default function SellerSubmissions() {
                   type="button"
                   onClick={handleResubmit}
                   disabled={isSavingEdit || isResubmitting}
-                  className="rounded-full bg-[#00CED1] px-5 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-white hover:bg-[#00C5CD] disabled:opacity-60"
+                  className={`rounded-full bg-[#00CED1] px-5 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-white hover:bg-[#00C5CD] disabled:opacity-60 ${
+                    editingListingType === 'submission' && editingSubmission?.status === 'rejected' ? '' : 'hidden'
+                  }`}
                 >
                   {isResubmitting ? 'Resubmitting...' : 'Resubmit'}
                 </button>
