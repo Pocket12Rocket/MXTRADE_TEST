@@ -24,10 +24,6 @@ service cloud.firestore {
         );
     }
 
-    function sellerProfileExists(userId) {
-      return exists(/databases/$(database)/documents/sellerPrivateProfiles/$(userId));
-    }
-
     function publicProductVisible() {
       return (!('status' in resource.data) || resource.data.status == 'listed' || resource.data.status == 'active' || resource.data.status == '')
         && resource.data.marketSold != true;
@@ -43,10 +39,6 @@ service cloud.firestore {
     function isUserCreate() {
       return signedIn()
         && request.resource.data.uid == request.auth.uid
-        && request.resource.data.email == request.auth.token.email
-        && request.resource.data.role == 'customer'
-        && request.resource.data.canSell == false
-        && request.resource.data.sellerProfileComplete == false
         && request.resource.data.keys().hasOnly([
           'uid',
           'email',
@@ -59,15 +51,21 @@ service cloud.firestore {
           'countryCode',
           'canSell',
           'sellerProfileComplete'
-        ]);
+        ])
+        && (
+          !('role' in request.resource.data)
+          || (
+            request.resource.data.role != 'admin'
+            && request.resource.data.role != 'Admin'
+            && request.resource.data.role != 'ADMIN'
+          )
+        );
     }
 
     function isUserSelfUpdate(userId) {
       return isOwner(userId)
-        && request.resource.data.uid == resource.data.uid
-        && request.resource.data.email == resource.data.email
-        && request.resource.data.role == resource.data.role
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'uid',
           'displayName',
           'firstName',
           'lastName',
@@ -78,54 +76,97 @@ service cloud.firestore {
           'canSell'
         ])
         && (
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['sellerProfileComplete', 'canSell'])
-          || sellerProfileExists(userId)
+          !('uid' in request.resource.data)
+          || request.resource.data.uid == request.auth.uid
         )
-        && (!('sellerProfileComplete' in request.resource.data) || request.resource.data.sellerProfileComplete in [resource.data.sellerProfileComplete, true])
-        && (!('canSell' in request.resource.data) || request.resource.data.canSell in [resource.data.canSell, true]);
+        && (
+          !('role' in request.resource.data)
+          || request.resource.data.role == resource.data.role
+        );
     }
 
     function isSellerPrivateProfileSelfWrite(userId) {
       return isOwner(userId)
-        && request.resource.data.uid == userId
-        && request.resource.data.keys().hasOnly([
-          'uid',
-          'idNumber',
-          'streetAddress',
-          'suburb',
-          'city',
-          'postCode',
-          'bankName',
-          'accountType',
-          'branchName',
-          'branchCode',
-          'accountNumber',
-          'sellerTrustScore',
-          'sellerBadge',
-          'createdAt',
-          'updatedAt'
-        ])
         && (
-          !('sellerTrustScore' in request.resource.data)
-          || request.method == 'create'
-          || request.resource.data.sellerTrustScore == resource.data.sellerTrustScore
-        )
-        && (
-          !('sellerBadge' in request.resource.data)
-          || request.method == 'create'
-          || request.resource.data.sellerBadge == resource.data.sellerBadge
+          (
+            request.method == 'create'
+            && request.resource.data.keys().hasOnly([
+              'uid',
+              'idNumber',
+              'streetAddress',
+              'suburb',
+              'city',
+              'postCode',
+              'bankName',
+              'accountType',
+              'branchName',
+              'branchCode',
+              'accountNumber',
+              'sellerTrustScore',
+              'sellerBadge',
+              'createdAt',
+              'updatedAt'
+            ])
+          )
+          || (
+            request.method == 'update'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'idNumber',
+              'streetAddress',
+              'suburb',
+              'city',
+              'postCode',
+              'bankName',
+              'accountType',
+              'branchName',
+              'branchCode',
+              'accountNumber',
+              'createdAt',
+              'updatedAt'
+            ])
+            && (
+              !('sellerTrustScore' in request.resource.data)
+              || request.resource.data.sellerTrustScore == resource.data.sellerTrustScore
+            )
+            && (
+              !('sellerBadge' in request.resource.data)
+              || request.resource.data.sellerBadge == resource.data.sellerBadge
+            )
+          )
         );
     }
 
     function isSellerPublicProfileSelfWrite(userId) {
       return isOwner(userId)
-        && request.resource.data.uid == userId
-        && request.resource.data.keys().hasOnly([
-          'uid',
-          'suburb',
-          'city',
-          'updatedAt'
-        ]);
+        && (
+          (
+            request.method == 'create'
+            && request.resource.data.keys().hasOnly([
+              'uid',
+              'suburb',
+              'city',
+              'sellerTrustScore',
+              'sellerBadge',
+              'updatedAt'
+            ])
+          )
+          || (
+            request.method == 'update'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'suburb',
+              'city',
+              'updatedAt'
+            ])
+            && (
+              !('sellerTrustScore' in request.resource.data)
+              || request.resource.data.sellerTrustScore == resource.data.sellerTrustScore
+            )
+            && (
+              !('sellerBadge' in request.resource.data)
+              || request.resource.data.sellerBadge == resource.data.sellerBadge
+            )
+          )
+        );
     }
 
     function isSubmissionOwner() {
