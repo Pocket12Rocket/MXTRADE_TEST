@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import useAuth from '../lib/useAuth';
 import TermsAndConditionsModal from '../components/TermsAndConditionsModal';
 import {
+  acceptSellerTermsAndConditions,
   acceptTermsAndConditions,
   fetchSellerPrivateProfile,
   upsertSellerPrivateProfile,
@@ -111,6 +112,8 @@ export default function ProfilePage() {
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
   const [pendingTermsAction, setPendingTermsAction] = useState(null);
+  const [showSellerTermsModal, setShowSellerTermsModal] = useState(false);
+  const [hasAcceptedSellerTerms, setHasAcceptedSellerTerms] = useState(false);
 
   const currentPhoto = photoURL || profile?.photoURL || null;
   const initials = profile
@@ -316,20 +319,42 @@ export default function ProfilePage() {
       return;
     }
 
-    if (hasAcceptedTermsOnce) {
+    if (hasAcceptedSellerTermsOnce) {
       await saveSellerProfile();
       return;
     }
 
-    setPendingTermsAction('seller');
-    setHasAcceptedTerms(false);
-    setShowTermsModal(true);
+    setHasAcceptedSellerTerms(false);
+    setShowSellerTermsModal(true);
+  };
+
+  const handleSellerTermsConfirm = async () => {
+    if (!hasAcceptedSellerTerms) {
+      return;
+    }
+
+    setShowSellerTermsModal(false);
+    setHasAcceptedSellerTerms(false);
+
+    try {
+      await acceptSellerTermsAndConditions(user);
+      await refreshProfile(user);
+    } catch {
+      setSellerProfileError('Could not record seller terms acceptance. Please try again.');
+      return;
+    }
+
+    await saveSellerProfile();
   };
 
   const handleTermsConfirm = async () => {
     if (!hasAcceptedTerms) {
       return;
     }
+
+    setShowTermsModal(false);
+    setPendingTermsAction(null);
+    setHasAcceptedTerms(false);
 
     try {
       await acceptTermsAndConditions(user);
@@ -342,15 +367,6 @@ export default function ProfilePage() {
 
     if (pendingTermsAction === 'profile') {
       await saveBasicProfile();
-      setShowTermsModal(false);
-      setPendingTermsAction(null);
-      return;
-    }
-
-    if (pendingTermsAction === 'seller') {
-      await saveSellerProfile();
-      setShowTermsModal(false);
-      setPendingTermsAction(null);
     }
   };
 
@@ -359,6 +375,7 @@ export default function ProfilePage() {
     : 'Not set';
   const hasCompletedSellerProfile = Boolean(profile?.sellerProfileComplete && profile?.canSell);
   const hasAcceptedTermsOnce = Boolean(profile?.termsAcceptedAt || profile?.termsAcceptedVersion);
+  const hasAcceptedSellerTermsOnce = Boolean(profile?.sellerTermsAcceptedAt || profile?.sellerTermsAcceptedVersion);
 
   if (loading) {
     return <p>Loading profile...</p>;
@@ -791,6 +808,24 @@ export default function ProfilePage() {
         onCheckedChange={setHasAcceptedTerms}
         isSubmitting={saving || sellerProfileSaving}
         confirmLabel={pendingTermsAction === 'seller' ? 'I agree and save seller profile' : 'I agree and save profile'}
+      />
+
+      <TermsAndConditionsModal
+        isOpen={showSellerTermsModal}
+        onClose={() => {
+          if (sellerProfileSaving) return;
+          setShowSellerTermsModal(false);
+          setHasAcceptedSellerTerms(false);
+        }}
+        onConfirm={handleSellerTermsConfirm}
+        isChecked={hasAcceptedSellerTerms}
+        onCheckedChange={setHasAcceptedSellerTerms}
+        isSubmitting={sellerProfileSaving}
+        confirmLabel="I agree and save seller profile"
+        title="FastSport Seller Terms & Conditions"
+        subtitle="Effective Date: 2026-07-01"
+        mode="seller"
+        checkboxLabel="I have read and agree to the seller terms and conditions"
       />
     </div>
   );

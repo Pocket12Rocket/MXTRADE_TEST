@@ -643,7 +643,6 @@ export default function SellerSubmit() {
         <div>
           <p className="text-sm uppercase tracking-[0.3em] text-slate-500">Seller</p>
           <h1 className="mt-3 text-3xl font-semibold text-slate-900">What are you selling?</h1>
-          <p className="mt-3 text-slate-600">Choose the product type first. The submission form will then load for that category.</p>
         </div>
 
         <div className="mt-8 grid gap-4 sm:grid-cols-3">
