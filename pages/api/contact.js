@@ -1,8 +1,13 @@
 import nodemailer from 'nodemailer';
+import { rateLimit } from '../../lib/apiRateLimit';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).end();
+  }
+
+  if (!rateLimit(req, res, { name: 'contact', limit: 5, windowMs: 10 * 60 * 1000 })) {
+    return;
   }
 
   const { name, email, message } = req.body;

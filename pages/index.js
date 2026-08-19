@@ -584,18 +584,6 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="rounded-3xl border border-slate-300 bg-slate-900 p-6 text-white sm:p-8">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-[#40E0D0]">Built for serious buyers</p>
-            <h3 className="mt-3 text-2xl font-semibold">Need support choosing the right part?</h3>
-            <p className="mt-2 text-slate-300">Use product specs and category filters to compare options before checkout.</p>
-          </div>
-          <Link href="/faq" className="rounded-full bg-[#00CED1] px-6 py-3 text-xs font-semibold uppercase tracking-[0.1em] text-white hover:bg-[#00C5CD]">
-            View buying FAQ
-          </Link>
-        </div>
-      </section>
     </div>
   );
 }

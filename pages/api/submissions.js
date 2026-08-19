@@ -1,4 +1,10 @@
+import { rateLimit } from '../../lib/apiRateLimit';
+
 export default function handler(req, res) {
+  if (!rateLimit(req, res, { name: 'submissions', limit: 30, windowMs: 10 * 60 * 1000 })) {
+    return;
+  }
+
   if (req.method === 'POST') {
     return res.status(201).json({ message: 'Submission endpoint placeholder. Implement Firestore write logic here.' });
   }

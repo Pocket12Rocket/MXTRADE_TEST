@@ -12,6 +12,7 @@ export default function ProductDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [addedToCart, setAddedToCart] = useState(false);
+  const [stockLimitError, setStockLimitError] = useState('');
   const [activeImageIndex, setActiveImageIndex] = useState(-1);
   const [lightboxZoom, setLightboxZoom] = useState(1);
   const [deliveryInfoOpen, setDeliveryInfoOpen] = useState(false);
@@ -59,7 +60,16 @@ export default function ProductDetail() {
     }
 
     addToCartLockRef.current = true;
-    addItem(product);
+    const added = addItem(product);
+
+    if (!added) {
+      setStockLimitError('This product is out of stock');
+      addToCartLockRef.current = false;
+      setTimeout(() => setStockLimitError(''), 3000);
+      return;
+    }
+
+    setStockLimitError('');
     setAddedToCart(true);
 
     setTimeout(() => {
@@ -324,16 +334,35 @@ export default function ProductDetail() {
             </div>
           </div>
 
+          <div className="pt-2">
+            <p className="text-xs font-medium text-slate-500">
+              {Number(product.quantity || 1) > 0 ? (
+                <span className="text-green-600">✓ In Stock ({product.quantity || 1} available)</span>
+              ) : (
+                <span className="text-red-600">Out of Stock</span>
+              )}
+            </p>
+          </div>
+
+          {stockLimitError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700">
+              {stockLimitError}
+            </div>
+          )}
+
           <button
             type="button"
             onClick={handleAddToCart}
+            disabled={Number(product.quantity || 1) === 0}
             className={`mt-4 w-full rounded-2xl px-5 py-3 text-sm font-bold uppercase tracking-[0.12em] transition ${
-              addedToCart
-                ? 'bg-green-500 text-white shadow-lg shadow-green-500/20'
-                : 'bg-[#00CED1] text-white shadow-lg shadow-[#00CED1]/25 hover:-translate-y-0.5 hover:bg-[#00C5CD]'
+              Number(product.quantity || 1) === 0
+                ? 'cursor-not-allowed bg-slate-300 text-slate-500'
+                : addedToCart
+                  ? 'bg-green-500 text-white shadow-lg shadow-green-500/20'
+                  : 'bg-[#00CED1] text-white shadow-lg shadow-[#00CED1]/25 hover:-translate-y-0.5 hover:bg-[#00C5CD]'
             }`}
           >
-            {addedToCart ? 'Added to cart!' : 'Add to cart'}
+            {Number(product.quantity || 1) === 0 ? 'Out of Stock' : addedToCart ? 'Added to cart!' : 'Add to cart'}
           </button>
         </div>
       </div>

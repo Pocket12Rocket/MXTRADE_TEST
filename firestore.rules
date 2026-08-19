@@ -243,6 +243,7 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name',
           'price',
+          'quantity',
           'subcategory',
           'description',
           'specifications',

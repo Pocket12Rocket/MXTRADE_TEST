@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import admin from '../../../lib/firebaseAdmin';
+import { rateLimit, getRateLimitKey } from '../../../lib/apiRateLimit';
 
 function escapeHtml(value) {
   return String(value || '')
@@ -163,9 +164,17 @@ export default async function handler(req, res) {
     return res.status(405).json({ message: 'Method not allowed.' });
   }
 
+  if (!rateLimit(req, res, { name: 'password-reset-ip', limit: 5, windowMs: 15 * 60 * 1000 })) {
+    return;
+  }
+
   const email = String(req.body?.email || '').trim().toLowerCase();
   if (!email) {
     return res.status(400).json({ message: 'Please enter your email address.' });
+  }
+
+  if (!rateLimit(req, res, { name: 'password-reset-email', limit: 3, windowMs: 15 * 60 * 1000, key: getRateLimitKey(req, email) })) {
+    return;
   }
 
   if (isResetRequestThrottled(req, email)) {

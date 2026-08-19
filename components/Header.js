@@ -18,13 +18,17 @@ const navItems = [
   { href: '/faq', label: 'FAQ' },
 ];
 
-const topCategoryTabs = ['MOTO'];
+const topCategoryTabs = [
+  { key: 'Gear', label: 'Gear' },
+  { key: 'Parts', label: 'Parts' },
+  { key: 'Accessories', label: 'Accessories' },
+];
 
 export default function Header() {
   const router = useRouter();
   const { totalItems } = useCart();
   const { user, profile } = useAuth();
-  const [activeTopTab, setActiveTopTab] = useState('MOTO');
+  const [activeTopTab, setActiveTopTab] = useState(null);
   const [isMegaMenuOpen, setIsMegaMenuOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -103,7 +107,7 @@ export default function Header() {
 
   const handleTopTabClick = (tab) => {
     setActiveTopTab(tab);
-    setIsMegaMenuOpen(tab === 'MOTO' ? !isMegaMenuOpen : false);
+    setIsMegaMenuOpen((currentValue) => activeTopTab === tab ? !currentValue : true);
   };
 
   const handleSearchSubmit = (event) => {
@@ -309,24 +313,28 @@ export default function Header() {
           </nav>
         </div>
 
-        <div className="flex items-center gap-2 md:hidden">
-        <form onSubmit={handleSearchSubmit} className="flex min-w-0 flex-1 items-center gap-2">
+        <div className="flex items-center gap-1.5 md:hidden">
+        <form onSubmit={handleSearchSubmit} className="flex min-w-0 flex-1 items-center gap-1.5">
           <input
             type="search"
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             placeholder="Search dirt bike parts, gear, and accessories"
-            className="min-w-0 flex-1 rounded-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400"
+            className="h-9 min-w-0 flex-1 rounded-full border border-slate-300 bg-white px-3 text-xs text-slate-700 placeholder:text-slate-400"
           />
           <button
             type="submit"
-            className="rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-white hover:bg-slate-800"
+            aria-label="Search"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-white hover:bg-slate-800"
           >
-            Go
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <circle cx="11" cy="11" r="6.5" />
+              <path strokeLinecap="round" d="m16 16 4.25 4.25" />
+            </svg>
           </button>
         </form>
           {user ? (
-            <Link href="/profile" className={`rounded-full p-0 ${profile?.photoURL ? '' : 'bg-[#00CED1] text-white hover:bg-[#00C5CD]'}`} aria-label="Open profile">
+            <Link href="/profile" className={`shrink-0 rounded-full p-0 ${profile?.photoURL ? '' : 'bg-[#00CED1] text-white hover:bg-[#00C5CD]'}`} aria-label="Open profile">
               {profile?.photoURL ? (
                 <img
                   src={profile.photoURL}
@@ -400,80 +408,42 @@ export default function Header() {
           <div className="mx-auto flex max-w-[1650px] items-center gap-5 overflow-x-auto py-3">
             {topCategoryTabs.map((tab) => (
               <button
-                key={tab}
+                key={tab.key}
                 type="button"
                 onMouseEnter={() => {
-                  setActiveTopTab(tab);
-                  setIsMegaMenuOpen(tab === 'MOTO');
+                  setActiveTopTab(tab.key);
+                  setIsMegaMenuOpen(true);
                 }}
-                onClick={() => handleTopTabClick(tab)}
+                onClick={() => handleTopTabClick(tab.key)}
                 className={`whitespace-nowrap border-b-[3px] pb-2 text-xs font-semibold uppercase tracking-[0.08em] transition ${
-                  activeTopTab === tab
+                  activeTopTab === tab.key
                     ? 'border-[#00C5CD] text-slate-900'
                     : 'border-transparent text-slate-600 hover:text-slate-900'
                 }`}
               >
-                {tab}
+                {tab.label}
               </button>
             ))}
           </div>
         </div>
 
-        {activeTopTab === 'MOTO' && isMegaMenuOpen ? (
+        {activeTopTab && isMegaMenuOpen ? (
           <div className="border-t border-slate-300 bg-[#eceff3] px-3 py-4 sm:px-6 lg:px-8">
-            <div className="mx-auto grid max-w-[1650px] gap-5 md:grid-cols-3">
-              <div>
-                <Link href="/shop/catalog?category=Gear" className="inline-flex items-center gap-2 text-2xl font-semibold leading-none text-slate-900 hover:text-[#00C5CD] md:text-[31px]">
-                  Moto Gear <span className="text-2xl">›</span>
-                </Link>
-                <div className="mt-2 h-px w-full bg-slate-300" />
-                <div className="mt-3 grid gap-2">
-                  {DIRT_BIKE_CATEGORIES.Gear.map((subcategory) => (
-                    <Link
-                      key={subcategory}
-                      href={`/shop/catalog?category=Gear&sub=${encodeURIComponent(subcategory)}`}
-                      className="text-base leading-tight text-slate-700 hover:text-[#00C5CD] md:text-[23px]"
-                    >
-                      {subcategory}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <Link href="/shop/catalog?category=Parts" className="inline-flex items-center gap-2 text-2xl font-semibold leading-none text-slate-900 hover:text-[#00C5CD] md:text-[31px]">
-                  Dirt Bike Parts <span className="text-2xl">›</span>
-                </Link>
-                <div className="mt-2 h-px w-full bg-slate-300" />
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {DIRT_BIKE_CATEGORIES.Parts.map((subcategory) => (
-                    <Link
-                      key={subcategory}
-                      href={`/shop/catalog?category=Parts&sub=${encodeURIComponent(subcategory)}`}
-                      className="text-base leading-tight text-slate-700 hover:text-[#00C5CD] md:text-[23px]"
-                    >
-                      {subcategory}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <Link href="/shop/catalog?category=Accessories" className="inline-flex items-center gap-2 text-2xl font-semibold leading-none text-slate-900 hover:text-[#00C5CD] md:text-[31px]">
-                  Accessories <span className="text-2xl">›</span>
-                </Link>
-                <div className="mt-2 h-px w-full bg-slate-300" />
-                <div className="mt-3 grid gap-2">
-                  {DIRT_BIKE_CATEGORIES.Accessories.map((subcategory) => (
-                    <Link
-                      key={subcategory}
-                      href={`/shop/catalog?category=Accessories&sub=${encodeURIComponent(subcategory)}`}
-                      className="text-base leading-tight text-slate-700 hover:text-[#00C5CD] md:text-[23px]"
-                    >
-                      {subcategory}
-                    </Link>
-                  ))}
-                </div>
+            <div className="mx-auto max-w-[1650px]">
+              <Link href={`/shop/catalog?category=${encodeURIComponent(activeTopTab)}`} className="inline-flex items-center gap-2 text-2xl font-semibold leading-none text-slate-900 hover:text-[#00C5CD] md:text-[31px]">
+                {activeTopTab} <span className="text-2xl">›</span>
+              </Link>
+              <div className="mt-2 h-px w-full bg-slate-300" />
+              <div className={`mt-3 grid gap-2 ${activeTopTab === 'Parts' ? 'sm:grid-cols-2 md:grid-cols-3' : 'sm:grid-cols-2 md:grid-cols-4'}`}>
+                {DIRT_BIKE_CATEGORIES[activeTopTab].map((subcategory) => (
+                  <Link
+                    key={subcategory}
+                    href={`/shop/catalog?category=${encodeURIComponent(activeTopTab)}&sub=${encodeURIComponent(subcategory)}`}
+                    className="text-base leading-tight text-slate-700 hover:text-[#00C5CD] md:text-[21px]"
+                  >
+                    {subcategory}
+                  </Link>
+                ))}
               </div>
             </div>
           </div>

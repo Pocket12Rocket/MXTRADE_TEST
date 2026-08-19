@@ -165,6 +165,7 @@ export default function SellerSubmit() {
   const [model, setModel] = useState([]);
   const [otherManufacturer, setOtherManufacturer] = useState('');
   const [customModel, setCustomModel] = useState('');
+  const [quantity, setQuantity] = useState('1');
 
   useEffect(() => {
     let isMounted = true;
@@ -567,6 +568,7 @@ export default function SellerSubmit() {
         user,
         name: resolvedName,
         price: markupPrice,
+        quantity,
         category,
         subcategory: resolvedSubcategory,
         description: resolvedDescription,
@@ -598,7 +600,7 @@ export default function SellerSubmit() {
       setCustomPartsBrand('');
       setCustomPartsSubcategory('');
       setManufacturer('');
-      setModel([]);
+      setQuantity('1');      setModel([]);
       setOtherManufacturer('');
       setCustomModel('');
       setFiles([]);
@@ -897,6 +899,19 @@ export default function SellerSubmit() {
               {/* Selling price calculation */}
               <SellingPriceInfo price={price} />
             </label>
+
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Quantity available</span>
+              <input
+                type="number"
+                min="1"
+                value={quantity}
+                onChange={(event) => setQuantity(event.target.value)}
+                required
+                className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
+                placeholder="How many items do you have available?"
+              />
+            </label>
           </>
         ) : category === 'Accessories' ? (
           <>
@@ -1036,6 +1051,18 @@ export default function SellerSubmit() {
                 />
                 {/* Selling price calculation */}
                 <SellingPriceInfo price={price} />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Quantity available</span>
+                <input
+                  type="number"
+                  min="1"
+                  value={quantity}
+                  onChange={e => setQuantity(e.target.value)}
+                  required
+                  className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
+                  placeholder="How many items available?"
+                />
               </label>
               <label className="block">
                 <span className="text-sm font-medium text-slate-700">Condition</span>

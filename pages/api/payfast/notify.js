@@ -443,16 +443,23 @@ export default async function handler(req, res) {
       },
     });
 
-    // 2. Mark each product as sold and set marketplace lifecycle status to purchased.
+    // 2. Decrement each product quantity and mark as sold if quantity reaches 0
     const sellerIds = new Set();
     for (const item of order.items || []) {
       if (item.productId) {
         const productRef = adminDb.collection('products').doc(item.productId);
+        const productSnap = await productRef.get();
+        const productDoc = productSnap.data() || {};
+        const currentQuantity = Number(productDoc.quantity || 1);
+        const quantityAfterSale = currentQuantity - Number(item.quantity || 1);
+
+        // Decrement quantity; if it reaches 0, mark as purchased
         batch.update(productRef, {
-          marketSold: true,
-          status: 'purchased',
-          soldAt: admin.firestore.FieldValue.serverTimestamp(),
-          soldOrderId: orderId,
+          quantity: Math.max(0, quantityAfterSale),
+          marketSold: quantityAfterSale <= 0,
+          status: quantityAfterSale <= 0 ? 'purchased' : 'listed',
+          soldAt: quantityAfterSale <= 0 ? admin.firestore.FieldValue.serverTimestamp() : productDoc.soldAt || null,
+          soldOrderId: quantityAfterSale <= 0 ? orderId : productDoc.soldOrderId || null,
           statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
         if (item.sellerId) sellerIds.add(item.sellerId);

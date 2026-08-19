@@ -1,6 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchAboutContent } from '../lib/firestoreHelpers';
 
+function renderBoldText(value) {
+  return String(value || '')
+    .split(/(\*\*[^*]+\*\*)/g)
+    .map((part, index) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={`bold-${index}`}>{part.slice(2, -2)}</strong>;
+      }
+
+      return <span key={`text-${index}`}>{part}</span>;
+    });
+}
+
 export default function About() {
   const [content, setContent] = useState({
     aboutUsBody: '',
@@ -89,7 +101,7 @@ export default function About() {
         <h1 className="mt-3 text-4xl font-semibold leading-tight text-slate-900">Our story</h1>
         {lastUpdatedLabel ? (
           <p className="mt-4 text-xs uppercase tracking-[0.08em] text-slate-500">
-            Last updated: {lastUpdatedLabel}{content.updatedBy ? ` by ${content.updatedBy}` : ''}
+            Last updated: {lastUpdatedLabel}
           </p>
         ) : null}
       </header>
@@ -100,7 +112,7 @@ export default function About() {
         <h2 className="text-3xl font-semibold text-slate-900">About us</h2>
         {aboutUsParagraphs.length > 0 ? (
           aboutUsParagraphs.map((paragraph, index) => (
-            <p key={`about-us-paragraph-${index}`}>{paragraph}</p>
+            <p key={`about-us-paragraph-${index}`}>{renderBoldText(paragraph)}</p>
           ))
         ) : (
           <p>About us content will appear here once an admin publishes it.</p>
@@ -111,7 +123,7 @@ export default function About() {
         <h2 className="text-3xl font-semibold text-slate-900">How it works</h2>
         {howItWorksParagraphs.length > 0 ? (
           howItWorksParagraphs.map((paragraph, index) => (
-            <p key={`how-it-works-paragraph-${index}`}>{paragraph}</p>
+            <p key={`how-it-works-paragraph-${index}`}>{renderBoldText(paragraph)}</p>
           ))
         ) : (
           <p>How it works content will appear here once an admin publishes it.</p>

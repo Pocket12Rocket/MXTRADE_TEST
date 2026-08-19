@@ -1,5 +1,4 @@
-import Link from 'next/link';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import useAuth from '../../lib/useAuth';
 import {
   fetchPendingSubmissions,
@@ -9,7 +8,6 @@ import {
   removeProductAsAdmin,
   fetchUserProfileById,
   updateProductPricingAsAdmin,
-  removeDemoProducts,
   fetchSellerPrivateProfile,
   updateSellerTrustScore,
   fetchAllSellers,
@@ -82,6 +80,16 @@ function getDescriptionPreview(value, maxLength = 140) {
   return `${text.slice(0, maxLength)}...`;
 }
 
+function addBoldMarkup(value, selectionStart, selectionEnd) {
+  const selectedText = value.slice(selectionStart, selectionEnd) || 'bold text';
+  const replacement = `**${selectedText}**`;
+  return {
+    value: `${value.slice(0, selectionStart)}${replacement}${value.slice(selectionEnd)}`,
+    selectionStart: selectionStart + 2,
+    selectionEnd: selectionStart + 2 + selectedText.length,
+  };
+}
+
 function AdminDashboard() {
           // State for products, submissions, faqs
           const [products, setProducts] = useState([]);
@@ -96,11 +104,12 @@ function AdminDashboard() {
           const [aboutSaving, setAboutSaving] = useState(false);
           const [aboutError, setAboutError] = useState('');
           const [aboutSuccess, setAboutSuccess] = useState('');
+          const aboutUsRef = useRef(null);
+          const howItWorksRef = useRef(null);
           const [error, setError] = useState('');
           const [pricingError, setPricingError] = useState('');
           const [processingId, setProcessingId] = useState(null);
           const [removingProductId, setRemovingProductId] = useState(null);
-          const [isRemovingDemoProducts, setIsRemovingDemoProducts] = useState(false);
           const [pricingProduct, setPricingProduct] = useState(null);
           const [isSavingPricing, setIsSavingPricing] = useState(false);
           const [pricingForm, setPricingForm] = useState({
@@ -274,6 +283,20 @@ function AdminDashboard() {
       setIsSavingPricing(false);
     }
   };
+
+  const handleAddBoldMarkup = (field, inputRef) => {
+    const input = inputRef.current;
+    const currentValue = aboutForm[field] || '';
+    const selectionStart = input?.selectionStart ?? currentValue.length;
+    const selectionEnd = input?.selectionEnd ?? currentValue.length;
+    const result = addBoldMarkup(currentValue, selectionStart, selectionEnd);
+
+    setAboutForm((prev) => ({ ...prev, [field]: result.value }));
+    window.requestAnimationFrame(() => {
+      input?.focus();
+      input?.setSelectionRange(result.selectionStart, result.selectionEnd);
+    });
+  };
   // ...other state and handlers...
 
   // --- Main return block ---
@@ -303,92 +326,52 @@ function AdminDashboard() {
     <div className="space-y-8">
       {/* --- Top section: admin info, submissions, sellers, products --- */}
       <div>
-        <p className="text-sm uppercase tracking-[0.3em] text-slate-500">Admin</p>
         <h1 className="mt-3 text-3xl font-semibold text-slate-900">Admin dashboard</h1>
-        <p className="mt-4 max-w-2xl text-slate-600">Admins review submitted products and publish approved items to the live catalog.</p>
-        <div className="mt-4 flex flex-wrap gap-3">
-          <Link href="/admin/seed" className="inline-flex rounded-full bg-[#00CED1] px-5 py-2 text-sm font-semibold text-white hover:bg-[#00C5CD]">
-            Seed demo products
-          </Link>
-          <button
-            type="button"
-            onClick={async () => {
-              setIsRemovingDemoProducts(true);
-              await removeDemoProducts();
-              setIsRemovingDemoProducts(false);
-            }}
-            disabled={isRemovingDemoProducts}
-            className="inline-flex rounded-full bg-rose-600 px-5 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
-          >
-            {isRemovingDemoProducts ? 'Removing demo products...' : 'Remove demo products'}
-          </button>
-        </div>
       </div>
       {error ? <p className="text-red-600">{error}</p> : null}
 
-      {submissions.length === 0 ? (
-        <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-          <p className="text-slate-600">No pending submissions found.</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {submissions.map((submission) => (
-            <div key={submission.id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 sm:flex-1">
-                  <p className="text-sm text-slate-500">{submission.category}</p>
-                  <h2 className="text-xl font-semibold text-slate-900">{submission.name}</h2>
-                  <p className="mt-2 break-all text-slate-600">{getDescriptionPreview(submission.description)}</p>
-                  <p className="mt-2 text-sm text-slate-500">Submitted by {submission.sellerEmail}</p>
-                </div>
-                <div className="flex shrink-0 flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedSubmission(submission)}
-                    className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]"
-                  >
-                    View details
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setProcessingId(submission.id);
-                      setError('');
-                      try {
-                        await approveSubmission(submission.id, user?.uid || 'admin');
-                        setSubmissions((prev) => prev.filter((s) => s.id !== submission.id));
-                      } catch (err) {
-                        setError(err?.message || 'Failed to approve submission. Please try again.');
-                      } finally {
-                        setProcessingId(null);
-                      }
-                    }}
-                    disabled={processingId === submission.id}
-                    className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                  >
-                    {processingId === submission.id ? 'Approving...' : 'Approve'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenRejectModal(submission)}
-                    disabled={processingId === submission.id}
-                    className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
-                  >
-                    Reject
-                  </button>
-                </div>
-              </div>
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center justify-between rounded-3xl border border-slate-200 bg-white px-6 py-5 text-xl font-semibold text-slate-900 shadow-sm marker:hidden">
+          Pending submissions
+          <span className="text-2xl font-normal text-slate-400 transition-transform group-open:rotate-180">⌄</span>
+        </summary>
+        <div className="mt-4">
+          {submissions.length === 0 ? (
+            <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+              <p className="text-slate-600">No pending submissions found.</p>
             </div>
-          ))}
+          ) : (
+            <div className="space-y-4">
+              {submissions.map((submission) => (
+                <div key={submission.id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 sm:flex-1">
+                      <p className="text-sm text-slate-500">{submission.category}</p>
+                      <h2 className="text-xl font-semibold text-slate-900">{submission.name}</h2>
+                      <p className="mt-2 break-all text-slate-600">{getDescriptionPreview(submission.description)}</p>
+                      <p className="mt-2 text-sm text-slate-500">Submitted by {submission.sellerEmail}</p>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-3">
+                      <button type="button" onClick={() => setSelectedSubmission(submission)} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]">View details</button>
+                      <button type="button" onClick={async () => { setProcessingId(submission.id); setError(''); try { await approveSubmission(submission.id, user?.uid || 'admin'); setSubmissions((prev) => prev.filter((s) => s.id !== submission.id)); } catch (err) { setError(err?.message || 'Failed to approve submission. Please try again.'); } finally { setProcessingId(null); } }} disabled={processingId === submission.id} className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">{processingId === submission.id ? 'Approving...' : 'Approve'}</button>
+                      <button type="button" onClick={() => handleOpenRejectModal(submission)} disabled={processingId === submission.id} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60">Reject</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </details>
 
       {/* --- Refund Requests Section --- */}
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-xl font-semibold text-slate-900">Refund Requests</h2>
-          <p className="mt-1 text-sm text-slate-600">Review and process pending refund requests from users.</p>
-        </div>
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center justify-between rounded-3xl border border-slate-200 bg-white px-6 py-5 text-xl font-semibold text-slate-900 shadow-sm marker:hidden">
+          Refund requests
+          <span className="text-2xl font-normal text-slate-400 transition-transform group-open:rotate-180">⌄</span>
+        </summary>
+        <section className="mt-4 space-y-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p className="text-sm text-slate-600">Review and process pending refund requests from users.</p>
         {refundLoading ? (
           <p>Loading refund requests...</p>
         ) : refundOrders.length === 0 ? (
@@ -422,12 +405,17 @@ function AdminDashboard() {
             onClose={() => setSelectedRefund(null)}
           />
         )}
-      </section>
+        </section>
+      </details>
 
       {/* --- Live Products Section --- */}
-      <div>
-        <h2 className="text-xl font-semibold text-slate-900">Live user-listed products</h2>
-        <p className="mt-1 text-sm text-slate-600">Simple list view for product moderation.</p>
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center justify-between rounded-3xl border border-slate-200 bg-white px-6 py-5 text-xl font-semibold text-slate-900 shadow-sm marker:hidden">
+          Live user-listed products
+          <span className="text-2xl font-normal text-slate-400 transition-transform group-open:rotate-180">⌄</span>
+        </summary>
+        <div className="mt-4">
+          <p className="mb-4 text-sm text-slate-600">Simple list view for product moderation.</p>
         {products.length === 0 ? (
           <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
             <p className="text-slate-600">No live user-listed products found.</p>
@@ -507,7 +495,8 @@ function AdminDashboard() {
             </table>
           </div>
         )}
-      </div>
+        </div>
+      </details>
 
       {/* --- Submission Details Modal --- */}
       {selectedSubmission ? (
@@ -785,9 +774,13 @@ function AdminDashboard() {
       ) : null}
 
       {/* --- FAQ Management Section --- */}
-      <div className="mb-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-semibold text-slate-900">About Page Blog Content</h2>
-        <p className="mt-1 text-sm text-slate-600">Update the public About page article content anytime.</p>
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center justify-between rounded-3xl border border-slate-200 bg-white px-6 py-5 text-xl font-semibold text-slate-900 shadow-sm marker:hidden">
+          About page blog content
+          <span className="text-2xl font-normal text-slate-400 transition-transform group-open:rotate-180">⌄</span>
+        </summary>
+        <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p className="text-sm text-slate-600">Update the public About page article content anytime.</p>
 
         {aboutLoading ? <p className="mt-4 text-slate-600">Loading about content...</p> : null}
         {aboutError ? <p className="mt-4 text-sm text-red-600">{aboutError}</p> : null}
@@ -813,7 +806,15 @@ function AdminDashboard() {
         >
           <label className="block text-sm font-medium text-slate-700">
             About us (Use a blank line between paragraphs)
+            <button
+              type="button"
+              onClick={() => handleAddBoldMarkup('aboutUsBody', aboutUsRef)}
+              className="mt-2 rounded border border-slate-300 bg-white px-3 py-1 text-xs font-bold text-slate-700 hover:border-[#00CED1]"
+            >
+              B Bold
+            </button>
             <textarea
+              ref={aboutUsRef}
               value={aboutForm.aboutUsBody}
               onChange={(event) => setAboutForm((prev) => ({ ...prev, aboutUsBody: event.target.value }))}
               rows={8}
@@ -824,7 +825,15 @@ function AdminDashboard() {
 
           <label className="block text-sm font-medium text-slate-700">
             How it works (Use a blank line between paragraphs)
+            <button
+              type="button"
+              onClick={() => handleAddBoldMarkup('howItWorksBody', howItWorksRef)}
+              className="mt-2 rounded border border-slate-300 bg-white px-3 py-1 text-xs font-bold text-slate-700 hover:border-[#00CED1]"
+            >
+              B Bold
+            </button>
             <textarea
+              ref={howItWorksRef}
               value={aboutForm.howItWorksBody}
               onChange={(event) => setAboutForm((prev) => ({ ...prev, howItWorksBody: event.target.value }))}
               rows={10}
@@ -841,11 +850,16 @@ function AdminDashboard() {
             {aboutSaving ? 'Saving...' : 'Save About page content'}
           </button>
         </form>
-      </div>
+        </div>
+      </details>
 
-      <div className="mb-8">
-        <h2 className="text-xl font-semibold text-slate-900">FAQs</h2>
-        <p className="mt-1 text-sm text-slate-600">Manage Frequently Asked Questions displayed on the public FAQ page.</p>
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center justify-between rounded-3xl border border-slate-200 bg-white px-6 py-5 text-xl font-semibold text-slate-900 shadow-sm marker:hidden">
+          FAQs
+          <span className="text-2xl font-normal text-slate-400 transition-transform group-open:rotate-180">⌄</span>
+        </summary>
+        <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p className="text-sm text-slate-600">Manage Frequently Asked Questions displayed on the public FAQ page.</p>
         {faqError && <p className="text-red-600 text-sm mb-2">{faqError}</p>}
         <form onSubmit={async (e) => {
           e.preventDefault();
@@ -920,7 +934,8 @@ function AdminDashboard() {
             ))}
           </ul>
         )}
-      </div>
+        </div>
+      </details>
     </div>
   );
 }

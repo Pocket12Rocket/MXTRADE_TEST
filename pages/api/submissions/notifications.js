@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import admin, { adminDb } from '../../../lib/firebaseAdmin';
+import { rateLimit } from '../../../lib/apiRateLimit';
 
 function escapeHtml(value) {
   return String(value || '')
@@ -263,6 +264,10 @@ async function handleSubmissionRejected({ submission, rejectionReason }) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed.' });
+  }
+
+  if (!rateLimit(req, res, { name: 'submission-notifications', limit: 20, windowMs: 10 * 60 * 1000 })) {
+    return;
   }
 
   const { eventType, submissionId, productId, rejectionReason } = req.body || {};

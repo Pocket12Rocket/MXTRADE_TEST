@@ -838,81 +838,59 @@ export default function SellerSubmissions() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <p className="text-sm uppercase tracking-[0.3em] text-slate-500">Seller Dashboard</p>
-        <h1 className="mt-3 text-3xl font-semibold text-slate-900">My listed products</h1>
-        <p className="mt-4 text-slate-600">Track all of your product statuses and manage your listings from one table.</p>
-        <Link href="/seller/submit" className="mt-4 inline-flex rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">
-          List new product
-        </Link>
-      </div>
+      <h1 className="text-3xl font-semibold text-slate-900">Seller Dashboard</h1>
 
-      {error ? <p className="text-red-600">{error}</p> : null}
+      <Link href="/seller/submit" className="inline-flex rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">
+        List new product
+      </Link>
 
-      {listings.length === 0 ? (
-        <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-          <p className="text-slate-600">No listings yet.</p>
-          <Link href="/seller/submit" className="mt-4 inline-flex rounded-full bg-slate-900 px-5 py-3 text-white hover:bg-slate-800">
-            Submit your first product
-          </Link>
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center justify-between rounded-3xl border border-slate-200 bg-white px-6 py-5 text-xl font-semibold text-slate-900 shadow-sm marker:hidden">
+          My listed products
+          <span className="text-2xl font-normal text-slate-400 transition-transform group-open:rotate-180">⌄</span>
+        </summary>
+        <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p className="text-slate-600">Track all of your product statuses and manage your listings from one table.</p>
+
+          {error ? <p className="mt-4 text-red-600">{error}</p> : null}
+
+          {listings.length === 0 ? (
+            <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+              <p className="text-slate-600">No listings yet.</p>
+              <Link href="/seller/submit" className="mt-4 inline-flex rounded-full bg-slate-900 px-5 py-3 text-white hover:bg-slate-800">
+                Submit your first product
+              </Link>
+            </div>
+          ) : (
+            <div className="mt-4 overflow-x-auto rounded-3xl border border-slate-200 bg-white shadow-sm">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-100">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">Product name</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">Product status</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-700">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {listings.map((listing) => (
+                    <tr key={`${listing.listingType}-${listing.id}`} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 text-slate-900">{listing.productName}</td>
+                      <td className="px-4 py-3 text-slate-700 capitalize">{listing.productStatus}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={() => handleViewDetails(listing)} disabled={listing.viewType === 'disabled'} className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] ${listing.viewType === 'disabled' ? 'cursor-not-allowed bg-slate-200 text-slate-500' : 'border border-slate-300 text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]'}`}>View details</button>
+                          <button type="button" onClick={() => handleOpenEdit(listing)} disabled={!listing.canEdit} className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] ${!listing.canEdit ? 'cursor-not-allowed bg-slate-200 text-slate-500' : 'border border-slate-300 text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]'}`}>Edit</button>
+                          <button type="button" onClick={() => handleDeleteListing(listing)} disabled={deletingId === listing.id} className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-white hover:bg-rose-700 disabled:opacity-60">{deletingId === listing.id ? 'Deleting...' : 'Delete'}</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white shadow-sm">
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-100">
-              <tr>
-                <th className="px-4 py-3 text-left font-semibold text-slate-700">Product name</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-700">Product status</th>
-                <th className="px-4 py-3 text-left font-semibold text-slate-700">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {listings.map((listing) => (
-                <tr key={`${listing.listingType}-${listing.id}`} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 text-slate-900">{listing.productName}</td>
-                  <td className="px-4 py-3 text-slate-700 capitalize">{listing.productStatus}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleViewDetails(listing)}
-                        disabled={listing.viewType === 'disabled'}
-                        className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] ${
-                          listing.viewType === 'disabled'
-                            ? 'cursor-not-allowed bg-slate-200 text-slate-500'
-                            : 'border border-slate-300 text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]'
-                        }`}
-                      >
-                        View details
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEdit(listing)}
-                        disabled={!listing.canEdit}
-                        className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] ${
-                          !listing.canEdit
-                            ? 'cursor-not-allowed bg-slate-200 text-slate-500'
-                            : 'border border-slate-300 text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]'
-                        }`}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteListing(listing)}
-                        disabled={deletingId === listing.id}
-                        className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-white hover:bg-rose-700 disabled:opacity-60"
-                      >
-                        {deletingId === listing.id ? 'Deleting...' : 'Delete'}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      </details>
 
       {selectedSubmission ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">

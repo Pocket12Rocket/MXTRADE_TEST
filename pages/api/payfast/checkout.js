@@ -1,6 +1,12 @@
+import { rateLimit } from '../../../lib/apiRateLimit';
+
 export default function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Only POST is supported' });
+  }
+
+  if (!rateLimit(req, res, { name: 'payfast-checkout', limit: 10, windowMs: 10 * 60 * 1000 })) {
+    return;
   }
 
   try {
