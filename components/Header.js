@@ -13,6 +13,7 @@ const navItems = [
   { href: '/shop', label: 'Shop' },
   { href: '/seller/dashboard', label: 'Seller' },
   { href: '/admin/dashboard', label: 'Admin' },
+  { href: '/admin/sales', label: 'Sales' },
   { href: '/about', label: 'About' },
   { href: '/contact', label: 'Contact' },
   { href: '/faq', label: 'FAQ' },
@@ -48,6 +49,10 @@ export default function Header() {
     }
 
     if (item.href === '/admin/dashboard') {
+      return isAdminUser;
+    }
+
+    if (item.href === '/admin/sales') {
       return isAdminUser;
     }
 

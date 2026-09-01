@@ -1,6 +1,7 @@
 import { rateLimit } from '../../../lib/apiRateLimit';
+import { adminDb } from '../../../lib/firebaseAdmin';
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Only POST is supported' });
   }
@@ -32,11 +33,32 @@ export default function handler(req, res) {
       return res.status(500).json({ error: 'Payfast credentials not configured.' });
     }
 
-    const { amount, item_name, item_description, email_address, return_url, cancel_url, notify_url, custom_str1 } = req.body;
+    const orderId = String(req.body?.orderId || '').trim();
+    if (!orderId) {
+      return res.status(400).json({ error: 'An order ID is required.' });
+    }
 
-    const parsedAmount = Number(amount);
-    if (!parsedAmount || isNaN(parsedAmount)) {
-      return res.status(400).json({ error: `Invalid amount: ${amount}` });
+    const orderSnapshot = await adminDb.collection('orders').doc(orderId).get();
+    if (!orderSnapshot.exists) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    const order = orderSnapshot.data();
+    if (order.status !== 'pending_payment' || order.inventoryReserved !== true) {
+      return res.status(409).json({ error: 'This order is not available for payment.' });
+    }
+
+    const reservationExpiry = order.reservationExpiresAt;
+    const reservationExpiresAt = typeof reservationExpiry?.toMillis === 'function'
+      ? reservationExpiry.toMillis()
+      : Number(reservationExpiry?.seconds || 0) * 1000;
+    if (reservationExpiresAt && reservationExpiresAt <= Date.now()) {
+      return res.status(409).json({ error: 'This order reservation has expired. Please create a new order.' });
+    }
+
+    const parsedAmount = Number(order.totalAmount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      return res.status(400).json({ error: 'Order total is invalid.' });
     }
 
     // Build Payfast payload.
@@ -44,13 +66,13 @@ export default function handler(req, res) {
       merchant_id,
       merchant_key,
       amount: parsedAmount.toFixed(2),
-      item_name: item_name || 'Order',
-      item_description: item_description || '',
-      email_address,
-      return_url: return_url || `${siteUrl}/profile/orders`,
-      cancel_url: cancel_url || `${siteUrl}/profile/orders`,
-      notify_url: notify_url || `${siteUrl}/api/payfast/notify`,
-      custom_str1: custom_str1 || '',
+      item_name: `Order #${orderId}`,
+      item_description: (order.items || []).map((item) => item.name).join(', '),
+      email_address: order.buyerEmail || '',
+      return_url: order.buyerId ? `${siteUrl}/profile/orders` : `${siteUrl}/order/confirmation?orderId=${orderId}`,
+      cancel_url: order.buyerId ? `${siteUrl}/profile/orders` : `${siteUrl}/order/confirmation?orderId=${orderId}`,
+      notify_url: `${siteUrl}/api/payfast/notify`,
+      custom_str1: orderId,
     };
 
     // Payfast signature uses PHP urlencode semantics where spaces become '+'.

@@ -316,7 +316,7 @@ service cloud.firestore {
     }
 
     match /orders/{orderId} {
-      allow create: if isOrderCreate();
+      allow create: if false;
       allow read: if isOrderOwner(resource.data) || isAdmin();
       allow update, delete: if isAdmin();
 

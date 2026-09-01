@@ -365,6 +365,58 @@ async function sendBuyerEmail({ order, itnData }) {
   });
 }
 
+async function releaseInventoryReservation(orderId, paymentStatus) {
+  const orderRef = adminDb.collection('orders').doc(orderId);
+
+  await adminDb.runTransaction(async (transaction) => {
+    const orderSnap = await transaction.get(orderRef);
+    if (!orderSnap.exists) {
+      return;
+    }
+
+    const order = orderSnap.data();
+    if (order.status !== 'pending_payment' || order.inventoryReserved !== true) {
+      return;
+    }
+
+    const productRefs = (order.items || [])
+      .filter((item) => item.productId)
+      .map((item) => adminDb.collection('products').doc(item.productId));
+    const productSnapshots = await Promise.all(productRefs.map((productRef) => transaction.get(productRef)));
+
+    productSnapshots.forEach((productSnap) => {
+      if (!productSnap.exists) {
+        return;
+      }
+
+      const product = productSnap.data() || {};
+      const reservations = product.inventoryReservations && typeof product.inventoryReservations === 'object'
+        ? { ...product.inventoryReservations }
+        : {};
+      const reservation = reservations[orderId];
+      if (!reservation) {
+        return;
+      }
+
+      delete reservations[orderId];
+      transaction.update(productSnap.ref, {
+        quantity: Number(product.quantity || 0) + Number(reservation.quantity || 0),
+        marketSold: false,
+        status: 'listed',
+        inventoryReservations: reservations,
+        statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+
+    transaction.update(orderRef, {
+      status: 'payment_failed',
+      inventoryReserved: false,
+      paymentFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+      payfastPaymentStatus: paymentStatus,
+    });
+  });
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).send('Method Not Allowed');
@@ -402,71 +454,104 @@ export default async function handler(req, res) {
   const orderId = itnData.custom_str1; // We'll pass orderId as custom_str1 when building the payment form
   console.log(`[PayFast ITN] Received payment_status=${paymentStatus} orderId=${orderId || 'N/A'} sandbox=${isSandbox}`);
 
-  if (paymentStatus !== 'COMPLETE') {
-    console.log(`[PayFast ITN] Non-complete status "${paymentStatus}" for order ${orderId} — ignoring`);
-    return res.status(200).send('OK');
-  }
-
   if (!orderId) {
     console.error('[PayFast ITN] No orderId (custom_str1) in ITN payload');
     return res.status(200).send('OK');
   }
 
-  try {
-    const orderRef = adminDb.collection('orders').doc(orderId);
-    const orderSnap = await orderRef.get();
-
-    if (!orderSnap.exists) {
-      console.error(`[PayFast ITN] Order ${orderId} not found`);
-      return res.status(200).send('OK');
-    }
-
-    const order = { id: orderId, ...orderSnap.data() };
-
-    // Idempotency — skip if already processed
-    if (order.status === 'paid') {
-      return res.status(200).send('OK');
-    }
-
-    const batch = adminDb.batch();
-
-    // 1. Mark order as paid
-    batch.update(orderRef, {
-      status: 'paid',
-      paidAt: admin.firestore.FieldValue.serverTimestamp(),
-      payfastPaymentId: itnData.pf_payment_id || '',
-      payfastData: {
-        paymentStatus: itnData.payment_status,
-        amountGross: itnData.amount_gross,
-        amountFee: itnData.amount_fee,
-        amountNet: itnData.amount_net,
-      },
-    });
-
-    // 2. Decrement each product quantity and mark as sold if quantity reaches 0
-    const sellerIds = new Set();
-    for (const item of order.items || []) {
-      if (item.productId) {
-        const productRef = adminDb.collection('products').doc(item.productId);
-        const productSnap = await productRef.get();
-        const productDoc = productSnap.data() || {};
-        const currentQuantity = Number(productDoc.quantity || 1);
-        const quantityAfterSale = currentQuantity - Number(item.quantity || 1);
-
-        // Decrement quantity; if it reaches 0, mark as purchased
-        batch.update(productRef, {
-          quantity: Math.max(0, quantityAfterSale),
-          marketSold: quantityAfterSale <= 0,
-          status: quantityAfterSale <= 0 ? 'purchased' : 'listed',
-          soldAt: quantityAfterSale <= 0 ? admin.firestore.FieldValue.serverTimestamp() : productDoc.soldAt || null,
-          soldOrderId: quantityAfterSale <= 0 ? orderId : productDoc.soldOrderId || null,
-          statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        if (item.sellerId) sellerIds.add(item.sellerId);
+  if (paymentStatus !== 'COMPLETE') {
+    if (paymentStatus === 'FAILED' || paymentStatus === 'CANCELLED') {
+      try {
+        await releaseInventoryReservation(orderId, paymentStatus);
+      } catch (err) {
+        console.error('[PayFast ITN] Failed to release inventory reservation:', err.message);
+        return res.status(500).send('Unable to release inventory reservation');
       }
     }
 
-    await batch.commit();
+    console.log(`[PayFast ITN] Non-complete status "${paymentStatus}" for order ${orderId} — ignoring`);
+    return res.status(200).send('OK');
+  }
+
+  try {
+    const orderRef = adminDb.collection('orders').doc(orderId);
+    const fulfillment = await adminDb.runTransaction(async (transaction) => {
+      const orderSnap = await transaction.get(orderRef);
+      if (!orderSnap.exists) {
+        throw new Error(`Order ${orderId} not found`);
+      }
+
+      const order = { id: orderId, ...orderSnap.data() };
+      if (order.status === 'paid') {
+        return { alreadyProcessed: true, order };
+      }
+
+      if (order.status !== 'pending_payment' || order.inventoryReserved !== true) {
+        throw new Error(`Order ${orderId} is not awaiting payment.`);
+      }
+
+      const expectedCents = Math.round(Number(order.totalAmount || 0) * 100);
+      const receivedCents = Math.round(Number(itnData.amount_gross || 0) * 100);
+      if (!expectedCents || expectedCents !== receivedCents) {
+        throw new Error(`Payment amount mismatch for order ${orderId}`);
+      }
+
+      const productRefs = (order.items || [])
+        .filter((item) => item.productId)
+        .map((item) => adminDb.collection('products').doc(item.productId));
+      const productSnapshots = await Promise.all(productRefs.map((productRef) => transaction.get(productRef)));
+
+      productSnapshots.forEach((productSnap, index) => {
+        if (!productSnap.exists) {
+          throw new Error(`Product ${productRefs[index].id} no longer exists.`);
+        }
+
+        const product = productSnap.data() || {};
+        const reservations = product.inventoryReservations && typeof product.inventoryReservations === 'object'
+          ? { ...product.inventoryReservations }
+          : {};
+        const reservation = reservations[orderId];
+        if (!reservation) {
+          throw new Error(`Inventory reservation is missing for order ${orderId}.`);
+        }
+
+        delete reservations[orderId];
+        const remainingQuantity = Number(product.quantity || 0);
+        transaction.update(productSnap.ref, {
+          inventoryReservations: reservations,
+          marketSold: remainingQuantity === 0,
+          status: remainingQuantity === 0 ? 'purchased' : 'listed',
+          soldAt: remainingQuantity === 0 ? admin.firestore.FieldValue.serverTimestamp() : product.soldAt || null,
+          soldOrderId: remainingQuantity === 0 ? orderId : product.soldOrderId || null,
+          statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      });
+
+      transaction.update(orderRef, {
+        status: 'paid',
+        inventoryReserved: false,
+        paidAt: admin.firestore.FieldValue.serverTimestamp(),
+        payfastPaymentId: itnData.pf_payment_id || '',
+        payfastData: {
+          paymentStatus: itnData.payment_status,
+          amountGross: itnData.amount_gross,
+          amountFee: itnData.amount_fee,
+          amountNet: itnData.amount_net,
+        },
+      });
+
+      return { alreadyProcessed: false, order };
+    });
+
+    if (fulfillment.alreadyProcessed) {
+      return res.status(200).send('OK');
+    }
+
+    const order = fulfillment.order;
+    const sellerIds = new Set();
+    for (const item of order.items || []) {
+      if (item.sellerId) sellerIds.add(item.sellerId);
+    }
 
     // 3. Fetch seller display info for the email (best-effort)
     const sellerMap = {};
@@ -500,7 +585,11 @@ export default async function handler(req, res) {
     return res.status(200).send('OK');
   } catch (err) {
     console.error('[PayFast ITN] Processing error:', err.message);
-    // Still return 200 — PayFast will retry on non-200 responses
-    return res.status(200).send('OK');
+    const permanentFailure = /not found|amount mismatch|not awaiting payment|reservation is missing/i.test(err.message || '');
+    if (permanentFailure) {
+      return res.status(200).send('OK');
+    }
+
+    return res.status(500).send('Unable to process payment notification');
   }
 }

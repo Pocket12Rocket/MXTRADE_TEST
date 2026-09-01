@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { useCart } from '../lib/cartContext';
 import useAuth from '../lib/useAuth';
-import { db } from '../lib/firebase';
 import { fetchProductById } from '../lib/firestoreHelpers';
 
 const PROVINCES = [
@@ -178,77 +176,34 @@ export default function CheckoutPage() {
         postalCode: form.postalCode.trim(),
       };
 
-      const sanitizedItems = resolvedItems.map((item) => ({
-        productId: item.id,
-        name: item.name,
-        price: Number(item.price),
-        quantity: Number(item.quantity),
-        primaryImage: item.primaryImage || null,
-        sellerId: item.sellerId || '',
-        sellerEmail: item.sellerEmail || '',
-      }));
-
       let orderId = '';
 
-      try {
-        const orderRes = await fetch('/api/orders/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            buyerId: user ? user.uid : null,
-            buyerEmail,
-            items: resolvedItems,
-            totalAmount: totalWithDelivery,
-            shippingAddress,
-            deliveryFee: deliveryFeeTotal,
-            shippingSellerCount: deliverySellerCount,
-          }),
-        });
-
-        const orderData = await orderRes.json();
-        if (!orderRes.ok || !orderData.success || !orderData.orderId) {
-          throw new Error(orderData.error || 'Could not create order.');
-        }
-
-        orderId = orderData.orderId;
-      } catch (orderError) {
-        const message = String(orderError?.message || '');
-        const shouldTryGuestFallback = !user && /missing or insufficient permissions/i.test(message);
-
-        if (!shouldTryGuestFallback) {
-          throw orderError;
-        }
-
-        // Fallback: guest checkout can create a pending order directly via rules.
-        const guestOrderRef = await addDoc(collection(db, 'orders'), {
-          buyerId: null,
+      const idToken = user ? await user.getIdToken() : '';
+      const orderRes = await fetch('/api/orders/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({
           buyerEmail,
-          items: sanitizedItems,
-          totalAmount: Number(totalWithDelivery),
+          items: resolvedItems.map((item) => ({ id: item.id, quantity: item.quantity })),
           shippingAddress,
-          deliveryFee: Number(deliveryFeeTotal),
-          shippingSellerCount: deliverySellerCount,
-          status: 'pending_payment',
-          createdAt: serverTimestamp(),
-        });
-        orderId = guestOrderRef.id;
-      }
+        }),
+      });
 
-      const siteOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-      const guestReturnUrl = siteOrigin ? `${siteOrigin}/order/confirmation?orderId=${orderId}` : undefined;
+      const orderData = await orderRes.json();
+      if (!orderRes.ok || !orderData.success || !orderData.orderId) {
+        throw new Error(orderData.error || 'Could not create order.');
+      }
+      orderId = orderData.orderId;
 
       // Call Payfast checkout API
       const pfRes = await fetch('/api/payfast/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: totalWithDelivery,
-          item_name: `Order #${orderId}`,
-          item_description: items.map((i) => i.name).join(', '),
-          email_address: buyerEmail,
-          custom_str1: orderId,
-          return_url: user ? undefined : guestReturnUrl,
-          cancel_url: user ? undefined : guestReturnUrl,
+          orderId,
         }),
       });
       const pfData = await pfRes.json();
