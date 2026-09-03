@@ -402,13 +402,13 @@ async function releaseInventoryReservation(orderId, paymentStatus) {
       }
 
       delete reservations[orderId];
+      console.log(`[PayFast ITN] Releasing inventory for product ${productSnap.id}: quantity before=${Number(product.quantity || 0)}, adding back reservation=${Number(reservation.quantity || 0)}, new quantity=${Number(product.quantity || 0) + Number(reservation.quantity || 0)}`);
       transaction.update(productSnap.ref, {
         quantity: Number(product.quantity || 0) + Number(reservation.quantity || 0),
         marketSold: false,
         status: 'listed',
         inventoryReservations: reservations,
         statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        console.log(`[PayFast ITN] Released inventory for product ${productSnap.id}: quantity before=${Number(product.quantity || 0)}, adding back reservation=${Number(reservation.quantity || 0)}, new quantity=${Number(product.quantity || 0) + Number(reservation.quantity || 0)}`);
       });
     });
 
@@ -534,18 +534,13 @@ export default async function handler(req, res) {
 
         delete reservations[orderId];
         const remainingQuantity = Number(product.quantity || 0);
+        console.log(`[PayFast ITN] Finalizing product ${productSnap.id}: quantity=${remainingQuantity}, reservation was ${reservation.quantity}, keeping quantity unchanged`);
         transaction.update(productSnap.ref, {
           inventoryReservations: reservations,
           marketSold: remainingQuantity === 0,
           status: remainingQuantity === 0 ? 'purchased' : 'listed',
           soldAt: remainingQuantity === 0 ? admin.firestore.FieldValue.serverTimestamp() : product.soldAt || null,
           soldOrderId: remainingQuantity === 0 ? orderId : product.soldOrderId || null,
-                  console.log(`[PayFast ITN] Finalizing product ${productSnap.id}: quantity=${remainingQuantity}, reservation was ${reservation.quantity}, keeping quantity unchanged`, {
-                    productId: productSnap.id,
-                    currentQuantity: remainingQuantity,
-                    reservedQuantity: reservation.quantity,
-                    willBe: remainingQuantity,
-                  });
           statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       });
