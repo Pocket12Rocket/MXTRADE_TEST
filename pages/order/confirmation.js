@@ -14,16 +14,10 @@ export default function OrderConfirmationPage() {
       </div>
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">Order placed!</h1>
-        <p className="mt-2 text-slate-600">
-          Your shipping details have been saved. You will be redirected to payment shortly.
-        </p>
         {orderId ? (
           <p className="mt-3 text-xs text-slate-400">Order reference: <span className="font-mono">{orderId}</span></p>
         ) : null}
       </div>
-      <p className="max-w-sm text-sm text-slate-500">
-        PayFast payment integration is coming soon. Your order has been recorded and we will contact you to complete payment.
-      </p>
       <div className="flex flex-col gap-3 sm:flex-row">
         <Link href="/shop" className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800">
           Continue shopping

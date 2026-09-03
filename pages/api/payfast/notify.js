@@ -375,16 +375,19 @@ async function releaseInventoryReservation(orderId, paymentStatus) {
     }
 
     const order = orderSnap.data();
+      console.log(`[PayFast ITN] releaseInventoryReservation called for order ${orderId} with status ${paymentStatus}. Order status: ${order.status}, inventoryReserved: ${order.inventoryReserved}`);
     if (order.status !== 'pending_payment' || order.inventoryReserved !== true) {
+        console.log(`[PayFast ITN] Skipping release: order status check failed`);
       return;
     }
 
+    console.log(`[PayFast ITN] Proceeding with inventory release for ${(order.items || []).length} items`);
     const productRefs = (order.items || [])
       .filter((item) => item.productId)
       .map((item) => adminDb.collection('products').doc(item.productId));
     const productSnapshots = await Promise.all(productRefs.map((productRef) => transaction.get(productRef)));
 
-    productSnapshots.forEach((productSnap) => {
+    productSnapshots.forEach((productSnap, idx) => {
       if (!productSnap.exists) {
         return;
       }
@@ -405,6 +408,7 @@ async function releaseInventoryReservation(orderId, paymentStatus) {
         status: 'listed',
         inventoryReservations: reservations,
         statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        console.log(`[PayFast ITN] Released inventory for product ${productSnap.id}: quantity before=${Number(product.quantity || 0)}, adding back reservation=${Number(reservation.quantity || 0)}, new quantity=${Number(product.quantity || 0) + Number(reservation.quantity || 0)}`);
       });
     });
 
@@ -453,6 +457,13 @@ export default async function handler(req, res) {
   const paymentStatus = (itnData.payment_status || '').toUpperCase();
   const orderId = itnData.custom_str1; // We'll pass orderId as custom_str1 when building the payment form
   console.log(`[PayFast ITN] Received payment_status=${paymentStatus} orderId=${orderId || 'N/A'} sandbox=${isSandbox}`);
+  console.log(`[PayFast ITN] Full ITN data:`, JSON.stringify({
+    payment_status: itnData.payment_status,
+    custom_str1: itnData.custom_str1,
+    amount_gross: itnData.amount_gross,
+    pf_payment_id: itnData.pf_payment_id,
+    m_payment_id: itnData.m_payment_id,
+  }, null, 2));
 
   if (!orderId) {
     console.error('[PayFast ITN] No orderId (custom_str1) in ITN payload');
@@ -473,7 +484,10 @@ export default async function handler(req, res) {
     return res.status(200).send('OK');
   }
 
+  
+  // Only proceed with finalization if status is COMPLETE
   try {
+    console.log(`[PayFast ITN] Processing COMPLETE payment for order ${orderId}`);
     const orderRef = adminDb.collection('orders').doc(orderId);
     const fulfillment = await adminDb.runTransaction(async (transaction) => {
       const orderSnap = await transaction.get(orderRef);
@@ -482,12 +496,15 @@ export default async function handler(req, res) {
       }
 
       const order = { id: orderId, ...orderSnap.data() };
+      console.log(`[PayFast ITN] Order current status: ${order.status}, inventoryReserved: ${order.inventoryReserved}`);
+      
       if (order.status === 'paid') {
+        console.log(`[PayFast ITN] Order ${orderId} already processed as paid — returning idempotently`);
         return { alreadyProcessed: true, order };
       }
 
       if (order.status !== 'pending_payment' || order.inventoryReserved !== true) {
-        throw new Error(`Order ${orderId} is not awaiting payment.`);
+        throw new Error(`Order ${orderId} is not awaiting payment (current status: ${order.status}, inventoryReserved: ${order.inventoryReserved})`);
       }
 
       const expectedCents = Math.round(Number(order.totalAmount || 0) * 100);
@@ -523,6 +540,12 @@ export default async function handler(req, res) {
           status: remainingQuantity === 0 ? 'purchased' : 'listed',
           soldAt: remainingQuantity === 0 ? admin.firestore.FieldValue.serverTimestamp() : product.soldAt || null,
           soldOrderId: remainingQuantity === 0 ? orderId : product.soldOrderId || null,
+                  console.log(`[PayFast ITN] Finalizing product ${productSnap.id}: quantity=${remainingQuantity}, reservation was ${reservation.quantity}, keeping quantity unchanged`, {
+                    productId: productSnap.id,
+                    currentQuantity: remainingQuantity,
+                    reservedQuantity: reservation.quantity,
+                    willBe: remainingQuantity,
+                  });
           statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       });

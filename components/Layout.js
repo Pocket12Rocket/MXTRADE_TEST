@@ -1,5 +1,7 @@
 import Header from './Header';
 
+const SHOW_WHATSAPP_BUTTON = false;
+
 export default function Layout({ children }) {
   const whatsappNumber = (process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '').replace(/\D/g, '');
   const whatsappLink = whatsappNumber
@@ -13,6 +15,7 @@ export default function Layout({ children }) {
         {children}
       </main>
 
+      {SHOW_WHATSAPP_BUTTON ? (
       <a
         href={whatsappLink}
         target="_blank"
@@ -25,6 +28,7 @@ export default function Layout({ children }) {
         </svg>
         <span className="hidden sm:inline">WhatsApp</span>
       </a>
+      ) : null}
 
       <footer className="border-t border-slate-300 bg-slate-900 py-8 text-center text-xs uppercase tracking-[0.1em] text-slate-300">
         © Fast Sport | Built by the community
