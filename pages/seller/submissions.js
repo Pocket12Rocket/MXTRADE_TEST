@@ -11,7 +11,7 @@ import {
   fetchSubcategoryOptions,
   fetchGearBrandOptions,
   updateSellerSubmission,
-  updateSellerProduct,
+  resubmitSellerProductForApproval,
   updateSellerSubmissionImages,
 } from '../../lib/firestoreHelpers';
 import { BIKE_MODELS_BY_MANUFACTURER, DIRT_BIKE_CATEGORIES, GEAR_BRAND_OPTIONS, GEAR_CONDITION_OPTIONS, GEAR_ITEM_OPTIONS } from '../../lib/dirtBikeCategories';
@@ -841,13 +841,13 @@ export default function SellerSubmissions() {
       }
 
       if (editingListingType === 'product') {
-        await updateSellerProduct(editingSubmission.id, updatesWithImages);
-        const refreshedProducts = await fetchSellerLiveProducts(user.uid);
+        await resubmitSellerProductForApproval({ product: editingSubmission, updates: updatesWithImages });
+        const [refreshedProducts, refreshedSubmissions] = await Promise.all([
+          fetchSellerLiveProducts(user.uid),
+          fetchSellerSubmissions(user.uid),
+        ]);
         setProducts(refreshedProducts);
-        const refreshedProduct = refreshedProducts.find((item) => item.id === editingSubmission.id);
-        if (refreshedProduct) {
-          setSelectedSubmission((prev) => (prev?.id === editingSubmission.id ? refreshedProduct : prev));
-        }
+        setSubmissions(refreshedSubmissions);
       } else {
         await updateSellerSubmission(editingSubmission.id, updatesWithImages);
         const refreshedSubmissions = await fetchSellerSubmissions(user.uid);

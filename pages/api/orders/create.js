@@ -1,6 +1,7 @@
 import { adminDb } from '../../../lib/firebaseAdmin';
 import admin from '../../../lib/firebaseAdmin';
 import { rateLimit } from '../../../lib/apiRateLimit';
+import crypto from 'crypto';
 
 function getBearerToken(req) {
   const authorization = String(req.headers.authorization || '');
@@ -48,6 +49,7 @@ export default async function handler(req, res) {
 
     const orderRef = adminDb.collection('orders').doc();
     const reservationExpiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + 30 * 60 * 1000);
+    const cancellationToken = crypto.randomBytes(32).toString('hex');
 
     await adminDb.runTransaction(async (transaction) => {
       const productRefs = requestedItems.map((item) => adminDb.collection('products').doc(item.productId));
@@ -126,6 +128,7 @@ export default async function handler(req, res) {
         shippingAddress: shippingAddress || {},
         status: 'pending_payment',
         inventoryReserved: true,
+        cancellationToken,
         reservationExpiresAt,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });

@@ -70,7 +70,7 @@ export default async function handler(req, res) {
       item_description: (order.items || []).map((item) => item.name).join(', '),
       email_address: order.buyerEmail || '',
       return_url: order.buyerId ? `${siteUrl}/profile/orders` : `${siteUrl}/order/confirmation?orderId=${orderId}`,
-      cancel_url: order.buyerId ? `${siteUrl}/profile/orders` : `${siteUrl}/order/confirmation?orderId=${orderId}`,
+      cancel_url: `${siteUrl}/order/confirmation?orderId=${encodeURIComponent(orderId)}&payment=cancelled&cancelToken=${encodeURIComponent(order.cancellationToken || '')}`,
       notify_url: `${siteUrl}/api/payfast/notify`,
       custom_str1: orderId,
     };
