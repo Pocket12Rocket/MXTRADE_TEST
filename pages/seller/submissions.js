@@ -391,11 +391,12 @@ export default function SellerSubmissions() {
       const normalizedProductStatus = product.status
         || (product.marketSold ? 'purchased' : 'listed');
       const canEditListedProduct = normalizedProductStatus === 'listed' || normalizedProductStatus === 'active';
+      const displayProductStatus = normalizedProductStatus === 'pending' ? 'awaiting approval' : normalizedProductStatus;
 
       return ({
       id: product.id,
       productName: product.name || 'Untitled product',
-      productStatus: normalizedProductStatus,
+      productStatus: displayProductStatus,
       createdAtMillis: getCreatedAtMillis(product.createdAt),
       listingType: 'product',
       viewType: normalizedProductStatus === 'listed' ? 'shop' : 'disabled',
