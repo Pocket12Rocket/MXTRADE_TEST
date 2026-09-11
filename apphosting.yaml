@@ -42,8 +42,12 @@ env:
     value: "support@fastsport.co.za"
     availability:
       - RUNTIME
+  - variable: CONTACT_ADMIN_EMAILS
+    value: "tyron@fastsport.co.za,mark@fastsport.co.za"
+    availability:
+      - RUNTIME
   - variable: CONTACT_FROM_EMAIL
-    value: "Fast Sports <onboarding@resend.dev>"
+    value: "Fast Sport <support@fastsport.co.za>"
     availability:
       - RUNTIME
   - variable: RESEND_API_KEY

@@ -563,26 +563,6 @@ export default function Home() {
         */}
       
 
-      <section className="rounded-3xl border border-slate-300 bg-[#e5e7eb] p-6 sm:p-8">
-        <div className="grid gap-6 md:grid-cols-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Why MXTrade</p>
-            <h3 className="mt-2 text-2xl font-semibold text-slate-900">Marketplace trust layer</h3>
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Admin-reviewed listings</p>
-            <p className="mt-2 text-sm text-slate-600">Every product is approved before going live.</p>
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Detailed product data</p>
-            <p className="mt-2 text-sm text-slate-600">Images, specs, and pricing are visible before checkout.</p>
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Focused categories</p>
-            <p className="mt-2 text-sm text-slate-600">Shop by Gear, Accessories, or Parts with cleaner navigation paths.</p>
-          </div>
-        </div>
-      </section>
 
     </div>
   );

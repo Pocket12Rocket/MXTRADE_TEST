@@ -1,19 +1,10 @@
-import nodemailer from 'nodemailer';
 import { adminDb } from '../../../lib/firebaseAdmin';
 import admin from '../../../lib/firebaseAdmin';
 import qs from 'querystring';
+import { dispatchEmail, buildAdminNewOrderEmail, buildBuyerReceiptEmail, buildSellerNewOrderEmail } from '../../../lib/emails';
 
 // PayFast sends the ITN as application/x-www-form-urlencoded — disable Next.js body parsing
 export const config = { api: { bodyParser: false } };
-
-function escapeHtml(value) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
 
 // Parse raw urlencoded body manually
 async function parseBody(req) {
@@ -46,323 +37,6 @@ async function validateItn(rawPayload, isSandbox) {
 
   const text = await response.text();
   return text.trim().toUpperCase() === 'VALID';
-}
-
-async function sendAdminEmail({ order, products, sellerMap }) {
-  const resendApiKey = process.env.RESEND_API_KEY;
-  const smtpUser = (process.env.SMTP_USER || '').trim();
-  const smtpPass = (process.env.SMTP_PASS || '').trim();
-  const fromEmail = process.env.CONTACT_FROM_EMAIL || 'Fast Sports <onboarding@resend.dev>';
-  const supportEmail = (process.env.SUPPORT_EMAIL || 'support@fastsport.co.za').trim();
-  const adminEmailsCsv = process.env.CONTACT_ADMIN_EMAILS || process.env.ADMIN_NOTIFICATION_EMAILS || '';
-  const singleAdmin = process.env.CONTACT_ADMIN_EMAIL || '';
-  const parsed = adminEmailsCsv.split(',').map((e) => e.trim()).filter(Boolean);
-  const toEmails = Array.from(new Set([supportEmail, ...parsed, ...(singleAdmin ? [singleAdmin] : [])].filter(Boolean)));
-
-  if (!toEmails.length) {
-    console.warn('[PayFast ITN] Email skipped: no recipients configured');
-    return;
-  }
-
-  const shipping = order.shippingAddress || {};
-  const shippingLine = [
-    shipping.streetAddress,
-    shipping.suburb,
-    shipping.city,
-    shipping.province,
-    shipping.postalCode,
-  ].filter(Boolean).join(', ');
-
-  const itemRows = (order.items || []).map((item) => {
-    const seller = sellerMap[item.sellerId] || {};
-    return `
-      <tr style="border-bottom:1px solid #e2e8f0">
-        <td style="padding:10px 8px">${escapeHtml(item.name)}</td>
-        <td style="padding:10px 8px">R${Number(item.price).toFixed(2)}</td>
-        <td style="padding:10px 8px">${Number(item.quantity)}</td>
-        <td style="padding:10px 8px">R${(Number(item.price) * Number(item.quantity)).toFixed(2)}</td>
-        <td style="padding:10px 8px">${escapeHtml(seller.displayName || seller.email || item.sellerId || '—')}</td>
-      </tr>`;
-  }).join('');
-
-  const html = `
-    <div style="font-family:sans-serif;max-width:680px;margin:0 auto;color:#1e293b">
-      <h2 style="color:#00CED1;margin-bottom:4px">New Order — Payment Confirmed</h2>
-      <p style="color:#64748b;font-size:13px">Order ID: <code>${escapeHtml(order.id)}</code></p>
-
-      <h3 style="margin-top:24px">Buyer details</h3>
-      <table style="width:100%;border-collapse:collapse;font-size:14px">
-        <tr><td style="padding:6px 8px;color:#64748b;width:140px">Name</td><td style="padding:6px 8px">${escapeHtml(`${shipping.firstName || ''} ${shipping.lastName || ''}`.trim() || '—')}</td></tr>
-        <tr><td style="padding:6px 8px;color:#64748b">Email</td><td style="padding:6px 8px">${escapeHtml(order.buyerEmail || '—')}</td></tr>
-        <tr><td style="padding:6px 8px;color:#64748b">Phone</td><td style="padding:6px 8px">${escapeHtml(shipping.phone || '—')}</td></tr>
-        <tr><td style="padding:6px 8px;color:#64748b">Shipping</td><td style="padding:6px 8px">${escapeHtml(shippingLine || '—')}</td></tr>
-      </table>
-
-      <h3 style="margin-top:24px">Items ordered</h3>
-      <table style="width:100%;border-collapse:collapse;font-size:14px">
-        <thead>
-          <tr style="background:#f1f5f9;text-align:left">
-            <th style="padding:8px">Product</th>
-            <th style="padding:8px">Price</th>
-            <th style="padding:8px">Qty</th>
-            <th style="padding:8px">Subtotal</th>
-            <th style="padding:8px">Seller</th>
-          </tr>
-        </thead>
-        <tbody>${itemRows}</tbody>
-      </table>
-
-      <p style="margin-top:16px;font-size:16px;font-weight:600">
-        Total paid: R${Number(order.totalAmount).toFixed(2)}
-      </p>
-
-      <p style="margin-top:24px;font-size:12px;color:#94a3b8">
-        This email was sent automatically by the Fast Sports platform.
-      </p>
-    </div>`;
-
-  const subject = `New Order Confirmed — R${Number(order.totalAmount).toFixed(2)} (${escapeHtml(order.id)})`;
-
-  if (resendApiKey) {
-    const emailResponse = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${resendApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: fromEmail,
-        to: toEmails,
-        subject,
-        html,
-      }),
-    });
-
-    if (emailResponse.ok) {
-      console.log('[PayFast ITN] Purchase email sent via Resend', {
-        toEmails,
-        orderId: order.id,
-      });
-      return;
-    }
-
-    const responseText = await emailResponse.text();
-    console.error('[PayFast ITN] Resend purchase email failed', {
-      status: emailResponse.status,
-      body: responseText,
-      toEmails,
-      orderId: order.id,
-    });
-  }
-
-  if (smtpUser && smtpPass) {
-    try {
-      const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: smtpUser,
-          pass: smtpPass,
-        },
-      });
-
-      await transporter.sendMail({
-        from: smtpUser,
-        to: toEmails,
-        subject,
-        html,
-      });
-
-      console.log('[PayFast ITN] Purchase email sent via SMTP', {
-        toEmails,
-        orderId: order.id,
-      });
-      return;
-    } catch (error) {
-      console.error('[PayFast ITN] SMTP purchase email failed', {
-        message: error.message,
-        toEmails,
-        orderId: order.id,
-      });
-    }
-  }
-
-  console.warn('[PayFast ITN] Email skipped: no working transport configured', {
-    hasResendApiKey: Boolean(resendApiKey),
-    hasSmtpUser: Boolean(smtpUser),
-    hasSmtpPass: Boolean(smtpPass),
-    toEmails,
-    orderId: order.id,
-  });
-}
-
-async function sendBuyerEmail({ order, itnData }) {
-  const toEmail = (order.buyerEmail || '').trim();
-  if (!toEmail) {
-    console.warn('[PayFast ITN] Buyer email skipped: no buyerEmail on order', { orderId: order.id });
-    return;
-  }
-
-  const resendApiKey = process.env.RESEND_API_KEY;
-  const smtpUser = (process.env.SMTP_USER || '').trim();
-  const smtpPass = (process.env.SMTP_PASS || '').trim();
-  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://fastsport.co.za').trim();
-  const fromEmail = process.env.BUYER_FROM_EMAIL || process.env.CONTACT_FROM_EMAIL || 'Fast Sports <noreply@fastsport.co.za>';
-
-  const shipping = order.shippingAddress || {};
-  const shippingLines = [
-    [shipping.firstName, shipping.lastName].filter(Boolean).join(' '),
-    shipping.streetAddress,
-    shipping.suburb,
-    shipping.city,
-    shipping.province,
-    shipping.postalCode,
-    shipping.phone ? `Tel: ${shipping.phone}` : null,
-  ].filter(Boolean);
-
-  const amountGross = itnData?.amount_gross ? `R${Number(itnData.amount_gross).toFixed(2)}` : `R${Number(order.totalAmount || 0).toFixed(2)}`;
-  const paymentMethod = 'PayFast';
-  const ordersUrl = `${siteUrl}/profile/orders`;
-
-  const itemRows = (order.items || []).map((item) => `
-    <tr style="border-bottom:1px solid #e2e8f0">
-      <td style="padding:10px 8px;font-size:14px;color:#1e293b">${escapeHtml(item.name)}</td>
-      <td style="padding:10px 8px;font-size:14px;color:#64748b;text-align:center">${Number(item.quantity)}</td>
-      <td style="padding:10px 8px;font-size:14px;color:#1e293b;text-align:right">R${Number(item.price).toFixed(2)}</td>
-      <td style="padding:10px 8px;font-size:14px;font-weight:600;color:#1e293b;text-align:right">R${(Number(item.price) * Number(item.quantity)).toFixed(2)}</td>
-    </tr>`).join('');
-
-  const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f1f5f9;font-family:sans-serif">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 0">
-    <tr><td align="center">
-      <table width="620" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;max-width:620px;width:100%">
-
-        <!-- Header -->
-        <tr><td style="background:#0f172a;padding:28px 40px;text-align:center">
-          <p style="margin:0;font-size:22px;font-weight:700;color:#ffffff;letter-spacing:0.06em">FAST SPORTS</p>
-          <p style="margin:6px 0 0;font-size:12px;color:#94a3b8;letter-spacing:0.12em;text-transform:uppercase">Order Confirmation</p>
-        </td></tr>
-
-        <!-- Intro -->
-        <tr><td style="padding:32px 40px 16px">
-          <h1 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#0f172a">Thanks for your order!</h1>
-          <p style="margin:0;font-size:14px;color:#64748b;line-height:1.6">
-            Your payment was successful. Here's a summary of what you ordered.
-          </p>
-          <p style="margin:12px 0 0;font-size:13px;color:#94a3b8">
-            Order reference: <span style="font-family:monospace;color:#475569">${escapeHtml(order.id)}</span>
-          </p>
-        </td></tr>
-
-        <!-- Items table -->
-        <tr><td style="padding:0 40px 24px">
-          <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
-            <thead>
-              <tr style="background:#f8fafc">
-                <th style="padding:10px 8px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#64748b;text-align:left">Product</th>
-                <th style="padding:10px 8px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#64748b;text-align:center">Qty</th>
-                <th style="padding:10px 8px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#64748b;text-align:right">Unit price</th>
-                <th style="padding:10px 8px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#64748b;text-align:right">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>${itemRows}</tbody>
-          </table>
-        </td></tr>
-
-        <!-- Total + Payment method -->
-        <tr><td style="padding:0 40px 28px">
-          <table width="100%" cellpadding="0" cellspacing="0">
-            <tr>
-              <td style="font-size:14px;color:#64748b;padding:6px 0">Payment method</td>
-              <td style="font-size:14px;color:#1e293b;text-align:right;padding:6px 0">${escapeHtml(paymentMethod)}</td>
-            </tr>
-            <tr style="border-top:2px solid #e2e8f0">
-              <td style="font-size:16px;font-weight:700;color:#0f172a;padding:12px 0 0">Total paid</td>
-              <td style="font-size:16px;font-weight:700;color:#00CED1;text-align:right;padding:12px 0 0">${escapeHtml(amountGross)}</td>
-            </tr>
-          </table>
-        </td></tr>
-
-        <!-- Shipping address -->
-        <tr><td style="padding:0 40px 28px">
-          <p style="margin:0 0 10px;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:#64748b">Shipping address</p>
-          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;font-size:14px;color:#334155;line-height:1.8">
-            ${shippingLines.map((l) => escapeHtml(l)).join('<br>')}
-          </div>
-        </td></tr>
-
-        <!-- CTA button -->
-        <tr><td style="padding:0 40px 36px;text-align:center">
-          <a href="${ordersUrl}" target="_blank"
-             style="display:inline-block;background:#00CED1;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;padding:14px 32px;border-radius:999px;letter-spacing:0.06em;text-transform:uppercase">
-            My Orders
-          </a>
-          <p style="margin:12px 0 0;font-size:12px;color:#94a3b8">
-            Not logged in? You'll be asked to sign in first.
-          </p>
-        </td></tr>
-
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
-
-  const subject = `Order confirmed — ${amountGross} (ref: ${order.id})`;
-
-  if (resendApiKey) {
-    const emailResponse = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${resendApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ from: fromEmail, to: [toEmail], subject, html }),
-    });
-
-    if (emailResponse.ok) {
-      console.log('[PayFast ITN] Buyer confirmation email sent via Resend', { toEmail, orderId: order.id });
-      return;
-    }
-
-    const responseText = await emailResponse.text();
-    console.error('[PayFast ITN] Resend buyer email failed', {
-      status: emailResponse.status,
-      body: responseText,
-      toEmail,
-      orderId: order.id,
-    });
-  }
-
-  if (smtpUser && smtpPass) {
-    try {
-      const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: { user: smtpUser, pass: smtpPass },
-      });
-
-      await transporter.sendMail({ from: smtpUser, to: toEmail, subject, html });
-      console.log('[PayFast ITN] Buyer confirmation email sent via SMTP', { toEmail, orderId: order.id });
-      return;
-    } catch (error) {
-      console.error('[PayFast ITN] SMTP buyer email failed', {
-        message: error.message,
-        toEmail,
-        orderId: order.id,
-      });
-    }
-  }
-
-  console.warn('[PayFast ITN] Buyer email skipped: no working transport configured', {
-    hasResendApiKey: Boolean(resendApiKey),
-    hasSmtpUser: Boolean(smtpUser),
-    hasSmtpPass: Boolean(smtpPass),
-    toEmail,
-    orderId: order.id,
-  });
 }
 
 async function releaseInventoryReservation(orderId, paymentStatus) {
@@ -571,20 +245,56 @@ export default async function handler(req, res) {
       if (item.sellerId) sellerIds.add(item.sellerId);
     }
 
-    // 3. Fetch seller display info for the email (best-effort)
+    // 3. Fetch seller display info for the email (best-effort), falling back to Firebase Auth
+    // if the Firestore user doc is missing an email field.
     const sellerMap = {};
     await Promise.allSettled(
       Array.from(sellerIds).map(async (sellerId) => {
         const snap = await adminDb.collection('users').doc(sellerId).get();
-        if (snap.exists) sellerMap[sellerId] = snap.data();
+        sellerMap[sellerId] = snap.exists ? snap.data() : {};
+        if (!sellerMap[sellerId].email) {
+          try {
+            const authUser = await admin.auth().getUser(sellerId);
+            if (authUser.email) {
+              sellerMap[sellerId].email = authUser.email;
+            }
+          } catch (err) {
+            console.warn(`[PayFast ITN] Could not resolve auth email for seller ${sellerId}:`, err.message);
+          }
+        }
       })
     );
 
-    // 4. Send admin notification email + buyer confirmation email
+    // 4. Send admin/support notification email + buyer receipt email
     await Promise.allSettled([
-      sendAdminEmail({ order, products: order.items || [], sellerMap }),
-      sendBuyerEmail({ order, itnData }),
+      dispatchEmail(buildAdminNewOrderEmail({ order, sellerMap })),
+      dispatchEmail(buildBuyerReceiptEmail({ order, itnData })),
     ]);
+
+    // 4b. Notify each seller of the item(s) they just sold
+    const itemsBySeller = new Map();
+    for (const item of order.items || []) {
+      const sellerKey = item.sellerId || item.sellerEmail;
+      if (!sellerKey) {
+        console.warn(`[PayFast ITN] Order ${orderId}: item "${item.name}" has no sellerId/sellerEmail — skipping seller notification`);
+        continue;
+      }
+      const current = itemsBySeller.get(sellerKey) || [];
+      current.push(item);
+      itemsBySeller.set(sellerKey, current);
+    }
+    await Promise.allSettled(
+      Array.from(itemsBySeller.entries()).map(([sellerKey, sellerItems]) => {
+        const seller = sellerMap[sellerKey] || {};
+        const sellerEmail = sellerItems[0]?.sellerEmail || seller.email || '';
+        console.log(`[PayFast ITN] Order ${orderId}: resolved seller ${sellerKey} email="${sellerEmail || '(none)'}"`);
+        if (!sellerEmail) {
+          console.warn(`[PayFast ITN] Order ${orderId}: no email found for seller ${sellerKey} — seller notification skipped`);
+          return Promise.resolve();
+        }
+        return dispatchEmail(buildSellerNewOrderEmail({ order, sellerEmail, sellerItems }));
+      })
+    );
 
     // 5. Create admin in-app notification for the dashboard
     await adminDb.collection('adminNotifications').add({

@@ -11,7 +11,6 @@ import {
   fetchSellerPrivateProfile,
   updateSellerTrustScore,
   fetchAllSellers,
-  updateProductStatusAsAdmin,
   fetchFaqs,
   addFaq,
   updateFaq,
@@ -193,6 +192,30 @@ function AdminDashboard() {
     });
   }, [user, profile?.role]);
 
+  useEffect(() => {
+    if (!user || profile?.role !== 'admin') return;
+
+    setRefundLoading(true);
+    fetchRefundPendingOrders()
+      .then((rows) => setRefundOrders(rows || []))
+      .catch((err) => setRefundError(err?.message || 'Failed to load refund requests.'))
+      .finally(() => setRefundLoading(false));
+  }, [user, profile?.role]);
+
+  const handleProcessRefund = async (orderId, action, adminResponse) => {
+    setRefundActionLoading(true);
+    setRefundError('');
+    try {
+      await processRefundRequest({ orderId, action, adminResponse });
+      setRefundOrders((prev) => prev.filter((order) => order.id !== orderId));
+      setSelectedRefund(null);
+    } catch (err) {
+      setRefundError(err?.message || 'Failed to process refund request.');
+    } finally {
+      setRefundActionLoading(false);
+    }
+  };
+
   const handleOpenRejectModal = (submission) => {
     setError('');
     setRejectingSubmission(submission);
@@ -372,6 +395,7 @@ function AdminDashboard() {
         </summary>
         <section className="mt-4 space-y-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <p className="text-sm text-slate-600">Review and process pending refund requests from users.</p>
+        {refundError ? <p className="text-sm text-rose-600">{refundError}</p> : null}
         {refundLoading ? (
           <p>Loading refund requests...</p>
         ) : refundOrders.length === 0 ? (
@@ -428,7 +452,6 @@ function AdminDashboard() {
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">Product name</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">User email</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">Price</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-700">Status</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-700">Action</th>
                 </tr>
               </thead>
@@ -452,16 +475,6 @@ function AdminDashboard() {
                           </p>
                         ) : null}
                       </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <ProductStatusDropdown product={product} onStatusChange={async (product, newStatus) => {
-                        try {
-                          await updateProductStatusAsAdmin(product.id, newStatus);
-                          setProducts((prev) => prev.map((p) => p.id === product.id ? { ...p, status: newStatus } : p));
-                        } catch (err) {
-                          setError('Failed to update product status.');
-                        }
-                      }} />
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
@@ -558,7 +571,8 @@ function AdminDashboard() {
                       <tbody className="divide-y divide-slate-100 bg-white">
                         {Object.entries(selectedSubmission)
                           .filter(([key, value]) => {
-                            if (HIDDEN_SUBMISSION_KEYS.has(key)) return false;
+                            const normalizedKey = String(key).replace(/[\s_-]/g, '').toLowerCase();
+                            if (HIDDEN_SUBMISSION_KEYS.has(key) || ['customfields', 'sellerprice', 'baseprice', 'originalprice'].includes(normalizedKey)) return false;
                             if (key === 'description' || key === 'specifications') return false;
                             if (value === null || value === undefined) return false;
                             if (typeof value === 'string' && value.trim() === '') return false;
@@ -569,11 +583,7 @@ function AdminDashboard() {
                             <tr key={key}>
                               <td className="w-1/3 px-4 py-3 align-top font-medium text-slate-600">{formatFieldLabel(key)}</td>
                               <td className="px-4 py-3 text-slate-900">
-                                {Array.isArray(value)
-                                  ? value.join(', ')
-                                  : typeof value === 'object'
-                                    ? JSON.stringify(value)
-                                    : String(value)}
+                                {formatDetailValue(key, value)}
                               </td>
                             </tr>
                           ))}
@@ -940,28 +950,6 @@ function AdminDashboard() {
   );
 }
 
-// --- Helper: Product status dropdown for admin ---
-function ProductStatusDropdown({ product, onStatusChange }) {
-  const statusOptions = [
-    { value: 'listed', label: 'Listed (public)' },
-    { value: 'purchased', label: 'Purchased' },
-    { value: 'shipped', label: 'Shipped' },
-    { value: 'delivered', label: 'Delivered' },
-    { value: 'refunded', label: 'Refunded' },
-  ];
-  return (
-    <select
-      className="rounded-3xl border border-slate-200 bg-slate-50 px-2 py-1 text-xs"
-      value={product.status || 'listed'}
-      onChange={e => onStatusChange(product, e.target.value)}
-    >
-      {statusOptions.map(opt => (
-        <option key={opt.value} value={opt.value}>{opt.label}</option>
-      ))}
-    </select>
-  );
-}
-
 export default AdminDashboard;
 
 const HIDDEN_SUBMISSION_KEYS = new Set([
@@ -977,6 +965,10 @@ const HIDDEN_SUBMISSION_KEYS = new Set([
   'rejectedAt',
   'rejectedBy',
   'productId',
+  'customFields',
+  'basePrice',
+  'originalPrice',
+  'sellerPrice',
 ]);
 
 function formatFieldLabel(fieldName) {
@@ -984,6 +976,26 @@ function formatFieldLabel(fieldName) {
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/_/g, ' ')
     .replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function formatDetailValue(fieldName, value) {
+  if (fieldName === 'updatedAt') {
+    const date = typeof value?.toDate === 'function'
+      ? value.toDate()
+      : typeof value?.seconds === 'number'
+        ? new Date(value.seconds * 1000)
+        : null;
+
+    if (date && !Number.isNaN(date.getTime())) {
+      return date.toLocaleString();
+    }
+  }
+
+  if (Array.isArray(value)) {
+    return value.join(', ');
+  }
+
+  return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
 function getSubmissionImages(submission) {

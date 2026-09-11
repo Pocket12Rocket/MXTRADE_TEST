@@ -29,6 +29,10 @@ const HIDDEN_SUBMISSION_KEYS = new Set([
   'rejectedAt',
   'rejectedBy',
   'productId',
+  'customFields',
+  'basePrice',
+  'originalPrice',
+  'sellerPrice',
 ]);
 
 const ALPHA_SIZE_GEAR_ITEMS = ['Helmet', 'Jersey', 'Socks', 'Protection'];
@@ -41,6 +45,69 @@ const OTHER_BRAND_VALUE = '__other__';
 const OTHER_SUBCATEGORY_VALUE = '__other_subcategory__';
 const MAX_LISTING_IMAGES = 5;
 const MAX_DESCRIPTION_LENGTH = 75;
+
+function getCalculatedSellingPriceFromSellerPrice(price) {
+  const numericValue = Number(price);
+  if (!price || Number.isNaN(numericValue) || numericValue <= 0) {
+    return null;
+  }
+
+  let markup = 0.20;
+  if (numericValue > 999) markup = 0.11;
+  else if (numericValue >= 501) markup = 0.15;
+
+  return (numericValue + numericValue * markup).toFixed(2);
+}
+
+function getOriginalSellerPriceFromMarkedUpValue(value) {
+  const numericValue = Number(value);
+  if (!value || Number.isNaN(numericValue) || numericValue <= 0) {
+    return '';
+  }
+
+  if (numericValue <= 500) {
+    return (numericValue / 1.2).toFixed(2);
+  }
+
+  if (numericValue <= 999) {
+    return (numericValue / 1.15).toFixed(2);
+  }
+
+  return (numericValue / 1.11).toFixed(2);
+}
+
+function SellingPriceInfo({ price }) {
+  const [show, setShow] = useState(false);
+  const sellingPrice = getCalculatedSellingPriceFromSellerPrice(price);
+
+  if (!sellingPrice) {
+    return null;
+  }
+
+  return (
+    <div className="mt-1 flex items-center gap-2 text-xs text-red-600">
+      <span>Selling price (incl. markup): R {sellingPrice}</span>
+      <span className="relative flex items-center">
+        <span
+          tabIndex={0}
+          className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 bg-slate-200 text-[10px] font-bold text-slate-600 cursor-pointer hover:bg-slate-300 focus:bg-slate-300 focus:outline-none"
+          onMouseEnter={() => setShow(true)}
+          onMouseLeave={() => setShow(false)}
+          onFocus={() => setShow(true)}
+          onBlur={() => setShow(false)}
+        >
+          ?
+        </span>
+        {show && (
+          <span className="absolute left-6 top-1 z-10 w-64 rounded-lg border border-slate-300 bg-white p-3 text-xs text-slate-700 shadow-lg">
+            The selling price includes the Fast Sport transaction fee. This is the final amount the buyer will pay, excluding shipping costs.<br /><br />
+            The price entered by you (the seller) is the amount you will receive from the sale.
+          </span>
+        )}
+      </span>
+    </div>
+  );
+}
 
 function mergeOptionList(defaultValues = [], approvedValues = []) {
   const merged = [...(defaultValues || [])];
@@ -107,6 +174,26 @@ function formatFieldLabel(fieldName) {
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/_/g, ' ')
     .replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function formatDetailValue(fieldName, value) {
+  if (fieldName === 'updatedAt') {
+    const date = typeof value?.toDate === 'function'
+      ? value.toDate()
+      : typeof value?.seconds === 'number'
+        ? new Date(value.seconds * 1000)
+        : null;
+
+    if (date && !Number.isNaN(date.getTime())) {
+      return date.toLocaleString();
+    }
+  }
+
+  if (Array.isArray(value)) {
+    return value.join(', ');
+  }
+
+  return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
 function getSubmissionImages(submission) {
@@ -322,7 +409,8 @@ export default function SellerSubmissions() {
 
   const selectedDetailEntries = selectedSubmission
     ? Object.entries(selectedSubmission).filter(([key, value]) => {
-        if (HIDDEN_SUBMISSION_KEYS.has(key)) {
+        const normalizedKey = String(key).replace(/[\s_-]/g, '').toLowerCase();
+        if (HIDDEN_SUBMISSION_KEYS.has(key) || ['customfields', 'sellerprice', 'baseprice', 'originalprice'].includes(normalizedKey)) {
           return false;
         }
 
@@ -390,6 +478,8 @@ export default function SellerSubmissions() {
     }
 
     const submission = sourceListing;
+    const sellerOriginalPrice = submission.customFields?.sellerPrice ?? getOriginalSellerPriceFromMarkedUpValue(submission.price) ?? submission.price ?? '';
+
     setEditingSubmission(submission);
     setEditingListingType(listing.listingType);
     setEditImageUrls(getSubmissionImages(submission));
@@ -421,7 +511,7 @@ export default function SellerSubmissions() {
 
     setEditForm({
       name: submission.name || '',
-      price: submission.price != null ? String(submission.price) : '',
+      price: sellerOriginalPrice != null ? String(sellerOriginalPrice) : '',
       description: submission.description || '',
       specifications: Array.isArray(submission.specifications)
         ? submission.specifications.join('\n')
@@ -572,6 +662,16 @@ export default function SellerSubmissions() {
 
     const submissionCategory = editingSubmission?.category || '';
     const normalizedDescription = editForm.description.trim();
+    const sellerPrice = Number(editForm.price);
+    const sellerPriceMarkup = sellerPrice > 999 ? 0.11 : (sellerPrice >= 501 ? 0.15 : 0.20);
+    const buyerFacingPrice = Number((sellerPrice + sellerPrice * sellerPriceMarkup).toFixed(2));
+    const sellerPriceUpdate = {
+      price: buyerFacingPrice,
+      customFields: {
+        ...(editingSubmission?.customFields || {}),
+        sellerPrice: sellerPrice.toFixed(2),
+      },
+    };
 
     if (normalizedDescription.length > MAX_DESCRIPTION_LENGTH) {
       setError(`Description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer.`);
@@ -602,7 +702,6 @@ export default function SellerSubmissions() {
 
       return {
         name: `${resolvedGearBrand} ${editForm.gearItem.trim()}`,
-        price: Number(editForm.price),
         subcategory: editForm.gearItem.trim(),
         description: normalizedDescription,
         specifications: specificationLines,
@@ -613,6 +712,7 @@ export default function SellerSubmissions() {
         gearSize: resolvedGearSize,
         gearComboShirtSize: editForm.gearItem === 'Gear Combo' ? editForm.gearComboShirtSize.trim() : '',
         gearComboPantsSize: editForm.gearItem === 'Gear Combo' ? editForm.gearComboPantsSize.trim() : '',
+        ...sellerPriceUpdate,
       };
     }
 
@@ -633,7 +733,6 @@ export default function SellerSubmissions() {
 
       return {
         name: accessoriesName,
-        price: Number(editForm.price),
         subcategory: resolvedAccessoriesSubcategory,
         description: normalizedDescription,
         specifications: specLines,
@@ -642,6 +741,7 @@ export default function SellerSubmissions() {
         accessoriesBrand: resolvedAccessoriesBrand,
         customAccessoriesBrand: editForm.accessoriesBrand === OTHER_BRAND_VALUE ? resolvedAccessoriesBrand : '',
         customSubcategory: editForm.accessoriesSubcategory === OTHER_SUBCATEGORY_VALUE ? resolvedAccessoriesSubcategory : '',
+        ...sellerPriceUpdate,
       };
     }
 
@@ -705,7 +805,6 @@ export default function SellerSubmissions() {
 
     return {
       name: editForm.name.trim(),
-      price: Number(editForm.price),
       subcategory: resolvedPartsSubcategory,
       description: normalizedDescription,
       specifications: specificationsWithBrand,
@@ -715,6 +814,7 @@ export default function SellerSubmissions() {
       brand: resolvedPartsBrand,
       customPartsBrand: normalizedManufacturer === 'Other' ? normalizedOtherManufacturer : '',
       customSubcategory: editForm.subcategory === OTHER_SUBCATEGORY_VALUE ? resolvedPartsSubcategory : '',
+      ...sellerPriceUpdate,
     };
   };
 
@@ -742,18 +842,20 @@ export default function SellerSubmissions() {
 
       if (editingListingType === 'product') {
         await updateSellerProduct(editingSubmission.id, updatesWithImages);
-        setProducts((prev) =>
-          prev.map((item) => (item.id === editingSubmission.id ? { ...item, ...updatesWithImages } : item))
-        );
+        const refreshedProducts = await fetchSellerLiveProducts(user.uid);
+        setProducts(refreshedProducts);
+        const refreshedProduct = refreshedProducts.find((item) => item.id === editingSubmission.id);
+        if (refreshedProduct) {
+          setSelectedSubmission((prev) => (prev?.id === editingSubmission.id ? refreshedProduct : prev));
+        }
       } else {
         await updateSellerSubmission(editingSubmission.id, updatesWithImages);
-        setSubmissions((prev) =>
-          prev.map((item) => (item.id === editingSubmission.id ? { ...item, ...updatesWithImages } : item))
-        );
-      }
-
-      if (selectedSubmission?.id === editingSubmission.id) {
-        setSelectedSubmission((prev) => (prev ? { ...prev, ...updatesWithImages } : prev));
+        const refreshedSubmissions = await fetchSellerSubmissions(user.uid);
+        setSubmissions(refreshedSubmissions);
+        const refreshedSubmission = refreshedSubmissions.find((item) => item.id === editingSubmission.id);
+        if (refreshedSubmission) {
+          setSelectedSubmission((prev) => (prev?.id === editingSubmission.id ? refreshedSubmission : prev));
+        }
       }
 
       handleCloseEdit();
@@ -934,11 +1036,7 @@ export default function SellerSubmissions() {
                         <tr key={key}>
                           <td className="px-4 py-3 align-top text-slate-700">{formatFieldLabel(key)}</td>
                           <td className="px-4 py-3 text-slate-900">
-                            {Array.isArray(value)
-                              ? value.join(', ')
-                              : typeof value === 'object'
-                                ? JSON.stringify(value)
-                                : String(value)}
+                            {formatDetailValue(key, value)}
                           </td>
                         </tr>
                       ))}
@@ -1193,6 +1291,7 @@ export default function SellerSubmissions() {
                       required
                       className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                     />
+                    <SellingPriceInfo price={editForm.price} />
                   </label>
                 </>
               ) : editingSubmission.category === 'Accessories' ? (
@@ -1303,6 +1402,7 @@ export default function SellerSubmissions() {
                       required
                       className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                     />
+                    <SellingPriceInfo price={editForm.price} />
                   </label>
                 </>
               ) : (
@@ -1326,6 +1426,7 @@ export default function SellerSubmissions() {
                         required
                         className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                       />
+                      <SellingPriceInfo price={editForm.price} />
                     </label>
                   </div>
 

@@ -191,9 +191,30 @@ service cloud.firestore {
       return isSubmissionOwner()
         && request.resource.data.sellerId == resource.data.sellerId
         && request.resource.data.sellerEmail == resource.data.sellerEmail
-        && request.resource.data.approvedAt == resource.data.approvedAt
-        && request.resource.data.approvedBy == resource.data.approvedBy
-        && request.resource.data.productId == resource.data.productId
+        && (
+          (!('approvedAt' in resource.data) && !('approvedAt' in request.resource.data))
+          || (
+            ('approvedAt' in resource.data)
+            && ('approvedAt' in request.resource.data)
+            && request.resource.data.approvedAt == resource.data.approvedAt
+          )
+        )
+        && (
+          (!('approvedBy' in resource.data) && !('approvedBy' in request.resource.data))
+          || (
+            ('approvedBy' in resource.data)
+            && ('approvedBy' in request.resource.data)
+            && request.resource.data.approvedBy == resource.data.approvedBy
+          )
+        )
+        && (
+          (!('productId' in resource.data) && !('productId' in request.resource.data))
+          || (
+            ('productId' in resource.data)
+            && ('productId' in request.resource.data)
+            && request.resource.data.productId == resource.data.productId
+          )
+        )
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name',
           'price',
@@ -225,6 +246,7 @@ service cloud.firestore {
           'customPartsBrand',
           'customPartsBrandOptional',
           'customSubcategory',
+          'customFields',
           'rejectedAt',
           'rejectedBy',
           'rejectionReason',
@@ -269,6 +291,7 @@ service cloud.firestore {
           'customPartsBrand',
           'customPartsBrandOptional',
           'customSubcategory',
+          'customFields',
           'updatedAt'
         ]);
     }

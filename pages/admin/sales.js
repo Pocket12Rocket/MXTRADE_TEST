@@ -2,28 +2,25 @@ import { useEffect, useMemo, useState } from 'react';
 import useAuth from '../../lib/useAuth';
 import {
   fetchAllOrdersForAdmin,
-  fetchLiveProducts,
-  updateProductStatusAsAdmin,
+  updateOrderStatusAsAdmin,
 } from '../../lib/firestoreHelpers';
 
 const STATUS_BUCKETS = [
-  { value: 'listed', label: 'Listed' },
-  { value: 'purchased', label: 'Purchased' },
+  { value: 'paid', label: 'Paid / Processing' },
   { value: 'shipped', label: 'Shipped' },
   { value: 'delivered', label: 'Delivered' },
+  { value: 'refund_pending', label: 'Refund Pending' },
   { value: 'refunded', label: 'Refunded' },
 ];
 
-function normalizeStatus(product) {
-  if (product.status) {
-    return String(product.status).toLowerCase();
-  }
+// Orders in these states haven't been paid for yet and shouldn't clutter the fulfillment board.
+const HIDDEN_ORDER_STATUSES = new Set(['pending_payment', 'payment_failed', 'failed', 'cancelled']);
 
-  return product.marketSold ? 'purchased' : 'listed';
-}
+// Only these buckets represent manual fulfillment steps an admin can drag an order into.
+const DRAGGABLE_STATUSES = new Set(['paid', 'shipped', 'delivered']);
 
-function getProductUpdatedTime(product) {
-  const value = product.statusUpdatedAt || product.updatedAt || product.createdAt;
+function getOrderUpdatedTime(order) {
+  const value = order.statusUpdatedAt || order.paidAt || order.createdAt;
 
   if (typeof value?.toDate === 'function') {
     return value.toDate().getTime();
@@ -35,11 +32,6 @@ function getProductUpdatedTime(product) {
 
   if (value instanceof Date) {
     return value.getTime();
-  }
-
-  if (typeof value === 'string') {
-    const parsed = new Date(value).getTime();
-    return Number.isNaN(parsed) ? 0 : parsed;
   }
 
   return 0;
@@ -82,12 +74,11 @@ function getShippingAddressLabel(address = {}) {
 
 export default function SalesPage() {
   const { user, profile, loading } = useAuth();
-  const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [draggedProduct, setDraggedProduct] = useState(null);
-  const [movingProductId, setMovingProductId] = useState('');
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [draggedOrder, setDraggedOrder] = useState(null);
+  const [movingOrderId, setMovingOrderId] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -95,101 +86,59 @@ export default function SalesPage() {
       return;
     }
 
-    Promise.all([
-      fetchLiveProducts({ includeAllStatuses: true }),
-      fetchAllOrdersForAdmin(),
-    ])
-      .then(([productRows, orderRows]) => {
-        setProducts(productRows || []);
-        setOrders(orderRows || []);
-      })
+    fetchAllOrdersForAdmin()
+      .then((orderRows) => setOrders((orderRows || []).filter((order) => !HIDDEN_ORDER_STATUSES.has(order.status))))
       .catch((err) => setError(err?.message || 'Failed to load sales data.'));
   }, [user, profile?.role]);
 
-  const orderMatchesByProductId = useMemo(() => {
-    const matches = new Map();
-    orders.forEach((order) => {
-      (order.items || []).forEach((item) => {
-        if (!item.productId) {
-          return;
-        }
-
-        const current = matches.get(item.productId) || [];
-        current.push({
-          orderId: order.id,
-          quantity: item.quantity,
-          orderStatus: order.status,
-          buyerId: order.buyerId || '',
-          buyerName: getBuyerName(order),
-          buyerEmail: order.buyerEmail || '',
-          buyerPhone: order.shippingAddress?.phone || '',
-          shippingAddress: order.shippingAddress || {},
-        });
-        matches.set(item.productId, current);
-      });
-    });
-    return matches;
-  }, [orders]);
-
-  const productRows = useMemo(() => products.map((product) => ({
-    ...product,
-    salesStatus: normalizeStatus(product),
-    orderMatches: orderMatchesByProductId.get(product.id) || [],
-  })), [products, orderMatchesByProductId]);
-
-  const filteredProducts = useMemo(() => {
+  const filteredOrders = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     if (!query) {
-      return productRows;
+      return orders;
     }
 
-    return productRows.filter((product) => {
+    return orders.filter((order) => {
       const values = [
-        product.id,
-        product.sellerId,
-        product.sellerEmail,
-        product.name,
-        product.category,
-        product.subcategory,
-        product.orderId,
-        product.soldOrderId,
-        ...product.orderMatches.map((match) => match.orderId),
+        order.id,
+        order.buyerEmail,
+        ...(order.items || []).map((item) => item.productId),
+        ...(order.items || []).map((item) => item.sellerId),
       ];
       return values.some((value) => String(value || '').toLowerCase().includes(query));
     });
-  }, [productRows, searchTerm]);
+  }, [orders, searchTerm]);
 
-  const productsByStatus = useMemo(() => {
+  const ordersByStatus = useMemo(() => {
     const grouped = Object.fromEntries(STATUS_BUCKETS.map((bucket) => [bucket.value, []]));
-    filteredProducts.forEach((product) => {
-      const bucket = grouped[product.salesStatus] || grouped.listed;
-      bucket.push(product);
+    filteredOrders.forEach((order) => {
+      const bucket = grouped[order.status] || grouped.paid;
+      bucket.push(order);
     });
     Object.values(grouped).forEach((bucket) => {
-      bucket.sort((a, b) => getProductUpdatedTime(b) - getProductUpdatedTime(a));
+      bucket.sort((a, b) => getOrderUpdatedTime(b) - getOrderUpdatedTime(a));
     });
     return grouped;
-  }, [filteredProducts]);
+  }, [filteredOrders]);
 
-  const moveProduct = async (product, status) => {
-    if (!product || product.salesStatus === status) {
+  const moveOrder = async (order, status) => {
+    if (!order || order.status === status || !DRAGGABLE_STATUSES.has(status) || !DRAGGABLE_STATUSES.has(order.status)) {
       return;
     }
 
-    setMovingProductId(product.id);
+    setMovingOrderId(order.id);
     setError('');
     try {
-      await updateProductStatusAsAdmin(product.id, status);
-      setProducts((currentProducts) => currentProducts.map((currentProduct) => (
-        currentProduct.id === product.id
-          ? { ...currentProduct, status, statusUpdatedAt: new Date() }
-          : currentProduct
+      await updateOrderStatusAsAdmin(order.id, status);
+      setOrders((currentOrders) => currentOrders.map((currentOrder) => (
+        currentOrder.id === order.id
+          ? { ...currentOrder, status, statusUpdatedAt: new Date() }
+          : currentOrder
       )));
     } catch (err) {
-      setError(err?.message || 'Failed to move product.');
+      setError(err?.message || 'Failed to move order.');
     } finally {
-      setMovingProductId('');
-      setDraggedProduct(null);
+      setMovingOrderId('');
+      setDraggedOrder(null);
     }
   };
 
@@ -209,16 +158,16 @@ export default function SalesPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-semibold text-slate-900">Sales</h1>
-        <p className="mt-2 text-slate-600">Move products between status buckets to manage the sales pipeline.</p>
+        <p className="mt-2 text-slate-600">Drag orders between stages to track fulfillment. Refund states are managed from the refund requests panel.</p>
       </div>
 
       <label className="block">
-        <span className="sr-only">Search products</span>
+        <span className="sr-only">Search orders</span>
         <input
           type="search"
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          placeholder="Search by product ID, seller ID, or order ID"
+          placeholder="Search by order ID, buyer email, product ID, or seller ID"
           className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:border-[#00C5CD] focus:outline-none focus:ring-2 focus:ring-[#00C5CD]/20"
         />
       </label>
@@ -230,72 +179,93 @@ export default function SalesPage() {
           <section
             key={bucket.value}
             className="min-w-[280px] flex-1 rounded-2xl border border-slate-200 bg-slate-100 p-3"
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={() => moveProduct(draggedProduct, bucket.value)}
+            onDragOver={(event) => { if (DRAGGABLE_STATUSES.has(bucket.value)) event.preventDefault(); }}
+            onDrop={() => moveOrder(draggedOrder, bucket.value)}
           >
             <div className="flex items-center justify-between px-2 pb-3">
               <h2 className="font-semibold text-slate-900">{bucket.label}</h2>
               <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-slate-500">
-                {productsByStatus[bucket.value].length}
+                {ordersByStatus[bucket.value].length}
               </span>
             </div>
             <div className="space-y-3">
-              {productsByStatus[bucket.value].map((product) => (
+              {ordersByStatus[bucket.value].map((order) => (
                 <article
-                  key={product.id}
-                  draggable
-                  onDragStart={() => setDraggedProduct(product)}
-                  onClick={() => setSelectedProduct(product)}
-                  className="cursor-grab rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-[#00C5CD] active:cursor-grabbing"
+                  key={order.id}
+                  draggable={DRAGGABLE_STATUSES.has(order.status)}
+                  onDragStart={() => setDraggedOrder(order)}
+                  onClick={() => setSelectedOrder(order)}
+                  className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-[#00C5CD] ${DRAGGABLE_STATUSES.has(order.status) ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <h3 className="font-semibold text-slate-900">{product.name || 'Untitled product'}</h3>
-                    {movingProductId === product.id ? <span className="text-xs text-slate-500">Saving...</span> : null}
+                    <h3 className="font-semibold text-slate-900 break-all">{order.id}</h3>
+                    {movingOrderId === order.id ? <span className="text-xs text-slate-500">Saving...</span> : null}
                   </div>
                   <dl className="mt-3 space-y-1 text-xs text-slate-600">
-                    <div><dt className="inline font-semibold">Product ID: </dt><dd className="inline break-all">{product.id}</dd></div>
-                    <div><dt className="inline font-semibold">Category: </dt><dd className="inline">{product.category || 'Uncategorized'}</dd></div>
-                    <div><dt className="inline font-semibold">Subcategory: </dt><dd className="inline">{product.subcategory || 'None'}</dd></div>
-                    {product.orderMatches.length > 0 ? (
-                      <>
-                        <div><dt className="inline font-semibold">Order ID: </dt><dd className="inline break-all">{product.orderMatches[0].orderId}</dd></div>
-                        <div><dt className="inline font-semibold">Buyer: </dt><dd className="inline">{product.orderMatches[0].buyerName}</dd></div>
-                      </>
-                    ) : null}
+                    <div><dt className="inline font-semibold">Buyer: </dt><dd className="inline">{getBuyerName(order)}</dd></div>
+                    <div><dt className="inline font-semibold">Email: </dt><dd className="inline">{order.buyerEmail || '—'}</dd></div>
+                    <div><dt className="inline font-semibold">Items: </dt><dd className="inline">{(order.items || []).map((item) => `${item.name} x${item.quantity}`).join(', ') || 'None'}</dd></div>
+                    <div><dt className="inline font-semibold">Total: </dt><dd className="inline">R{Number(order.totalAmount || 0).toFixed(2)}</dd></div>
                   </dl>
-                  <select
-                    value={product.salesStatus}
-                    onChange={(event) => {
-                      event.stopPropagation();
-                      moveProduct(product, event.target.value);
-                    }}
-                    onClick={(event) => event.stopPropagation()}
-                    className="mt-4 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700"
-                    aria-label={`Move ${product.name || 'product'} to another status`}
-                  >
-                    {STATUS_BUCKETS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </select>
+                  {DRAGGABLE_STATUSES.has(order.status) ? (
+                    <select
+                      value={order.status}
+                      onChange={(event) => {
+                        event.stopPropagation();
+                        moveOrder(order, event.target.value);
+                      }}
+                      onClick={(event) => event.stopPropagation()}
+                      className="mt-4 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700"
+                      aria-label={`Move order ${order.id} to another status`}
+                    >
+                      {STATUS_BUCKETS.filter((option) => DRAGGABLE_STATUSES.has(option.value)).map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  ) : null}
                 </article>
               ))}
-              {productsByStatus[bucket.value].length === 0 ? <p className="px-2 py-6 text-center text-xs text-slate-500">No products</p> : null}
+              {ordersByStatus[bucket.value].length === 0 ? <p className="px-2 py-6 text-center text-xs text-slate-500">No orders</p> : null}
             </div>
           </section>
         ))}
       </div>
 
-      {selectedProduct ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6" onClick={() => setSelectedProduct(null)}>
+      {selectedOrder ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6" onClick={() => setSelectedOrder(null)}>
           <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-xl sm:p-8" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#00C5CD]">Product information</p>
-                <h2 className="mt-2 text-2xl font-semibold text-slate-900">{selectedProduct.name || 'Untitled product'}</h2>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#00C5CD]">Order information</p>
+                <h2 className="mt-2 text-2xl font-semibold text-slate-900 break-all">{selectedOrder.id}</h2>
               </div>
-              <button type="button" onClick={() => setSelectedProduct(null)} className="rounded-full border border-slate-300 px-4 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 hover:border-[#00CED1]">Close</button>
+              <button type="button" onClick={() => setSelectedOrder(null)} className="rounded-full border border-slate-300 px-4 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 hover:border-[#00CED1]">Close</button>
             </div>
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              {Object.entries(selectedProduct)
-                .filter(([key]) => key !== 'orderMatches' && key !== 'salesStatus')
+
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <h3 className="font-semibold text-slate-900">Buyer</h3>
+              <p className="mt-2 text-sm text-slate-700"><span className="font-semibold">Name:</span> {getBuyerName(selectedOrder)}</p>
+              <p className="text-sm text-slate-700"><span className="font-semibold">Email:</span> {selectedOrder.buyerEmail || 'Not provided'}</p>
+              <p className="text-sm text-slate-700"><span className="font-semibold">Phone:</span> {selectedOrder.shippingAddress?.phone || 'Not provided'}</p>
+              <p className="text-sm text-slate-700"><span className="font-semibold">Shipping address:</span> {getShippingAddressLabel(selectedOrder.shippingAddress)}</p>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <h3 className="font-semibold text-slate-900">Items</h3>
+              <ul className="mt-2 space-y-2 text-sm text-slate-700">
+                {(selectedOrder.items || []).map((item, idx) => (
+                  <li key={`${item.productId || idx}`} className="border-b border-slate-200 pb-2 last:border-0">
+                    <p className="font-semibold">{item.name}</p>
+                    <p>{item.quantity} x R{Number(item.price || 0).toFixed(2)} · Seller: {item.sellerEmail || item.sellerId || '—'}</p>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-sm font-semibold text-slate-900">Total: R{Number(selectedOrder.totalAmount || 0).toFixed(2)}</p>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {Object.entries(selectedOrder)
+                .filter(([key]) => !['items', 'shippingAddress', 'id'].includes(key))
                 .map(([key, value]) => (
                   <div key={key} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                     <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{key}</p>
@@ -303,26 +273,10 @@ export default function SalesPage() {
                   </div>
                 ))}
             </div>
-            {selectedProduct.orderMatches.length > 0 ? (
-              <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <h3 className="font-semibold text-slate-900">Related orders</h3>
-                <ul className="mt-2 space-y-1 text-sm text-slate-700">
-                  {selectedProduct.orderMatches.map((match) => (
-                    <li key={match.orderId} className="border-b border-slate-200 py-3 last:border-0">
-                      <p className="font-semibold">Order {match.orderId}</p>
-                      <p>{match.quantity || 1} unit(s) · {match.orderStatus || 'Unknown status'}</p>
-                      <p className="mt-2"><span className="font-semibold">Buyer:</span> {match.buyerName}</p>
-                      <p><span className="font-semibold">Email:</span> {match.buyerEmail || 'Not provided'}</p>
-                      <p><span className="font-semibold">Phone:</span> {match.buyerPhone || 'Not provided'}</p>
-                      <p><span className="font-semibold">Shipping address:</span> {getShippingAddressLabel(match.shippingAddress)}</p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
           </div>
         </div>
       ) : null}
     </div>
   );
 }
+
