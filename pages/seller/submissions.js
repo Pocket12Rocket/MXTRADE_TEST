@@ -387,7 +387,9 @@ export default function SellerSubmissions() {
         submission,
       }));
 
-    const liveProductRows = products.map((product) => {
+    const liveProductRows = products
+      .filter((product) => !['pending', 'pending_review'].includes(String(product.status || '').toLowerCase()))
+      .map((product) => {
       const normalizedProductStatus = product.status
         || (product.marketSold ? 'purchased' : 'listed');
       const canEditListedProduct = normalizedProductStatus === 'listed' || normalizedProductStatus === 'active';
