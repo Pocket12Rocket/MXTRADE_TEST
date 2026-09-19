@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import ProductCard from '../../components/ProductCard';
 import { GEAR_CONDITION_OPTIONS, DIRT_BIKE_CATEGORIES } from '../../lib/dirtBikeCategories';
 import { fetchLiveProducts } from '../../lib/firestoreHelpers';
+import { toUserMessage } from '../../lib/userMessage';
 // Manufacturer and model options for filtering
 const MANUFACTURERS = [
   'Honda', 'Yamaha', 'KTM', 'Kawasaki', 'Suzuki', 'Husqvarna', 'GasGas', 'Beta', 'Sherco', 'TM Racing',
@@ -38,6 +39,11 @@ function normalizeCategoryValue(value) {
   return matchedCoreCategory || trimmedValue;
 }
 
+/**
+ * Why: Main browse/search/filter catalog page. Never render a raw Firestore error — show a
+ * short friendly sentence via the shared `toUserMessage()` helper (ARCH-14) instead.
+ * @returns {JSX.Element} The shop catalog with filters, sorting, and product grid.
+ */
 export default function Shop() {
 
   const router = useRouter();
@@ -229,7 +235,7 @@ export default function Shop() {
   useEffect(() => {
     fetchLiveProducts()
       .then((results) => setProducts(results))
-      .catch((err) => setError(err.message))
+      .catch((err) => setError(toUserMessage(err, "We couldn't load the shop right now. Please try again.")))
       .finally(() => setLoading(false));
   }, []);
 

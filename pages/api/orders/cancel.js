@@ -1,6 +1,7 @@
 import { adminDb } from '../../../lib/firebaseAdmin';
 import admin from '../../../lib/firebaseAdmin';
 import { rateLimit } from '../../../lib/apiRateLimit';
+import { bumpCatalogVersion } from '../../../lib/server/catalogVersion';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -35,6 +36,7 @@ export default async function handler(req, res) {
         .map((item) => adminDb.collection('products').doc(item.productId));
       const productSnapshots = await Promise.all(productRefs.map((productRef) => transaction.get(productRef)));
 
+      let productDataChanged = false;
       productSnapshots.forEach((productSnapshot) => {
         if (!productSnapshot.exists) {
           return;
@@ -58,7 +60,15 @@ export default async function handler(req, res) {
           inventoryReservations: reservations,
           statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
+        productDataChanged = true;
       });
+
+      // Why: only bump the public catalog version when a reservation was actually released back
+      // onto a product's stock — a no-op cancel attempt (stale token, already-cancelled order)
+      // must not churn PERF-00's cache-invalidation counter for nothing.
+      if (productDataChanged) {
+        bumpCatalogVersion(['products'], { transaction });
+      }
 
       transaction.update(orderRef, {
         status: 'payment_cancelled',

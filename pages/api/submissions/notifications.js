@@ -1,15 +1,7 @@
 import nodemailer from 'nodemailer';
 import admin, { adminDb } from '../../../lib/firebaseAdmin';
 import { rateLimit } from '../../../lib/apiRateLimit';
-
-function escapeHtml(value) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
+import { escapeHtml, getBearerToken } from '../../../lib/server/request';
 
 function buildAdminRecipients() {
   const supportEmail = 'support@fastsport.co.za';
@@ -143,14 +135,6 @@ async function sendEmail({ to, subject, html }) {
   }
 
   throw new Error('No working email transport configured. Set RESEND_API_KEY or SMTP_USER/SMTP_PASS.');
-}
-
-function getBearerToken(req) {
-  const rawHeader = req.headers.authorization || '';
-  if (!rawHeader.startsWith('Bearer ')) {
-    return '';
-  }
-  return rawHeader.slice('Bearer '.length).trim();
 }
 
 function getProductLink(siteUrl, productId) {

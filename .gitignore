@@ -11,3 +11,4 @@ yarn-error.log*
 firebase-debug.log
 /.idea
 /.playwright-mcp
+/.playwright-ui-review

@@ -1,15 +1,20 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import ProductCard from '../components/ProductCard';
-import { fetchMostClickedProducts, fetchThisWeeksNewProducts, fetchThisWeeksNewProductsByCategory } from '../lib/firestoreHelpers';
+import CarouselControl from '../components/CarouselControl';
+import { fetchLiveProducts, fetchMostClickedProducts, fetchThisWeeksNewProductsByCategory } from '../lib/firestoreHelpers';
+import { reportError } from '../lib/userMessage';
 
+/**
+ * Why: Home page — PERF-01. Previously called the live-products fetch 4 separate times (once
+ * inside fetchMostClickedProducts and once inside each of the three
+ * fetchThisWeeksNewProductsByCategory calls), each running its own Firestore query, for four
+ * 6-item carousels built from what is otherwise the same underlying live-product list. Now
+ * fetches live products exactly once and derives all four carousels from that single result by
+ * passing it into the (still-independently-callable) helper functions.
+ * @returns {JSX.Element} The home page markup (popular carousel + three category carousels).
+ */
 export default function Home() {
-    useEffect(() => {
-      setIsLoadingPopular(true);
-      fetchMostClickedProducts(6)
-        .then(setPopularProducts)
-        .finally(() => setIsLoadingPopular(false));
-    }, []);
   const [popularProducts, setPopularProducts] = useState([]);
   const [isLoadingPopular, setIsLoadingPopular] = useState(true);
   const [popularCarouselIndex, setPopularCarouselIndex] = useState(0);
@@ -30,15 +35,46 @@ export default function Home() {
   const maxAccessoriesCarouselIndex = Math.max(accessoriesProducts.length - 3, 0);
 
   useEffect(() => {
-    fetchThisWeeksNewProductsByCategory('gear', 6)
-      .then(setGearProducts)
-      .finally(() => setIsLoadingGear(false));
-    fetchThisWeeksNewProductsByCategory('parts', 6)
-      .then(setPartsProducts)
-      .finally(() => setIsLoadingParts(false));
-    fetchThisWeeksNewProductsByCategory('accessories', 6)
-      .then(setAccessoriesProducts)
-      .finally(() => setIsLoadingAccessories(false));
+    let isMounted = true;
+
+    // Why: single shared fetch (PERF-01) — see the fetchLiveProducts() call below. All four
+    // carousels are derived from this one result instead of each issuing its own query.
+    const loadHomeCarousels = async () => {
+      try {
+        const products = await fetchLiveProducts();
+        if (!isMounted) return;
+
+        const [popular, gear, parts, accessories] = await Promise.all([
+          fetchMostClickedProducts(6, products),
+          fetchThisWeeksNewProductsByCategory('gear', 6, products),
+          fetchThisWeeksNewProductsByCategory('parts', 6, products),
+          fetchThisWeeksNewProductsByCategory('accessories', 6, products),
+        ]);
+        if (!isMounted) return;
+
+        setPopularProducts(popular);
+        setGearProducts(gear);
+        setPartsProducts(parts);
+        setAccessoriesProducts(accessories);
+      } catch (err) {
+        // Why: leave lists empty rather than showing an error — each carousel already renders a
+        // "no products" state below — but still log the failure for debugging (ARCH-14).
+        reportError('home-carousels', err);
+      } finally {
+        if (isMounted) {
+          setIsLoadingPopular(false);
+          setIsLoadingGear(false);
+          setIsLoadingParts(false);
+          setIsLoadingAccessories(false);
+        }
+      }
+    };
+
+    loadHomeCarousels();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -108,15 +144,12 @@ export default function Home() {
           )}
         </div>
         <div className="mt-8 hidden items-center gap-4 lg:flex">
-          <button
-            type="button"
+          <CarouselControl
+            direction="previous"
+            label="Scroll popular products left"
             onClick={handlePopularPrevious}
             disabled={popularCarouselIndex === 0 || isLoadingPopular || popularProducts.length <= 3}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-300 text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD] disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
-            aria-label="Scroll popular products left"
-          >
-            <span className="text-xl leading-none">‹</span>
-          </button>
+          />
           <div className="min-w-0 flex-1 overflow-hidden">
           {isLoadingPopular ? (
             <p className="text-sm text-slate-600">Loading popular products…</p>
@@ -135,15 +168,12 @@ export default function Home() {
             </div>
           )}
           </div>
-          <button
-            type="button"
+          <CarouselControl
+            direction="next"
+            label="Scroll popular products right"
             onClick={handlePopularNext}
             disabled={popularCarouselIndex >= maxPopularCarouselIndex || isLoadingPopular || popularProducts.length <= 3}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-300 text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD] disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
-            aria-label="Scroll popular products right"
-          >
-            <span className="text-xl leading-none">›</span>
-          </button>
+          />
         </div>
       </section>
 
@@ -216,15 +246,7 @@ export default function Home() {
             )}
           </div>
           <div className="mt-6 hidden items-center gap-4 lg:flex">
-            <button
-              type="button"
-              onClick={handleGearPrevious}
-              disabled={gearCarouselIndex === 0 || isLoadingGear || gearProducts.length <= 3}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/20 text-white hover:border-[#40E0D0] hover:text-[#40E0D0] disabled:cursor-not-allowed disabled:border-white/10 disabled:text-white/30"
-              aria-label="Scroll new gear left"
-            >
-              <span className="text-xl leading-none">‹</span>
-            </button>
+            <CarouselControl direction="previous" label="Scroll new gear left" onClick={handleGearPrevious} disabled={gearCarouselIndex === 0 || isLoadingGear || gearProducts.length <= 3} tone="dark" />
             <div className="min-w-0 flex-1 overflow-hidden">
               {isLoadingGear ? (
                 <p className="text-sm text-slate-200">Loading new gear…</p>
@@ -263,15 +285,7 @@ export default function Home() {
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={handleGearNext}
-              disabled={gearCarouselIndex >= maxGearCarouselIndex || isLoadingGear || gearProducts.length <= 3}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/20 text-white hover:border-[#40E0D0] hover:text-[#40E0D0] disabled:cursor-not-allowed disabled:border-white/10 disabled:text-white/30"
-              aria-label="Scroll new gear right"
-            >
-              <span className="text-xl leading-none">›</span>
-            </button>
+            <CarouselControl direction="next" label="Scroll new gear right" onClick={handleGearNext} disabled={gearCarouselIndex >= maxGearCarouselIndex || isLoadingGear || gearProducts.length <= 3} tone="dark" />
           </div>
         </div>
       </section>
@@ -327,15 +341,7 @@ export default function Home() {
             )}
           </div>
           <div className="mt-6 hidden items-center gap-4 lg:flex">
-            <button
-              type="button"
-              onClick={handlePartsPrevious}
-              disabled={partsCarouselIndex === 0 || isLoadingParts || partsProducts.length <= 3}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/20 text-white hover:border-[#40E0D0] hover:text-[#40E0D0] disabled:cursor-not-allowed disabled:border-white/10 disabled:text-white/30"
-              aria-label="Scroll new parts left"
-            >
-              <span className="text-xl leading-none">‹</span>
-            </button>
+            <CarouselControl direction="previous" label="Scroll new parts left" onClick={handlePartsPrevious} disabled={partsCarouselIndex === 0 || isLoadingParts || partsProducts.length <= 3} tone="dark" />
             <div className="min-w-0 flex-1 overflow-hidden">
               {isLoadingParts ? (
                 <p className="text-sm text-slate-200">Loading new parts…</p>
@@ -374,15 +380,7 @@ export default function Home() {
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={handlePartsNext}
-              disabled={partsCarouselIndex >= maxPartsCarouselIndex || isLoadingParts || partsProducts.length <= 3}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/20 text-white hover:border-[#40E0D0] hover:text-[#40E0D0] disabled:cursor-not-allowed disabled:border-white/10 disabled:text-white/30"
-              aria-label="Scroll new parts right"
-            >
-              <span className="text-xl leading-none">›</span>
-            </button>
+            <CarouselControl direction="next" label="Scroll new parts right" onClick={handlePartsNext} disabled={partsCarouselIndex >= maxPartsCarouselIndex || isLoadingParts || partsProducts.length <= 3} tone="dark" />
           </div>
         </div>
       </section>
@@ -438,15 +436,7 @@ export default function Home() {
             )}
           </div>
           <div className="mt-6 hidden items-center gap-4 lg:flex">
-            <button
-              type="button"
-              onClick={handleAccessoriesPrevious}
-              disabled={accessoriesCarouselIndex === 0 || isLoadingAccessories || accessoriesProducts.length <= 3}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/20 text-white hover:border-[#40E0D0] hover:text-[#40E0D0] disabled:cursor-not-allowed disabled:border-white/10 disabled:text-white/30"
-              aria-label="Scroll new accessories left"
-            >
-              <span className="text-xl leading-none">‹</span>
-            </button>
+            <CarouselControl direction="previous" label="Scroll new accessories left" onClick={handleAccessoriesPrevious} disabled={accessoriesCarouselIndex === 0 || isLoadingAccessories || accessoriesProducts.length <= 3} tone="dark" />
             <div className="min-w-0 flex-1 overflow-hidden">
               {isLoadingAccessories ? (
                 <p className="text-sm text-slate-200">Loading new accessories…</p>
@@ -485,15 +475,7 @@ export default function Home() {
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={handleAccessoriesNext}
-              disabled={accessoriesCarouselIndex >= maxAccessoriesCarouselIndex || isLoadingAccessories || accessoriesProducts.length <= 3}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/20 text-white hover:border-[#40E0D0] hover:text-[#40E0D0] disabled:cursor-not-allowed disabled:border-white/10 disabled:text-white/30"
-              aria-label="Scroll new accessories right"
-            >
-              <span className="text-xl leading-none">›</span>
-            </button>
+            <CarouselControl direction="next" label="Scroll new accessories right" onClick={handleAccessoriesNext} disabled={accessoriesCarouselIndex >= maxAccessoriesCarouselIndex || isLoadingAccessories || accessoriesProducts.length <= 3} tone="dark" />
           </div>
         </div>
       </section>

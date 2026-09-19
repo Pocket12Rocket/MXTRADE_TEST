@@ -338,8 +338,7 @@ service cloud.firestore {
       allow read: if publicProductVisible() || (signedIn() && (resource.data.sellerId == request.auth.uid || isAdmin()));
       allow create, delete: if isAdmin();
       allow update: if isAdmin()
-        || isSellerProductUpdate()
-        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clickCount']);
+        || isSellerProductUpdate();
     }
 
     match /orders/{orderId} {
@@ -374,6 +373,16 @@ service cloud.firestore {
     match /siteContent/{contentId} {
       allow read: if true;
       allow create, update, delete: if isAdmin();
+    }
+
+    match /catalogMeta/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /productStats/{productId} {
+      allow read: if true;
+      allow write: if false;
     }
 
     match /{document=**} {

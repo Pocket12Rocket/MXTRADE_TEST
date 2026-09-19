@@ -1,7 +1,13 @@
 
 import { useEffect, useState } from 'react';
 import { fetchFaqs } from '../lib/firestoreHelpers';
+import { toUserMessage } from '../lib/userMessage';
 
+/**
+ * Why: Public FAQ page. Never render a raw Firestore error (permission-denied, offline, etc.) —
+ * show a short friendly sentence via the shared `toUserMessage()` helper (ARCH-14) instead.
+ * @returns {JSX.Element} The FAQ list, a loading state, or a friendly error message.
+ */
 export default function FAQ() {
   const [faqs, setFaqs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -10,7 +16,7 @@ export default function FAQ() {
   useEffect(() => {
     fetchFaqs()
       .then(setFaqs)
-      .catch((err) => setError(err.message))
+      .catch((err) => setError(toUserMessage(err, "We couldn't load the FAQ right now. Please try again.")))
       .finally(() => setLoading(false));
   }, []);
 

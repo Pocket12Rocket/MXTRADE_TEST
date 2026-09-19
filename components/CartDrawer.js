@@ -1,8 +1,19 @@
 import Link from 'next/link';
 import { useEffect } from 'react';
 import { useRouter } from 'next/router';
+import Drawer from '@mui/material/Drawer';
 import { useCart } from '../lib/cartContext';
 
+/**
+ * Why: Keeps the cart accessible from any storefront screen while relying on
+ * MUI Drawer for focus management, Escape-key handling, and overlay behavior.
+ * @param {Object} props - Drawer visibility controls.
+ * @param {boolean} props.isOpen - Whether the cart drawer is visible.
+ * @param {() => void} props.onClose - Closes the cart drawer.
+ * @returns {JSX.Element} The right-side cart and checkout summary.
+ * @example
+ * <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} />
+ */
 export default function CartDrawer({ isOpen, onClose }) {
   const router = useRouter();
   const { items, removeItem, updateQuantity, clearCart, totalItems, totalPrice } = useCart();
@@ -19,19 +30,15 @@ export default function CartDrawer({ isOpen, onClose }) {
     };
   }, [isOpen]);
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-slate-900/50"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-
-      {/* Drawer panel */}
-      <div className="relative flex h-full w-full max-w-md flex-col bg-white shadow-2xl">
+    <Drawer
+      anchor="right"
+      open={isOpen}
+      onClose={onClose}
+      slotProps={{ paper: { className: 'w-full max-w-md bg-white' } }}
+      sx={{ zIndex: 60, '& .MuiDrawer-paper': { boxShadow: '0 24px 48px rgb(15 23 42 / 0.24)' } }}
+    >
+      <div className="relative flex h-full w-full flex-col bg-white">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <div>
@@ -182,6 +189,6 @@ export default function CartDrawer({ isOpen, onClose }) {
           </div>
         ) : null}
       </div>
-    </div>
+    </Drawer>
   );
 }

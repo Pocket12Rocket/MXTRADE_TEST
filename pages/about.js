@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchAboutContent } from '../lib/firestoreHelpers';
+import { toUserMessage } from '../lib/userMessage';
 
 function renderBoldText(value) {
   return String(value || '')
@@ -13,6 +14,11 @@ function renderBoldText(value) {
     });
 }
 
+/**
+ * Why: Public About page, rendering admin-edited CMS content. Never render a raw Firestore
+ * error — show a short friendly sentence via the shared `toUserMessage()` helper (ARCH-14).
+ * @returns {JSX.Element} The About/How-it-works article, or a friendly error message.
+ */
 export default function About() {
   const [content, setContent] = useState({
     aboutUsBody: '',
@@ -38,9 +44,9 @@ export default function About() {
           updatedBy: data?.updatedBy || '',
         });
       })
-      .catch(() => {
+      .catch((err) => {
         if (isMounted) {
-          setError('Could not load article content right now.');
+          setError(toUserMessage(err, "We couldn't load this page's content right now. Please try again."));
         }
       })
       .finally(() => {

@@ -19,6 +19,23 @@ This app is **not live**. It is in active development/testing:
   checklist"** (that file is the tech-debt register maintained alongside this one; if it does not
   exist yet in your checkout, treat launch-readiness items in this file as still open and ask the
   repo owner before assuming otherwise).
+- **Concurrent editors:** a separate Codex session owns UI *styling* (Tailwind classNames,
+  layout, sizing) in components/ and pages/. Claude Code agents own *logic* (data access,
+  caching, security, API routes, docs). Never revert or "fix" styling-only diffs you didn't make;
+  re-read a file right before editing it; make small targeted edits (Edit, not whole-file Write);
+  if an edit fails because the text changed, re-read and retry. `.playwright-ui-review/` is that
+  session's screenshot output — leave it alone (it should be gitignored).
+
+## Priorities
+
+1. Reduce Firebase billing — above all Firestore document reads and writes (unbounded queries,
+   N+1 reads, polling, per-view writes, and cost-amplification vectors in docs/TECH_DEBT.md
+   DOS-xx are the first things to remove).
+2. Performance (page load, time-to-content).
+3. Everything else, unless it is a launch blocker.
+
+When two approaches differ, prefer the one with fewer billed reads/writes; every change to data
+access must state reads-per-page-load before and after in its summary.
 
 ## Project summary
 
@@ -36,6 +53,10 @@ This app is **not live**. It is in active development/testing:
   in via `secret:` entries in `apphosting.yaml`.
 - **Node:** 22.x (verified locally: `node --version` → `v22.12.0`). No `engines` field in
   `package.json` and no `.nvmrc` — if you add one, keep it at 22.
+- **Data volume:** per a live read-only check of the Firestore project (2026-09-19), each
+  collection currently holds only single-digit to low-double-digit documents. This is why
+  whole-catalog client-side caching (rather than paginated/indexed queries) is the chosen interim
+  strategy — re-check this assumption before it becomes load-bearing at higher volume.
 
 ## Repo structure
 
@@ -272,7 +293,12 @@ Verified by reading `lib/firestoreHelpers.js`, `components/Header.js`, and `page
 
 - Plain JavaScript, no TypeScript (no `.ts`/`.tsx` files, no `tsconfig.json`).
 - React function components with hooks; no class components.
-- Tailwind utility classes for styling; no CSS Modules or styled-components in use.
+- Tailwind utility classes remain the layout and screen-styling baseline. MUI Core is
+  available for accessible, complex controls (for example drawers, dialogs, menus and
+  tables); import individual modules by path and apply the shared Fast Sport MUI theme.
+  Reuse `themes/tokens.js` for new brand colours, typography, radii, shadows and spacing
+  rather than introducing fresh literal design values. Do not add CSS Modules or
+  styled-components.
 - 2-space indentation.
 - Single quotes for strings.
 - Semicolons at the end of statements.
@@ -284,6 +310,25 @@ different component style in one file.
 
 Don't add a new npm dependency without saying so explicitly in the PR/commit message. If it's a
 workaround for something that should be fixed properly later, log that in docs/TECH_DEBT.md too.
+
+### User-facing errors
+
+Never render `err.message`, Firebase error codes, stack text or console URLs in the UI. Show a
+short plain sentence the user can act on ("We couldn't load your orders. Please try again.") and
+send the detail to `console.error('[area] what failed', err?.code || err)`. Use the shared helper
+`toUserMessage(err, fallback)` from `lib/userMessage.js` once it exists (tracked as ARCH-14 in
+docs/TECH_DEBT.md); until then, inline a friendly fallback. Never log user or profile objects.
+
+### No duplicate code
+
+Before writing a helper, constant, status map, or component, grep for an existing one (lib/,
+components/, pages/api/) and reuse it. If the same logic exists in two places, extract ONE shared
+module (lib/ for logic and constants, components/ for UI, pages/api/_lib or lib/server for API
+helpers) and make both call sites use it — do this as part of any fix that touches duplicated
+code, and say what you consolidated in your report. Known duplication hotspots are tracked in
+docs/TECH_DEBT.md (ARCH-02 seller forms, ARCH-03 pricing, ARCH-04 status/category/role strings,
+ARCH-05 home carousels, ARCH-06 API helpers/email). UI component dedupe is coordinated with the
+Codex styling session — extract the logic, don't restyle.
 
 ## Firebase data rules for agents
 
@@ -347,14 +392,26 @@ workaround for something that should be fixed properly later, log that in docs/T
 
 1. Read `docs/TECH_DEBT.md` before starting any task, if it exists in your checkout.
 2. If you find an issue unrelated to what you were asked to do, **log it in docs/TECH_DEBT.md
-   with the next available ID** (prefix by area: `PERF-`, `SEC-`, `BUG-`, `ARCH-`, `DX-`) instead
-   of silently fixing it. Keep your change scoped to what was asked.
-3. Verify your change in the running app: `npm run dev`, then use the Playwright MCP
+   with the next free ID** (prefix by area: `PERF-`, `SEC-`, `BUG-`, `ARCH-`, `DX-`, `DOS-`
+   (denial of service / cost amplification), `LEGAL-`) instead of silently fixing it. Keep your
+   change scoped to what was asked.
+3. `docs/TECH_DEBT.md` conventions (owner's rules): each table is ordered by **severity, high to
+   low** — an item's ID does not imply order. `Status` is one of `Open` / `In progress` /
+   `Won't fix` / `Fixed — awaiting commit`. **Never reuse an ID** — the file's header lists the
+   "Next free IDs" per prefix. When you fix an item, set its Status to `Fixed — awaiting commit`;
+   only once that fix is actually **committed** do you delete the row from its table and append a
+   line to the `## Fixed log` section at the end of the file, in the form `ID — title — commit
+   hash`.
+4. Verify your change in the running app: `npm run dev`, then use the Playwright MCP
    (`.mcp.json`) to drive the browser and confirm the behaviour. State in your summary what you
    actually verified (which pages/flows, what you saw), not just that the code compiles.
-4. **Do not run `git commit`, `git add`, `git push`, `git stash`, or anything else that changes
+   **Test data:** never modify existing real records (products, orders, users, submissions) to
+   test a change. Create your own clearly named test record, verify against it, then delete it,
+   and report what you created and removed. If a test did change a real record, restore every
+   field you changed and confirm the restore.
+5. **Do not run `git commit`, `git add`, `git push`, `git stash`, or anything else that changes
    git state.** The repo owner commits. Instead, write a suggested commit message.
-5. Commit message style — this repo does not use Conventional Commits prefixes. Recent history
+6. Commit message style — this repo does not use Conventional Commits prefixes. Recent history
    (`git log --oneline -10`) looks like: `UI changes and footer added`, `GUI update`, `removal of
    duplicates from seller dashboard`, `product status update changes`, `Check out logic updated`,
    `Quantity fix`, `Update notify.js`. Match that: a short, plain-English summary of the change —
@@ -371,8 +428,16 @@ workaround for something that should be fixed properly later, log that in docs/T
 - `sellerPublicProfiles` — public seller info (suburb, city, trust badge/score) — readable by anyone
 - `sellerPrivateProfiles` — private seller info (ID number, bank details) — owner/admin only
 - `catalogConfig` — three docs: `gearBrands`, `subcategories`, `bikeModels`
-- `faqs`, `siteContent` — public content, admin-editable
+- `faqs`, `siteContent` — public content, admin-editable. **`faqs` is defined in
+  `firestore.rules` and read by `pages/faq.js` via `fetchFaqs()`, but per a live read-only check
+  (2026-09-19) the collection is currently empty in the project** — don't assume the FAQ page has
+  content to show; verify before relying on it in a demo or test.
 - `adminNotifications` — admin-only
+
+Note: the `orders/{orderId}/refundRequests` subcollection referenced above is defined in
+`firestore.rules` and written by `submitRefundRequest`/`processRefundRequest`
+(`lib/firestoreHelpers.js`), but per the same live check it currently has **no documents** in any
+order — treat the refund flow as untested against real data, not confirmed working end-to-end.
 
 **Product statuses** (`products.status`, from `lib/firestoreHelpers.js`): `'listed'` (current
 live listings), `'active'` (legacy alias — `normalizeProductRecord` maps it to `'listed'` on
@@ -388,17 +453,36 @@ non-atomic read-modify-write — see docs/TECH_DEBT.md.
 
 **Order statuses** (`orders.status`, from `pages/api/orders/create.js`, `pages/admin/sales.js`,
 `pages/api/admin/orders/update-status.js`, `lib/firestoreHelpers.js`): `'pending_payment'`
-(just created, awaiting PayFast), `'payment_failed'`, `'failed'`, `'cancelled'`, `'paid'`,
+(just created, awaiting PayFast), `'payment_failed'`, `'failed'`, `'cancelled'`, `'payment_cancelled'`
+(set by `pages/api/orders/cancel.js:64`, when a buyer cancels a pending order via its
+cancellation token — releases the stock reservation in the same transaction), `'paid'`,
 `'shipped'`, `'delivered'`, `'refund_pending'`, `'refunded'`. Admin order-status API
 (`update-status.js`) only allows transitions **into** `'paid'`, `'shipped'`, `'delivered'` and
 does not currently prevent moving a status backwards (e.g. `'delivered'` → `'paid'`) — treat that
 as a known gap, not intended behaviour, when writing new status-changing code.
+**`'payment_cancelled'` is not fully wired up in the status maps:** `pages/admin/sales.js`'s
+`HIDDEN_ORDER_STATUSES` only hides the string `'cancelled'`, not `'payment_cancelled'`, so a
+buyer-cancelled order can still show up on the admin fulfilment board; `pages/profile/orders.js`'s
+`STATUS_LABEL`/`STATUS_COLOUR` maps have no entry for it either, so it falls back to the raw
+status string with a default grey badge instead of a friendly label. Don't assume either UI
+handles this status correctly — flag it in docs/TECH_DEBT.md if you touch this area rather than
+silently patching just one of the two maps.
 
 **Refund request statuses** (`orders/{id}/refundRequests/{id}.status`): `'pending'` (just
 submitted by buyer), `'accepted'` / `'denied'` (set by `processRefundRequest`, which also moves
 the parent order to `'refunded'` or back to `'delivered'`).
 
-**Roles**: `users.role` — intended value is `'admin'` for admin accounts, otherwise unset/buyer.
+**Roles**: `users.role` — per a live read-only check of the Firestore project (2026-09-19), real
+data contains `'customer'`, `'admin'`, and `'seller'`, all lowercase (no `Admin`/`ADMIN` casings
+exist in current data). In code, only `'customer'` is confirmed as an explicit written value:
+`lib/firestoreHelpers.js:407` (`createUserProfile(user, role = 'customer', ...)`) is called with
+`'customer'` from `pages/login.js:128` on every new sign-up. **No code path in this repo was
+found that writes `role: 'admin'` or `role: 'seller'`** — admin accounts appear to be set by hand
+(console/Admin SDK, outside this repo), and "seller" is otherwise represented in code via the
+separate `users.canSell` boolean rather than a distinct role string (e.g. `pages/profile.js:833`
+only uses `'seller'` as a UI label for the seller-terms-acceptance flow, not as a role value being
+written). If `'seller'` really is a `role` value in live data, its write path wasn't found here —
+confirm with the repo owner before relying on it in role-gated logic.
 **Casing caveat:** `firestore.rules` (`isAdmin()`) accepts `'admin'`, `'Admin'`, or `'ADMIN'`;
 `lib/adminAuth.js` and `components/Header.js` (`profile?.role === 'admin'`) only accept the exact
 lowercase string `'admin'`. Don't assume these two checks agree — verify both if you touch

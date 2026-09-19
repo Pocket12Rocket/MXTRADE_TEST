@@ -2,6 +2,7 @@ import { adminDb } from '../../../../lib/firebaseAdmin';
 import { requireAdminFromRequest } from '../../../../lib/adminAuth';
 import { dispatchEmail, buildStatusChangeEmail } from '../../../../lib/emails';
 import { rateLimit } from '../../../../lib/apiRateLimit';
+import { UserFacingError } from '../../../../lib/userMessage';
 
 // Sends the support status-change email without writing to Firestore — used when the
 // order status write already happened elsewhere (e.g. client-side refund processing).
@@ -17,7 +18,9 @@ export default async function handler(req, res) {
   try {
     await requireAdminFromRequest(req);
   } catch (err) {
-    return res.status(403).json({ error: err.message || 'Not authorized' });
+    console.error('[admin/orders/notify-status] auth failed', err?.code || err?.message || err);
+    const message = err instanceof UserFacingError ? err.message : 'Not authorized.';
+    return res.status(403).json({ error: message });
   }
 
   const orderId = String(req.body?.orderId || '').trim();

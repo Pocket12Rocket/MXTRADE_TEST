@@ -9,9 +9,15 @@
     "migrate:brands": "node scripts/migrate-approved-brands.js",
     "migrate:brands:apply": "node scripts/migrate-approved-brands.js --apply",
     "migrate:seller-public-profiles": "node scripts/migrate-seller-public-profiles.js",
-    "migrate:seller-public-profiles:apply": "node scripts/migrate-seller-public-profiles.js --apply"
+    "migrate:seller-public-profiles:apply": "node scripts/migrate-seller-public-profiles.js --apply",
+    "migrate:active-status": "node scripts/migrate-active-to-listed.js",
+    "migrate:active-status:apply": "node scripts/migrate-active-to-listed.js --apply"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^9.4.0",
+    "@mui/material": "^9.4.0",
     "firebase": "^12.13.0",
     "firebase-admin": "^13.10.0",
     "next": "15.2.9",

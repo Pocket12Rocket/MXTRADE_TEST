@@ -1,4 +1,8 @@
 import Link from 'next/link';
+import Accordion from '@mui/material/Accordion';
+import AccordionDetails from '@mui/material/AccordionDetails';
+import AccordionSummary from '@mui/material/AccordionSummary';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import useAuth from '../../lib/useAuth';
@@ -8,13 +12,14 @@ import {
   fetchSellerLiveProducts,
   removeSellerSubmission,
   removeSellerProduct,
-  fetchSubcategoryOptions,
+  fetchSubcategoryOptionsForCategories,
   fetchGearBrandOptions,
   updateSellerSubmission,
   resubmitSellerProductForApproval,
   updateSellerSubmissionImages,
 } from '../../lib/firestoreHelpers';
 import { BIKE_MODELS_BY_MANUFACTURER, DIRT_BIKE_CATEGORIES, GEAR_BRAND_OPTIONS, GEAR_CONDITION_OPTIONS, GEAR_ITEM_OPTIONS } from '../../lib/dirtBikeCategories';
+import { toUserMessage } from '../../lib/userMessage';
 
 const HIDDEN_SUBMISSION_KEYS = new Set([
   'id',
@@ -311,20 +316,20 @@ export default function SellerSubmissions() {
     };
   }, []);
 
+  // Why: PERF-08 — fetchSubcategoryOptionsForCategories reads catalogConfig/subcategories once
+  // for both categories instead of the previous two separate fetchSubcategoryOptions() calls,
+  // which each read the same document independently.
   useEffect(() => {
     let isMounted = true;
 
-    Promise.all([
-      fetchSubcategoryOptions('Accessories'),
-      fetchSubcategoryOptions('Parts'),
-    ])
-      .then(([approvedAccessories, approvedParts]) => {
+    fetchSubcategoryOptionsForCategories(['Accessories', 'Parts'])
+      .then((subcategoriesByCategory) => {
         if (!isMounted) {
           return;
         }
 
-        setAccessoriesSubcategoryOptions(mergeOptionList(DIRT_BIKE_CATEGORIES.Accessories, approvedAccessories));
-        setPartsSubcategoryOptions(mergeOptionList(DIRT_BIKE_CATEGORIES.Parts, approvedParts));
+        setAccessoriesSubcategoryOptions(mergeOptionList(DIRT_BIKE_CATEGORIES.Accessories, subcategoriesByCategory.Accessories || []));
+        setPartsSubcategoryOptions(mergeOptionList(DIRT_BIKE_CATEGORIES.Parts, subcategoriesByCategory.Parts || []));
       })
       .catch(() => {
         if (!isMounted) {
@@ -365,11 +370,15 @@ export default function SellerSubmissions() {
     if (!loading && user) {
       fetchSellerSubmissions(user.uid)
         .then(setSubmissions)
-        .catch((err) => setError(err.message));
+        .catch((err) => {
+          setError(toUserMessage(err, "We couldn't load your submissions right now. Please try again."));
+        });
 
       fetchSellerLiveProducts(user.uid)
         .then(setProducts)
-        .catch((err) => setError(err.message));
+        .catch((err) => {
+          setError(toUserMessage(err, "We couldn't load your listings right now. Please try again."));
+        });
     }
   }, [loading, user]);
 
@@ -457,7 +466,7 @@ export default function SellerSubmissions() {
         setSelectedSubmission(null);
       }
     } catch (err) {
-      setError(err.message);
+      setError(toUserMessage(err, "We couldn't delete that listing right now. Please try again."));
     } finally {
       setDeletingId('');
     }
@@ -863,7 +872,7 @@ export default function SellerSubmissions() {
 
       handleCloseEdit();
     } catch (err) {
-      setError(err.message);
+      setError(toUserMessage(err, "We couldn't save your changes right now. Please try again."));
     } finally {
       setIsSavingEdit(false);
     }
@@ -909,7 +918,7 @@ export default function SellerSubmissions() {
 
       handleCloseEdit();
     } catch (err) {
-      setError(err.message);
+      setError(toUserMessage(err, "We couldn't resubmit this listing right now. Please try again."));
     } finally {
       setIsResubmitting(false);
     }
@@ -942,20 +951,53 @@ export default function SellerSubmissions() {
   }
 
   return (
-    <div className="space-y-8">
-      <h1 className="text-3xl font-semibold text-slate-900">Seller Dashboard</h1>
+    <div className="mx-auto max-w-[1500px] space-y-6">
+      <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--mx-tertiary)]">Seller centre</p>
+          <h1 className="mt-1 text-2xl font-semibold text-slate-900 sm:text-3xl">Seller Dashboard</h1>
+          <p className="mt-1 text-sm text-slate-600">Manage your listings and keep their details up to date.</p>
+        </div>
+        <Link href="/seller/submit" className="inline-flex shrink-0 items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">
+          List new product
+        </Link>
+      </section>
 
-      <Link href="/seller/submit" className="inline-flex rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">
-        List new product
-      </Link>
-
-      <details className="group">
-        <summary className="flex cursor-pointer list-none items-center justify-between rounded-3xl border border-slate-200 bg-white px-6 py-5 text-xl font-semibold text-slate-900 shadow-sm marker:hidden">
-          My listed products
-          <span className="text-2xl font-normal text-slate-400 transition-transform group-open:rotate-180">⌄</span>
-        </summary>
-        <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-slate-600">Track all of your product statuses and manage your listings from one table.</p>
+      <Accordion
+        disableGutters
+        elevation={0}
+        sx={{
+          overflow: 'hidden',
+          border: '1px solid #e2e8f0',
+          borderRadius: '16px !important',
+          backgroundColor: '#ffffff',
+          boxShadow: '0 1px 2px rgb(15 23 42 / 0.08)',
+          '&:before': { display: 'none' },
+        }}
+      >
+        <AccordionSummary
+          expandIcon={<ExpandMoreIcon />}
+          aria-controls="seller-listings-content"
+          id="seller-listings-header"
+          sx={{
+            minHeight: 64,
+            px: { xs: 2, sm: 3 },
+            '&.Mui-expanded': { minHeight: 64 },
+            '& .MuiAccordionSummary-content': { my: 1.25 },
+            '& .MuiAccordionSummary-content.Mui-expanded': { my: 1.25 },
+            '& .MuiAccordionSummary-expandIconWrapper': { color: '#64748b' },
+          }}
+        >
+          <div>
+            <p className="text-base font-semibold text-slate-900">My listed products</p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {listings.length} {listings.length === 1 ? 'listing' : 'listings'} to manage
+            </p>
+          </div>
+        </AccordionSummary>
+        <AccordionDetails id="seller-listings-content" sx={{ px: { xs: 2, sm: 3 }, pb: 3, pt: 0 }}>
+          <div className="border-t border-slate-100 pt-4">
+          <p className="text-sm text-slate-600">Track product statuses and manage listings from one table.</p>
 
           {error ? <p className="mt-4 text-red-600">{error}</p> : null}
 
@@ -994,8 +1036,9 @@ export default function SellerSubmissions() {
               </table>
             </div>
           )}
-        </div>
-      </details>
+          </div>
+        </AccordionDetails>
+      </Accordion>
 
       {selectedSubmission ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">

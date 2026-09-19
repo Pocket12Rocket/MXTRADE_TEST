@@ -2,7 +2,13 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import useAuth from '../../lib/useAuth';
 import { fetchSellerSubmissions } from '../../lib/firestoreHelpers';
+import { toUserMessage } from '../../lib/userMessage';
 
+/**
+ * Why: Seller landing page. Never render a raw Firestore error — show a short friendly sentence
+ * via the shared `toUserMessage()` helper (ARCH-14) instead.
+ * @returns {JSX.Element} The seller dashboard, a sign-in prompt, or a seller-onboarding prompt.
+ */
 export default function SellerDashboard() {
   const { user, profile, loading } = useAuth();
   const [submissions, setSubmissions] = useState([]);
@@ -12,7 +18,7 @@ export default function SellerDashboard() {
     if (!loading && user) {
       fetchSellerSubmissions(user.uid)
         .then(setSubmissions)
-        .catch((err) => setError(err.message));
+        .catch((err) => setError(toUserMessage(err, "We couldn't load your submissions right now. Please try again.")));
     }
   }, [loading, user]);
 

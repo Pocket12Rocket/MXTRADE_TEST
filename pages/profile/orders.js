@@ -3,6 +3,7 @@ import useAuth from '../../lib/useAuth';
 import { fetchUserOrders } from '../../lib/firestoreHelpers';
 import Link from 'next/link';
 import Image from 'next/image';
+import { toUserMessage } from '../../lib/userMessage';
 
 const STATUS_LABEL = {
   purchased: 'Purchased',
@@ -22,22 +23,61 @@ const STATUS_COLOUR = {
   refunded: 'bg-rose-100 text-rose-700',
 };
 
+/**
+ * Why: Buyer's "My orders" page. PERF-04 — orders are now fetched 50 at a time via a
+ * server-side `status in [...]` filter instead of downloading the buyer's full order history on
+ * every visit; a "Load more" control fetches subsequent pages with a Firestore `startAfter`
+ * cursor.
+ * @returns {JSX.Element} The order list, a sign-in prompt, or a loading state.
+ */
 export default function OrdersPage() {
   const { user, loading } = useAuth();
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [error, setError] = useState('');
+  const [ordersCursor, setOrdersCursor] = useState(null);
+  const [hasMoreOrders, setHasMoreOrders] = useState(false);
+  const [isLoadingMoreOrders, setIsLoadingMoreOrders] = useState(false);
 
   useEffect(() => {
     if (!loading && user) {
       fetchUserOrders(user.email)
-        .then(setOrders)
-        .catch((err) => setError(err.message || 'Failed to fetch orders.'))
+        .then(({ orders: orderRows, lastDoc, hasMore }) => {
+          setOrders(orderRows);
+          setOrdersCursor(lastDoc);
+          setHasMoreOrders(Boolean(hasMore));
+        })
+        .catch((err) => {
+          setError(toUserMessage(err, "We couldn't load your orders right now. Please try again."));
+        })
         .finally(() => setOrdersLoading(false));
     } else {
       setOrdersLoading(false);
     }
   }, [user, loading]);
+
+  /**
+   * Why: PERF-04 — fetches the next page of the buyer's orders using the cursor returned by the
+   * previous fetchUserOrders() call.
+   * @returns {Promise<void>} Resolves once the next page has been appended to state.
+   */
+  const handleLoadMoreOrders = async () => {
+    if (!ordersCursor || isLoadingMoreOrders || !user) {
+      return;
+    }
+
+    setIsLoadingMoreOrders(true);
+    try {
+      const { orders: moreOrders, lastDoc, hasMore } = await fetchUserOrders(user.email, { cursor: ordersCursor });
+      setOrders((currentOrders) => [...currentOrders, ...moreOrders]);
+      setOrdersCursor(lastDoc);
+      setHasMoreOrders(Boolean(hasMore));
+    } catch (err) {
+      setError(toUserMessage(err, "We couldn't load more orders right now. Please try again."));
+    } finally {
+      setIsLoadingMoreOrders(false);
+    }
+  };
 
   if (loading || ordersLoading) {
     return <div className="flex justify-center items-center min-h-[40vh]"><p>Loading orders...</p></div>;
@@ -103,6 +143,18 @@ export default function OrdersPage() {
           })}
         </ul>
       )}
+      {hasMoreOrders ? (
+        <div className="mt-6 flex justify-center">
+          <button
+            type="button"
+            onClick={handleLoadMoreOrders}
+            disabled={isLoadingMoreOrders}
+            className="rounded-full border border-slate-300 bg-white px-6 py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 shadow-sm hover:border-[#00CED1] hover:text-[#00C5CD] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoadingMoreOrders ? 'Loading…' : 'Load more orders'}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

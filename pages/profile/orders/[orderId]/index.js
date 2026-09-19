@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import useAuth from '../../../../lib/useAuth';
 import { fetchOrderById } from '../../../../lib/firestoreHelpers';
+import { toUserMessage } from '../../../../lib/userMessage';
 
 function formatDate(ts) {
   if (!ts) return null;
@@ -77,7 +78,7 @@ export default function OrderDetailPage() {
 
     fetchOrderById(orderId)
       .then(setOrder)
-      .catch((err) => setError(err.message || 'Failed to load order.'))
+      .catch((err) => setError(toUserMessage(err, "We couldn't load this order. Please try again.")))
       .finally(() => setLoading(false));
   }, [orderId, user, authLoading]);
 

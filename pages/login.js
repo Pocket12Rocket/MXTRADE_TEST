@@ -4,6 +4,7 @@ import { auth } from '../lib/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { createUserProfile } from '../lib/firestoreHelpers';
 import TermsAndConditionsModal from '../components/TermsAndConditionsModal';
+import { toUserMessage } from '../lib/userMessage';
 
 export default function Login() {
       // Handle confirm password change and blur
@@ -82,38 +83,25 @@ export default function Login() {
 
   // useEffect for message removed (no default info message)
 
+  /**
+   * Why: Single place that turns a Firebase Auth error into the sentence shown on the login/
+   * register form — routes through the shared `toUserMessage()` helper (ARCH-14) instead of a
+   * hand-copied code-to-sentence map, so this page stays in sync with every other error mapping
+   * in the app. `auth/email-already-in-use` additionally switches the form to login mode, since
+   * that's this page's own UX decision rather than message text.
+   * @param {*} error - The error thrown by a `firebase/auth` call (has a `.code` such as
+   *   `auth/wrong-password`).
+   * @returns {void}
+   * @example
+   * try { await signInWithEmailAndPassword(auth, email, password); }
+   * catch (error) { handleAuthError(error); }
+   */
   const handleAuthError = (error) => {
-    if (
-      error?.code === 'auth/invalid-credential' ||
-      error?.code === 'auth/user-not-found' ||
-      error?.code === 'auth/wrong-password'
-    ) {
-      setMessage('Incorrect email or password');
-      return;
-    }
-
     if (error?.code === 'auth/email-already-in-use') {
       setMode('login');
-      setMessage('An account with this email address already exists. Please log in instead.');
-      return;
     }
 
-    if (error?.code === 'auth/invalid-email') {
-      setMessage('Please enter a valid email address.');
-      return;
-    }
-
-    if (error?.code === 'auth/weak-password') {
-      setMessage('Password is too weak. Please use at least 6 characters.');
-      return;
-    }
-
-    if (error?.code === 'auth/too-many-requests') {
-      setMessage('Too many requests. Please wait a few minutes and try again.');
-      return;
-    }
-
-    setMessage(error?.message || 'Something went wrong. Please try again.');
+    setMessage(toUserMessage(error, 'Something went wrong. Please try again.'));
   };
 
   const handleRegisterWithAcceptedTerms = async () => {
@@ -202,10 +190,12 @@ export default function Login() {
         return;
       }
 
-      const detailMessage = data?.detail ? ` ${data.detail}` : '';
-      setMessage(`${data?.message || 'We could not send the password reset email right now. Please try again later.'}${detailMessage}`);
+      // Why: the API route only ever returns a curated, safe-to-show message here (see
+      // pages/api/auth/password-reset.js) — never a raw SMTP/internal error — so it's fine to
+      // render directly.
+      setMessage(data?.message || 'We could not send the password reset email right now. Please try again later.');
     } catch (error) {
-      setMessage(error?.message || 'We could not send the password reset email right now. Please try again later.');
+      setMessage(toUserMessage(error, 'We could not send the password reset email right now. Please try again later.'));
     }
   };
 
@@ -228,7 +218,7 @@ export default function Login() {
       setMessage('Signed in with Google. Redirecting...');
       await router.push('/');
     } catch (error) {
-      setMessage(error.message);
+      setMessage(toUserMessage(error, 'Something went wrong signing you in with Google. Please try again.'));
     }
   };
 

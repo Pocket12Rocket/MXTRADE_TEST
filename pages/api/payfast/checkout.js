@@ -139,7 +139,9 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ success: true, redirectUrl });
   } catch (err) {
-    console.error('[Payfast] Checkout error:', err);
-    return res.status(500).json({ error: err.message || 'Internal server error' });
+    // Why: never forward a raw system error message to the buyer (ARCH-14) — the deliberate
+    // 400/404/409 responses above already cover every expected failure with a safe sentence.
+    console.error('[payfast/checkout] failed', err?.code || err?.message || err);
+    return res.status(500).json({ error: 'We could not start payment right now. Please try again.' });
   }
 }

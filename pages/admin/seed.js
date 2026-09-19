@@ -2,7 +2,13 @@ import { useState } from 'react';
 import Link from 'next/link';
 import useAuth from '../../lib/useAuth';
 import { seedDemoProducts } from '../../lib/firestoreHelpers';
+import { toUserMessage } from '../../lib/userMessage';
 
+/**
+ * Why: Admin-only demo-data seeding tool. Never render a raw Firestore/Storage error — show a
+ * short friendly sentence via the shared `toUserMessage()` helper (ARCH-14) instead.
+ * @returns {JSX.Element} The seed-products tool, or an access-denied state.
+ */
 export default function AdminSeedPage() {
   const { user, profile, loading } = useAuth();
   const [status, setStatus] = useState('');
@@ -16,7 +22,7 @@ export default function AdminSeedPage() {
       const inserted = await seedDemoProducts(user);
       setStatus(`Inserted ${inserted} demo products successfully.`);
     } catch (error) {
-      setStatus(error.message);
+      setStatus(toUserMessage(error, "We couldn't seed demo products right now. Please try again."));
     } finally {
       setIsSeeding(false);
     }

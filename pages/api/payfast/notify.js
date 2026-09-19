@@ -2,6 +2,7 @@ import { adminDb } from '../../../lib/firebaseAdmin';
 import admin from '../../../lib/firebaseAdmin';
 import qs from 'querystring';
 import { dispatchEmail, buildAdminNewOrderEmail, buildBuyerReceiptEmail, buildSellerNewOrderEmail } from '../../../lib/emails';
+import { bumpCatalogVersion } from '../../../lib/server/catalogVersion';
 
 // PayFast sends the ITN as application/x-www-form-urlencoded — disable Next.js body parsing
 export const config = { api: { bodyParser: false } };
@@ -61,6 +62,7 @@ async function releaseInventoryReservation(orderId, paymentStatus) {
       .map((item) => adminDb.collection('products').doc(item.productId));
     const productSnapshots = await Promise.all(productRefs.map((productRef) => transaction.get(productRef)));
 
+    let productDataChanged = false;
     productSnapshots.forEach((productSnap, idx) => {
       if (!productSnap.exists) {
         return;
@@ -84,7 +86,15 @@ async function releaseInventoryReservation(orderId, paymentStatus) {
         inventoryReservations: reservations,
         statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
+      productDataChanged = true;
     });
+
+    // Why: failed/cancelled ITNs release stock back onto the public product doc — bump the
+    // catalog version so clients caching product data (PERF-00) know to refetch; skip it when
+    // nothing actually changed (stale/duplicate ITN for an order already past pending_payment).
+    if (productDataChanged) {
+      bumpCatalogVersion(['products'], { transaction });
+    }
 
     transaction.update(orderRef, {
       status: 'payment_failed',
@@ -218,6 +228,12 @@ export default async function handler(req, res) {
           statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       });
+
+      // Why: reaching this point means every product in the order was just updated (quantity
+      // finalized, possibly marketSold/status flipped to 'purchased') — always bump the catalog
+      // version here (this whole block is skipped by the `alreadyProcessed` early-return above
+      // for a duplicate/idempotent ITN, so it can't double-bump for the same payment).
+      bumpCatalogVersion(['products'], { transaction });
 
       transaction.update(orderRef, {
         status: 'paid',

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import useAuth from '../lib/useAuth';
+import { useAuthContext } from '../lib/AuthContext';
 import TermsAndConditionsModal from '../components/TermsAndConditionsModal';
 import {
   acceptSellerTermsAndConditions,
@@ -11,6 +12,7 @@ import {
   updateUserProfile,
 } from '../lib/firestoreHelpers';
 import { compressImage } from '../lib/compressImage';
+import { toUserMessage } from '../lib/userMessage';
 
 const COUNTRY_CODES = [
   { cc: 'US', code: '+1', name: 'United States' },
@@ -74,6 +76,10 @@ const countryCodeToFlag = (cc) => {
 
 export default function ProfilePage() {
   const { user, profile, loading, refreshProfile } = useAuth();
+  // updateProfileLocal isn't part of useAuth()'s public return shape (kept identical to
+  // avoid touching other consumers) — read it straight from the shared context here so
+  // known-payload saves below can skip the extra users/{uid} read (PERF-18).
+  const { updateProfileLocal } = useAuthContext();
   const fileInputRef = useRef(null);
 
   // Photo upload state
@@ -146,7 +152,17 @@ export default function ProfilePage() {
         phone: editPhone,
         countryCode: editCountryCode,
       });
-      await refreshProfile(user);
+      // Write payload is known (mirrors updateUserProfile's own normalization), so
+      // update the shared profile locally instead of re-reading users/{uid} (PERF-18).
+      const trimmedFirstName = editFirstName.trim();
+      const trimmedLastName = editLastName.trim();
+      updateProfileLocal({
+        firstName: trimmedFirstName,
+        lastName: trimmedLastName,
+        displayName: `${trimmedFirstName} ${trimmedLastName}`.trim(),
+        phone: editPhone.trim(),
+        countryCode: (editCountryCode || '+27').trim(),
+      });
       setSaveSuccess(true);
       setEditing(false);
     } catch {
@@ -192,7 +208,9 @@ export default function ProfilePage() {
         return;
       }
       const url = await uploadProfilePicture(user, optimizedFile);
-      await refreshProfile(user);
+      // uploadProfilePicture writes exactly { photoURL: url } to users/{uid} — payload
+      // is known, so update locally instead of re-reading (PERF-18).
+      updateProfileLocal({ photoURL: url });
       setPhotoURL(url);
     } catch {
       setUploadError('Upload failed. Please try again.');
@@ -285,12 +303,14 @@ export default function ProfilePage() {
 
     try {
       await upsertSellerPrivateProfile(user, sellerProfileForm);
-      await refreshProfile(user);
+      // upsertSellerPrivateProfile's users/{uid} write is a known, fixed payload
+      // (sellerProfileComplete/canSell) — update locally instead of re-reading (PERF-18).
+      updateProfileLocal({ sellerProfileComplete: true, canSell: true });
       setSavedSellerProfileForm(sellerProfileForm);
       setSellerProfileSuccess('Seller profile saved securely.');
       setIsEditingSellerProfile(false);
     } catch (error) {
-      setSellerProfileError(error?.message || 'Failed to save seller profile.');
+      setSellerProfileError(toUserMessage(error, 'Failed to save seller profile. Please try again.'));
     } finally {
       setSellerProfileSaving(false);
     }
@@ -338,6 +358,8 @@ export default function ProfilePage() {
 
     try {
       await acceptSellerTermsAndConditions(user);
+      // acceptSellerTermsAndConditions writes a serverTimestamp() — the resolved value
+      // isn't known client-side, so re-read rather than guess it via updateProfileLocal.
       await refreshProfile(user);
     } catch {
       setSellerProfileError('Could not record seller terms acceptance. Please try again.');
@@ -358,6 +380,8 @@ export default function ProfilePage() {
 
     try {
       await acceptTermsAndConditions(user);
+      // acceptTermsAndConditions writes a serverTimestamp() — the resolved value isn't
+      // known client-side, so re-read rather than guess it via updateProfileLocal.
       await refreshProfile(user);
     } catch {
       setSaveError('Could not record terms acceptance. Please try again.');

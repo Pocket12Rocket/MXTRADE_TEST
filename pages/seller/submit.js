@@ -38,7 +38,8 @@ function SellingPriceInfo({ price }) {
   );
 }
 import useAuth from '../../lib/useAuth';
-import { fetchBikeModelOptions, fetchGearBrandOptions, fetchSubcategoryOptions, submitProductRequest } from '../../lib/firestoreHelpers';
+import { fetchBikeModelOptions, fetchGearBrandOptions, fetchSubcategoryOptionsForCategories, submitProductRequest } from '../../lib/firestoreHelpers';
+import { toUserMessage } from '../../lib/userMessage';
 import { BIKE_MODELS_BY_MANUFACTURER, DIRT_BIKE_CATEGORIES, GEAR_BRAND_OPTIONS, GEAR_CONDITION_OPTIONS, GEAR_ITEM_OPTIONS } from '../../lib/dirtBikeCategories';
 
 const SELL_CATEGORY_OPTIONS = [
@@ -198,20 +199,20 @@ export default function SellerSubmit() {
     };
   }, []);
 
+  // Why: PERF-08 — fetchSubcategoryOptionsForCategories reads catalogConfig/subcategories once
+  // for both categories instead of the previous two separate fetchSubcategoryOptions() calls,
+  // which each read the same document independently.
   useEffect(() => {
     let isMounted = true;
 
-    Promise.all([
-      fetchSubcategoryOptions('Accessories'),
-      fetchSubcategoryOptions('Parts'),
-    ])
-      .then(([approvedAccessories, approvedParts]) => {
+    fetchSubcategoryOptionsForCategories(['Accessories', 'Parts'])
+      .then((subcategoriesByCategory) => {
         if (!isMounted) {
           return;
         }
 
-        setAccessoriesSubcategoryOptions(mergeOptionList(DIRT_BIKE_CATEGORIES.Accessories, approvedAccessories));
-        setPartsSubcategoryOptions(mergeOptionList(DIRT_BIKE_CATEGORIES.Parts, approvedParts));
+        setAccessoriesSubcategoryOptions(mergeOptionList(DIRT_BIKE_CATEGORIES.Accessories, subcategoriesByCategory.Accessories || []));
+        setPartsSubcategoryOptions(mergeOptionList(DIRT_BIKE_CATEGORIES.Parts, subcategoriesByCategory.Parts || []));
       })
       .catch(() => {
         if (!isMounted) {
@@ -610,7 +611,7 @@ export default function SellerSubmit() {
       setStatus('');
       setShowSuccessPopup(true);
     } catch (error) {
-      setStatus(error.message);
+      setStatus(toUserMessage(error, "We couldn't submit your listing right now. Please try again."));
     } finally {
       setIsSubmitting(false);
     }

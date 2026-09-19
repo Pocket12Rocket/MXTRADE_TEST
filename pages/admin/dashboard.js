@@ -22,6 +22,7 @@ import {
   markAdminNotificationsRead,
   processRefundRequest,
 } from '../../lib/firestoreHelpers';
+import { toUserMessage, reportError } from '../../lib/userMessage';
 
 
 
@@ -152,7 +153,7 @@ function AdminDashboard() {
                 }
               } catch (err) {
                 if (isMounted) {
-                  setError('Failed to load dashboard data.');
+                  setError(toUserMessage(err, "We couldn't load the dashboard right now. Please try again."));
                   setAboutLoading(false);
                   setLoading(false);
                 }
@@ -186,10 +187,9 @@ function AdminDashboard() {
   useEffect(() => {
     if (!user || profile?.role !== 'admin') return;
 
-    // Clear sale-notification bubble once admin opens the dashboard.
-    markAdminNotificationsRead().catch(() => {
-      // Keep dashboard usable even if marking notifications read fails.
-    });
+    // Clear sale-notification bubble once admin opens the dashboard. Best-effort — the dashboard
+    // stays usable even if this fails, so only log it.
+    markAdminNotificationsRead().catch((err) => reportError('admin-notifications', err));
   }, [user, profile?.role]);
 
   useEffect(() => {
@@ -198,7 +198,7 @@ function AdminDashboard() {
     setRefundLoading(true);
     fetchRefundPendingOrders()
       .then((rows) => setRefundOrders(rows || []))
-      .catch((err) => setRefundError(err?.message || 'Failed to load refund requests.'))
+      .catch((err) => setRefundError(toUserMessage(err, "We couldn't load refund requests right now. Please try again.")))
       .finally(() => setRefundLoading(false));
   }, [user, profile?.role]);
 
@@ -210,7 +210,7 @@ function AdminDashboard() {
       setRefundOrders((prev) => prev.filter((order) => order.id !== orderId));
       setSelectedRefund(null);
     } catch (err) {
-      setRefundError(err?.message || 'Failed to process refund request.');
+      setRefundError(toUserMessage(err, "We couldn't process that refund request. Please try again."));
     } finally {
       setRefundActionLoading(false);
     }
@@ -246,7 +246,7 @@ function AdminDashboard() {
       setRejectingSubmission(null);
       setRejectionReason('');
     } catch (err) {
-      setError(err?.message || 'Failed to reject submission. Please try again.');
+      setError(toUserMessage(err, 'Failed to reject submission. Please try again.'));
     } finally {
       setProcessingId(null);
     }
@@ -301,7 +301,7 @@ function AdminDashboard() {
       setProducts(refreshedProducts || []);
       setPricingProduct(null);
     } catch (err) {
-      setPricingError(err?.message || 'Failed to update pricing.');
+      setPricingError(toUserMessage(err, 'Failed to update pricing. Please try again.'));
     } finally {
       setIsSavingPricing(false);
     }
@@ -376,7 +376,7 @@ function AdminDashboard() {
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-3">
                       <button type="button" onClick={() => setSelectedSubmission(submission)} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]">View details</button>
-                      <button type="button" onClick={async () => { setProcessingId(submission.id); setError(''); try { await approveSubmission(submission.id, user?.uid || 'admin'); setSubmissions((prev) => prev.filter((s) => s.id !== submission.id)); } catch (err) { setError(err?.message || 'Failed to approve submission. Please try again.'); } finally { setProcessingId(null); } }} disabled={processingId === submission.id} className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">{processingId === submission.id ? 'Approving...' : 'Approve'}</button>
+                      <button type="button" onClick={async () => { setProcessingId(submission.id); setError(''); try { await approveSubmission(submission.id, user?.uid || 'admin'); setSubmissions((prev) => prev.filter((s) => s.id !== submission.id)); } catch (err) { setError(toUserMessage(err, 'Failed to approve submission. Please try again.')); } finally { setProcessingId(null); } }} disabled={processingId === submission.id} className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">{processingId === submission.id ? 'Approving...' : 'Approve'}</button>
                       <button type="button" onClick={() => handleOpenRejectModal(submission)} disabled={processingId === submission.id} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60">Reject</button>
                     </div>
                   </div>
@@ -491,9 +491,15 @@ function AdminDashboard() {
                           type="button"
                           onClick={async () => {
                             setRemovingProductId(product.id);
-                            await removeProductAsAdmin(product.id);
-                            setProducts((prev) => prev.filter((p) => p.id !== product.id));
-                            setRemovingProductId(null);
+                            setError('');
+                            try {
+                              await removeProductAsAdmin(product.id);
+                              setProducts((prev) => prev.filter((p) => p.id !== product.id));
+                            } catch (err) {
+                              setError(toUserMessage(err, "We couldn't remove that product. Please try again."));
+                            } finally {
+                              setRemovingProductId(null);
+                            }
                           }}
                           disabled={removingProductId === product.id}
                           className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-white hover:bg-rose-700 disabled:opacity-60"
@@ -807,7 +813,7 @@ function AdminDashboard() {
               await updateAboutContent(aboutForm, user?.uid || 'admin');
               setAboutSuccess('About page content updated successfully.');
             } catch (err) {
-              setAboutError(err?.message || 'Failed to update About page content.');
+              setAboutError(toUserMessage(err, 'Failed to update About page content. Please try again.'));
             } finally {
               setAboutSaving(false);
             }
@@ -885,7 +891,7 @@ function AdminDashboard() {
             setFaqForm({ question: '', answer: '' });
             setFaqEditId(null);
           } catch (err) {
-            setFaqError(err.message);
+            setFaqError(toUserMessage(err, 'Failed to save FAQ. Please try again.'));
           }
         }} className="mb-4 flex flex-col gap-2 max-w-xl">
           <input
@@ -932,11 +938,16 @@ function AdminDashboard() {
                 <div className="flex gap-2 mt-2 md:mt-0">
                   <button className="bg-amber-500 text-white px-3 py-1 rounded" onClick={() => { setFaqEditId(faq.id); setFaqForm({ question: faq.question, answer: faq.answer }); }}>Edit</button>
                   <button className="bg-rose-600 text-white px-3 py-1 rounded" onClick={async () => {
-                    await deleteFaq(faq.id);
-                    setFaqs((prev) => prev.filter((f) => f.id !== faq.id));
-                    if (faqEditId === faq.id) {
-                      setFaqEditId(null);
-                      setFaqForm({ question: '', answer: '' });
+                    setFaqError('');
+                    try {
+                      await deleteFaq(faq.id);
+                      setFaqs((prev) => prev.filter((f) => f.id !== faq.id));
+                      if (faqEditId === faq.id) {
+                        setFaqEditId(null);
+                        setFaqForm({ question: '', answer: '' });
+                      }
+                    } catch (err) {
+                      setFaqError(toUserMessage(err, "We couldn't delete that FAQ. Please try again."));
                     }
                   }}>Delete</button>
                 </div>

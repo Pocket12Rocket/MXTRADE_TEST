@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import useAuth from '../../../../lib/useAuth';
 import { submitRefundRequest } from '../../../../lib/firestoreHelpers';
+import { toUserMessage } from '../../../../lib/userMessage';
 
 export default function ReturnOrderPage() {
   const router = useRouter();
@@ -74,7 +75,7 @@ export default function ReturnOrderPage() {
       setSuccess(true);
       setTimeout(() => router.push('/profile/orders'), 2000);
     } catch (err) {
-      setError(err.message || 'Failed to submit refund request.');
+      setError(toUserMessage(err, "We couldn't submit your return request. Please try again."));
     } finally {
       setSubmitting(false);
     }

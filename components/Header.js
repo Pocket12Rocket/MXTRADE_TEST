@@ -5,8 +5,10 @@ import { signOut } from 'firebase/auth';
 import { DIRT_BIKE_CATEGORIES } from '../lib/dirtBikeCategories';
 import { useCart } from '../lib/cartContext';
 import useAuth from '../lib/useAuth';
-import { fetchPendingSubmissions, fetchUnreadAdminNotificationCount } from '../lib/firestoreHelpers';
+import { subscribeAdminBadgeCounts } from '../lib/firestoreHelpers';
 import CartDrawer from './CartDrawer';
+import CategoryTabs from './CategoryTabs';
+import MobileNavigationDrawer from './MobileNavigationDrawer';
 import { auth } from '../lib/firebase';
 
 const navItems = [
@@ -25,6 +27,14 @@ const topCategoryTabs = [
   { key: 'Accessories', label: 'Accessories' },
 ];
 
+/**
+ * Why: Keeps primary navigation, product discovery, selling, and cart access in
+ * one consistent, responsive control bar so shoppers can act without losing
+ * their place in the marketplace.
+ * @returns {JSX.Element} The responsive site header and its cart drawer.
+ * @example
+ * <Header />
+ */
 export default function Header() {
   const router = useRouter();
   const { totalItems } = useCart();
@@ -77,36 +87,22 @@ export default function Header() {
     setIsProfileMenuOpen(false);
   }, [router.asPath]);
 
+  // Why: PERF-03 — the pending-approval badge used to poll every 30s (even in background tabs),
+  // downloading full result sets just to count them. Now it holds a single pair of realtime
+  // listeners (via subscribeAdminBadgeCounts), attached only while the signed-in user is an
+  // admin and detached immediately on sign-out/unmount or when isAdminUser flips false.
   useEffect(() => {
     if (!isAdminUser) {
       setPendingApprovalCount(0);
-      return;
+      return undefined;
     }
 
-    let isMounted = true;
-
-    const loadPendingCount = async () => {
-      try {
-        const [pending, unreadNotifications] = await Promise.all([
-          fetchPendingSubmissions(),
-          fetchUnreadAdminNotificationCount(),
-        ]);
-        if (isMounted) {
-          setPendingApprovalCount(pending.length + unreadNotifications);
-        }
-      } catch {
-        if (isMounted) {
-          setPendingApprovalCount(0);
-        }
-      }
-    };
-
-    loadPendingCount();
-    const intervalId = setInterval(loadPendingCount, 30000);
+    const unsubscribe = subscribeAdminBadgeCounts((count) => {
+      setPendingApprovalCount(count);
+    });
 
     return () => {
-      isMounted = false;
-      clearInterval(intervalId);
+      unsubscribe();
     };
   }, [isAdminUser]);
 
@@ -146,7 +142,7 @@ export default function Header() {
     <>
     <header className="sticky top-0 z-40 border-b border-slate-300/80 bg-[#e5e7eb]/95 backdrop-blur">
 
-      <div className="mx-auto flex max-w-[1650px] flex-col gap-2 px-3 py-2.5 sm:gap-3 sm:px-6 sm:py-4 lg:px-8">
+      <div className="mx-auto flex max-w-[1500px] flex-col gap-2 px-3 py-2.5 sm:gap-3 sm:px-6 sm:py-3 lg:px-8">
         <div className="flex min-w-0 items-center justify-between gap-2 md:gap-6">
           <Link href="/" className="min-w-0 md:justify-self-start" aria-label="Go to homepage">
             {brandImageError ? (
@@ -156,7 +152,7 @@ export default function Header() {
                 src={brandLogoSrc}
                 alt="Fast Sports"
                 onError={() => setBrandImageError(true)}
-                className="h-9 max-w-[170px] w-auto object-contain sm:h-16 sm:max-w-none md:h-20"
+                className="h-9 max-w-[170px] w-auto object-contain sm:h-14 sm:max-w-none md:h-16"
               />
             )}
           </Link>
@@ -185,7 +181,7 @@ export default function Header() {
             <button
               type="button"
               onClick={handleSellClick}
-              className="rounded-full bg-[#7a1f1f] px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-white hover:bg-[#641818]"
+              className="flex h-9 items-center rounded-full bg-[#7a1f1f] px-3 text-[11px] font-bold uppercase tracking-[0.08em] text-white hover:bg-[#641818]"
             >
               Sell
             </button>
@@ -271,14 +267,18 @@ export default function Header() {
                 <button
                   type="button"
                   onClick={() => setIsProfileMenuOpen((currentValue) => !currentValue)}
-                  className={`rounded-full p-0 ${profile?.photoURL ? '' : 'bg-[#00CED1] text-white hover:bg-[#00C5CD]'}`}
+                  className={`flex h-9 w-9 items-center justify-center rounded-xl border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mx-primary)] focus-visible:ring-offset-2 ${
+                    profile?.photoURL
+                      ? 'border-slate-300 bg-white hover:border-[var(--mx-primary)]'
+                      : 'border-[var(--mx-tertiary)] bg-[var(--mx-primary)] text-white hover:bg-[var(--mx-tertiary)]'
+                  }`}
                   aria-label="Open profile menu"
                 >
                   {profile?.photoURL ? (
                     <img
                       src={profile.photoURL}
                       alt="Profile"
-                      className="h-11 w-11 rounded-full object-cover"
+                      className="h-full w-full rounded-[11px] object-cover"
                     />
                   ) : (
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -338,81 +338,20 @@ export default function Header() {
           </nav>
         </div>
 
-        {isMobileMenuOpen ? (
-          <div className="rounded-3xl border border-slate-300 bg-white p-4 shadow-sm md:hidden">
-            <div className="grid gap-2">
-              {headerNavItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]"
-                >
-                  <span className="relative inline-flex items-center">
-                    {item.label}
-                    {item.href === '/admin/dashboard' && pendingApprovalCount > 0 ? (
-                      <span className="ml-2 inline-flex min-w-[18px] items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                        {pendingApprovalCount > 99 ? '99+' : pendingApprovalCount}
-                      </span>
-                    ) : null}
-                  </span>
-                </Link>
-              ))}
-              {/* Orders tab under Profile for mobile menu */}
-              <Link
-                href="/profile/orders"
-                className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]"
-              >
-                Orders
-              </Link>
-              <Link
-                href="/profile"
-                className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]"
-              >
-                Profile
-              </Link>
-              <Link
-                href="/seller/submissions"
-                className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]"
-              >
-                Seller Dashboard
-              </Link>
-              {user ? (
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="rounded-2xl border border-slate-200 px-4 py-3 text-left text-sm font-semibold uppercase tracking-[0.08em] text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]"
-                >
-                  Log out
-                </button>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
       </div>
 
       {showMegaMenu ? (
       <div onMouseLeave={() => setIsMegaMenuOpen(false)}>
-        <div className="border-b-2 border-[#00C5CD] bg-[#e2e5ea] px-3 sm:px-6 lg:px-8">
-          <div className="mx-auto flex max-w-[1650px] items-center gap-5 overflow-x-auto py-3">
-            {topCategoryTabs.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onMouseEnter={() => {
-                  setActiveTopTab(tab.key);
-                  setIsMegaMenuOpen(true);
-                }}
-                onClick={() => handleTopTabClick(tab.key)}
-                className={`whitespace-nowrap border-b-[3px] pb-2 text-xs font-semibold uppercase tracking-[0.08em] transition ${
-                  activeTopTab === tab.key
-                    ? 'border-[#00C5CD] text-slate-900'
-                    : 'border-transparent text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+        <div className="border-b border-slate-300 bg-[#e2e5ea] px-3 sm:px-6 lg:px-8">
+          <CategoryTabs
+            tabs={topCategoryTabs}
+            activeTab={activeTopTab}
+            onTabHover={(tabKey) => {
+              setActiveTopTab(tabKey);
+              setIsMegaMenuOpen(true);
+            }}
+            onTabSelect={handleTopTabClick}
+          />
         </div>
 
         {activeTopTab && isMegaMenuOpen ? (
@@ -442,6 +381,14 @@ export default function Header() {
     </header>
 
     <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} />
+    <MobileNavigationDrawer
+      open={isMobileMenuOpen}
+      onClose={() => setIsMobileMenuOpen(false)}
+      items={headerNavItems}
+      isSignedIn={Boolean(user)}
+      pendingApprovalCount={pendingApprovalCount}
+      onLogout={handleLogout}
+    />
     </>
   );
 }

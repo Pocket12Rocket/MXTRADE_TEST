@@ -4,6 +4,7 @@ import {
   fetchAllOrdersForAdmin,
   updateOrderStatusAsAdmin,
 } from '../../lib/firestoreHelpers';
+import { toUserMessage } from '../../lib/userMessage';
 
 const STATUS_BUCKETS = [
   { value: 'paid', label: 'Paid / Processing' },
@@ -12,9 +13,6 @@ const STATUS_BUCKETS = [
   { value: 'refund_pending', label: 'Refund Pending' },
   { value: 'refunded', label: 'Refunded' },
 ];
-
-// Orders in these states haven't been paid for yet and shouldn't clutter the fulfillment board.
-const HIDDEN_ORDER_STATUSES = new Set(['pending_payment', 'payment_failed', 'failed', 'cancelled']);
 
 // Only these buckets represent manual fulfillment steps an admin can drag an order into.
 const DRAGGABLE_STATUSES = new Set(['paid', 'shipped', 'delivered']);
@@ -72,6 +70,13 @@ function getShippingAddressLabel(address = {}) {
   ].filter(Boolean).join(', ') || 'Shipping address not provided';
 }
 
+/**
+ * Why: Admin fulfilment board (paid → shipped → delivered, plus refund states). PERF-04 —
+ * orders are now fetched 50 at a time via a server-side `status in [...]` filter instead of
+ * downloading the full order history on every visit; a "Load more" control fetches subsequent
+ * pages with a Firestore `startAfter` cursor.
+ * @returns {JSX.Element} The sales board, or a sign-in prompt for non-admin visitors.
+ */
 export default function SalesPage() {
   const { user, profile, loading } = useAuth();
   const [orders, setOrders] = useState([]);
@@ -80,6 +85,9 @@ export default function SalesPage() {
   const [draggedOrder, setDraggedOrder] = useState(null);
   const [movingOrderId, setMovingOrderId] = useState('');
   const [error, setError] = useState('');
+  const [ordersCursor, setOrdersCursor] = useState(null);
+  const [hasMoreOrders, setHasMoreOrders] = useState(false);
+  const [isLoadingMoreOrders, setIsLoadingMoreOrders] = useState(false);
 
   useEffect(() => {
     if (!user || profile?.role !== 'admin') {
@@ -87,9 +95,39 @@ export default function SalesPage() {
     }
 
     fetchAllOrdersForAdmin()
-      .then((orderRows) => setOrders((orderRows || []).filter((order) => !HIDDEN_ORDER_STATUSES.has(order.status))))
-      .catch((err) => setError(err?.message || 'Failed to load sales data.'));
+      .then(({ orders: orderRows, lastDoc, hasMore }) => {
+        setOrders(orderRows || []);
+        setOrdersCursor(lastDoc);
+        setHasMoreOrders(Boolean(hasMore));
+      })
+      .catch((err) => {
+        setError(toUserMessage(err, "We couldn't load the sales board right now. Please try again."));
+      });
   }, [user, profile?.role]);
+
+  /**
+   * Why: PERF-04 — the sales board now paginates 50 orders at a time (server-side status filter
+   * + limit + startAfter cursor) instead of downloading the full order history on every visit.
+   * @returns {Promise<void>} Resolves once the next page has been appended to state.
+   */
+  const handleLoadMoreOrders = async () => {
+    if (!ordersCursor || isLoadingMoreOrders) {
+      return;
+    }
+
+    setIsLoadingMoreOrders(true);
+    setError('');
+    try {
+      const { orders: nextOrders, lastDoc, hasMore } = await fetchAllOrdersForAdmin({ cursor: ordersCursor });
+      setOrders((currentOrders) => [...currentOrders, ...(nextOrders || [])]);
+      setOrdersCursor(lastDoc);
+      setHasMoreOrders(Boolean(hasMore));
+    } catch (err) {
+      setError(toUserMessage(err, "We couldn't load more orders right now. Please try again."));
+    } finally {
+      setIsLoadingMoreOrders(false);
+    }
+  };
 
   const filteredOrders = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -135,7 +173,7 @@ export default function SalesPage() {
           : currentOrder
       )));
     } catch (err) {
-      setError(err?.message || 'Failed to move order.');
+      setError(toUserMessage(err, "We couldn't move that order right now. Please try again."));
     } finally {
       setMovingOrderId('');
       setDraggedOrder(null);
@@ -230,6 +268,19 @@ export default function SalesPage() {
           </section>
         ))}
       </div>
+
+      {hasMoreOrders ? (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={handleLoadMoreOrders}
+            disabled={isLoadingMoreOrders}
+            className="rounded-full border border-slate-300 bg-white px-6 py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 shadow-sm hover:border-[#00C5CD] hover:text-[#00C5CD] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoadingMoreOrders ? 'Loading…' : 'Load more orders'}
+          </button>
+        </div>
+      ) : null}
 
       {selectedOrder ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6" onClick={() => setSelectedOrder(null)}>

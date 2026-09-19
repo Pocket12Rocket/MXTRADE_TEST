@@ -1,15 +1,7 @@
 import nodemailer from 'nodemailer';
 import admin from '../../../lib/firebaseAdmin';
 import { rateLimit, getRateLimitKey } from '../../../lib/apiRateLimit';
-
-function escapeHtml(value) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
+import { escapeHtml } from '../../../lib/server/request';
 
 function getSiteBaseUrl(req) {
   const configured = (process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || '').trim();
@@ -253,20 +245,12 @@ export default async function handler(req, res) {
       });
     }
 
-    console.error('[Password Reset] Failed to send reset email', error);
-    const detail = error?.message || error?.code || 'Unknown error';
-    const isSmtpAuthFailure = /invalid login|535-5\.7\.8|badcredentials|username and password not accepted/i.test(String(detail));
-
-    if (isSmtpAuthFailure) {
-      return res.status(500).json({
-        message: 'Google Workspace rejected the SMTP credentials for the password reset mail. Please generate a fresh app password for support@fastsport.co.za and update SMTP_PASS.',
-        detail,
-      });
-    }
+    // Why: never return raw error/SMTP detail to the client (AGENTS.md "User-facing errors",
+    // ARCH-14) — log the real failure server-side and show a single generic sentence either way.
+    console.error('[password-reset] send failed', error?.code || error?.message || error);
 
     return res.status(500).json({
       message: 'We could not send the password reset email right now. Please try again later.',
-      detail,
     });
   }
 }

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCart } from '../lib/cartContext';
 import useAuth from '../lib/useAuth';
 import { fetchProductById } from '../lib/firestoreHelpers';
+import { UserFacingError, toUserMessage, reportError } from '../lib/userMessage';
 
 const PROVINCES = [
   'Eastern Cape',
@@ -41,6 +42,12 @@ function fieldError(name, value) {
   return null;
 }
 
+/**
+ * Why: Cart → order creation → PayFast redirect. Never render a raw Firestore/API error — the
+ * `/api/orders/create` and `/api/payfast/checkout` routes only ever return short, curated error
+ * strings, and any other failure (network, etc.) is mapped via `toUserMessage()` (ARCH-14).
+ * @returns {JSX.Element} The checkout form, or an empty-cart state.
+ */
 export default function CheckoutPage() {
   const router = useRouter();
   const { user, profile } = useAuth();
@@ -83,7 +90,8 @@ export default function CheckoutPage() {
             sellerId: product?.sellerId || '',
             sellerEmail: product?.sellerEmail || '',
           };
-        } catch {
+        } catch (err) {
+          reportError('checkout-resolve-seller', err);
           return item;
         }
       }));
@@ -194,7 +202,9 @@ export default function CheckoutPage() {
 
       const orderData = await orderRes.json();
       if (!orderRes.ok || !orderData.success || !orderData.orderId) {
-        throw new Error(orderData.error || 'Could not create order.');
+        // Why: /api/orders/create only ever returns a short, curated error string (ARCH-14) —
+        // safe to surface directly, so it's wrapped as UserFacingError to survive toUserMessage().
+        throw new UserFacingError(orderData.error || 'Could not create order.');
       }
       orderId = orderData.orderId;
 
@@ -217,7 +227,7 @@ export default function CheckoutPage() {
         return;
       }
     } catch (err) {
-      setSubmitError(err.message || 'Something went wrong. Please try again.');
+      setSubmitError(toUserMessage(err, 'Something went wrong. Please try again.'));
       setIsSubmitting(false);
     }
   }

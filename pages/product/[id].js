@@ -1,9 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { fetchProductById, incrementProductClickCount } from '../../lib/firestoreHelpers';
+import CarouselControl from '../../components/CarouselControl';
+import { fetchProductById } from '../../lib/firestoreHelpers';
 import { useCart } from '../../lib/cartContext';
+import { toUserMessage, reportError } from '../../lib/userMessage';
 
+/**
+ * Why: Product detail page (client-side fetch, no SSR/SEO). Never render a raw Firestore error —
+ * show a short friendly sentence via the shared `toUserMessage()` helper (ARCH-14) instead.
+ * @returns {JSX.Element} The product detail view, or a "not found" state.
+ * @example
+ * <ProductDetail />
+ */
 export default function ProductDetail() {
   const router = useRouter();
   const { id } = router.query;
@@ -160,19 +169,35 @@ export default function ProductDetail() {
     fetchProductById(id)
       .then((result) => {
         setProduct(result);
-
-        if (result?.id) {
-          incrementProductClickCount(result.id).catch(() => {
-            // Non-blocking analytics update.
-          });
-        }
-
         setLoading(false);
       })
       .catch((err) => {
-        setError(err.message);
+        setError(toUserMessage(err, "We couldn't load this product right now. Please try again."));
         setLoading(false);
       });
+  }, [id]);
+
+  // Why: PERF-05/DOS-03 — a client-writable `clickCount` field let anyone game "Popular this
+  // week" (BUG-08) and billed a Firestore write on every anonymous view. Records the view through
+  // a server-side API route instead, deduped per product per browser session (sessionStorage) so
+  // a reload/re-render of the same product in the same tab doesn't double-count it. Fire-and-
+  // forget: never awaited, errors are only logged (ARCH-14), and it doesn't block or depend on
+  // the product fetch above.
+  useEffect(() => {
+    if (!id || typeof window === 'undefined') return;
+
+    const sessionKey = `viewed:${id}`;
+    try {
+      if (window.sessionStorage.getItem(sessionKey)) return;
+      window.sessionStorage.setItem(sessionKey, '1');
+    } catch {
+      // sessionStorage unavailable (private mode) — fall through and record the view anyway;
+      // worst case is an extra view counted within this session.
+    }
+
+    fetch(`/api/products/${id}/view`, { method: 'POST', keepalive: true }).catch((err) =>
+      reportError('product-view', err)
+    );
   }, [id]);
 
   useEffect(() => {
@@ -214,8 +239,8 @@ export default function ProductDetail() {
   }
 
   return (
-    <div className="space-y-8">
-      <div>
+    <div className="mx-auto max-w-[1280px] space-y-5">
+      <div className="flex items-center justify-between">
         <button
           type="button"
           onClick={handleBackClick}
@@ -224,30 +249,28 @@ export default function ProductDetail() {
           <span aria-hidden="true">&larr;</span>
           Back
         </button>
+        <Link href="/shop/catalog" className="hidden text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 hover:text-[#00C5CD] sm:inline-flex">
+          Continue shopping
+        </Link>
       </div>
 
-      <div className="flex flex-col rounded-[28px] border border-slate-200 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.08)] sm:p-6">
-        <div className="mx-auto w-full max-w-3xl">
+      <div className="grid items-start gap-6 rounded-[28px] border border-slate-200 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.08)] sm:p-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)] lg:gap-8">
+        <div className="w-full">
           {productImages.length ? (
             <div className="relative">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  aria-label="Previous image"
-                  onClick={handlePreviousImage}
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-lg text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50"
-                >
-                  ‹
-                </button>
+              <div className="relative">
+                <div className="absolute left-3 top-1/2 z-10 -translate-y-1/2">
+                  <CarouselControl direction="previous" label="Previous image" onClick={handlePreviousImage} disabled={!productImages.length} />
+                </div>
 
-                <div className="relative flex-1 overflow-hidden">
+                <div className="overflow-hidden">
                   <div ref={galleryRef} className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 md:overflow-x-hidden">
                     {productImages.map((src, index) => (
                       <button
                         key={index}
                         type="button"
                         onClick={() => handleOpenImage(index)}
-                        className="group relative aspect-[4/3] w-[85%] shrink-0 snap-center overflow-hidden rounded-2xl bg-slate-100 text-left shadow-sm transition hover:shadow-md sm:w-[70%] md:w-[calc(33.333%-0.67rem)]"
+                        className="group relative aspect-[4/3] w-full shrink-0 snap-center overflow-hidden rounded-2xl bg-slate-100 text-left shadow-sm transition hover:shadow-md"
                       >
                         <img src={src} alt={`${product.name} ${index + 1}`} className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
                         <span className="absolute inset-x-0 bottom-0 bg-black/45 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-white opacity-0 transition group-hover:opacity-100">
@@ -258,14 +281,9 @@ export default function ProductDetail() {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  aria-label="Next image"
-                  onClick={handleNextImage}
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-lg text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50"
-                >
-                  ›
-                </button>
+                <div className="absolute right-3 top-1/2 z-10 -translate-y-1/2">
+                  <CarouselControl direction="next" label="Next image" onClick={handleNextImage} disabled={!productImages.length} />
+                </div>
               </div>
             </div>
           ) : (
@@ -275,7 +293,7 @@ export default function ProductDetail() {
           )}
         </div>
 
-        <div className="mt-6 flex flex-1 flex-col gap-4">
+        <div className="flex flex-1 flex-col gap-4 lg:sticky lg:top-28">
           <div className="space-y-2">
             <h1 className="text-3xl font-semibold tracking-[-0.03em] text-slate-900">{product.name}</h1>
             {(product.sellerSuburb || product.sellerCity) && (
@@ -287,7 +305,7 @@ export default function ProductDetail() {
             )}
           </div>
 
-          <div className="pt-1">
+          <div className="border-y border-slate-100 py-4">
             <p className="text-4xl font-semibold tracking-[-0.04em] text-slate-900">R{Number(product.price).toFixed(2)}</p>
             {isSpecialActive ? (
               <div className="mt-2 flex items-center gap-2">
@@ -297,20 +315,20 @@ export default function ProductDetail() {
             ) : null}
           </div>
 
-          {displayDescription ? <p className="text-slate-600">{displayDescription}</p> : null}
+          {displayDescription ? <p className="leading-7 text-slate-600">{displayDescription}</p> : null}
 
           {displaySpecifications.length ? (
-            <div className="space-y-2 pt-2">
-              <h2 className="text-xl font-semibold text-slate-900">Specifications</h2>
-              <ul className="list-disc space-y-2 pl-5 text-slate-600">
+            <div className="space-y-2 border-t border-slate-100 pt-4">
+              <h2 className="text-lg font-semibold text-slate-900">Specifications</h2>
+              <ul className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
                 {displaySpecifications.map((item) => (
-                  <li key={item}>{item}</li>
+                  <li key={item} className="rounded-xl bg-slate-50 px-3 py-2">{item}</li>
                 ))}
               </ul>
             </div>
           ) : null}
 
-          <div className="mt-auto pt-3">
+          <div className="mt-auto rounded-2xl bg-slate-50 px-4 py-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-[#00CED1]">
               <span>Delivery</span>
               <div className="group relative inline-flex">
@@ -334,7 +352,7 @@ export default function ProductDetail() {
             </div>
           </div>
 
-          <div className="pt-2">
+          <div>
             <p className="text-xs font-medium text-slate-500">
               {Number(product.quantity || 1) > 0 ? (
                 <span className="text-green-600">✓ In Stock ({product.quantity || 1} available)</span>
@@ -354,7 +372,7 @@ export default function ProductDetail() {
             type="button"
             onClick={handleAddToCart}
             disabled={Number(product.quantity || 1) === 0}
-            className={`mt-4 w-full rounded-2xl px-5 py-3 text-sm font-bold uppercase tracking-[0.12em] transition ${
+            className={`mt-2 w-full rounded-2xl px-5 py-3.5 text-sm font-bold uppercase tracking-[0.12em] transition ${
               Number(product.quantity || 1) === 0
                 ? 'cursor-not-allowed bg-slate-300 text-slate-500'
                 : addedToCart

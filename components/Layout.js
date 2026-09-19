@@ -30,6 +30,15 @@ const FOOTER_COLUMNS = [
   },
 ];
 
+/**
+ * Why: Provides the shared marketplace frame so navigation, responsive page
+ * gutters, support access, and legal navigation stay consistent across routes.
+ * @param {Object} props - Layout content.
+ * @param {React.ReactNode} props.children - Active page rendered inside the shell.
+ * @returns {JSX.Element} The full application frame around the active page.
+ * @example
+ * <Layout><CatalogPage /></Layout>
+ */
 export default function Layout({ children }) {
   const router = useRouter();
   const { user } = useAuth();
@@ -73,17 +82,17 @@ export default function Layout({ children }) {
       ) : null}
 
       <footer className="border-t border-[#18304f] bg-[#0b1f3a] text-slate-100">
-        <div className="mx-auto grid max-w-[1650px] grid-cols-2 gap-x-5 gap-y-6 px-5 py-6 sm:px-10 sm:py-8 md:grid-cols-4 lg:px-14">
+        <div className="mx-auto grid max-w-[1500px] grid-cols-2 gap-x-5 gap-y-4 px-5 py-4 sm:px-10 sm:py-5 md:grid-cols-4 lg:px-14">
           {FOOTER_COLUMNS.map((column) => (
             <div key={column.title}>
-              <h2 className="text-sm font-bold text-white">{column.title}</h2>
-              <ul className="mt-3 space-y-2">
+              <h2 className="text-xs font-bold uppercase tracking-[0.08em] text-white">{column.title}</h2>
+              <ul className="mt-2 space-y-1.5">
                 {column.links.map((link) => (
                   <li key={link}>
                     <a
                       href={link === 'List an Item' ? '/login' : FOOTER_LINK_ROUTES[link] || '#'}
                       onClick={(event) => handleFooterLinkClick(event, link)}
-                      className="text-sm text-slate-300 transition hover:text-[#40E0D0] hover:underline"
+                      className="text-xs text-slate-300 transition hover:text-[#40E0D0] hover:underline"
                     >
                       {link}
                     </a>
@@ -93,7 +102,7 @@ export default function Layout({ children }) {
             </div>
           ))}
         </div>
-        <div className="px-6 py-3 text-center text-[11px] uppercase tracking-[0.08em] text-slate-400">
+        <div className="border-t border-white/10 px-6 py-2 text-center text-[10px] uppercase tracking-[0.08em] text-slate-400">
           © Fast Sport | Built by the community
         </div>
       </footer>
