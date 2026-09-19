@@ -119,7 +119,7 @@ export default function About() {
         )}
       </section>
 
-      <section className="mt-12 space-y-6 text-[1.05rem] leading-8 text-slate-700">
+      <section id="how-it-works" className="mt-12 scroll-mt-28 space-y-6 text-[1.05rem] leading-8 text-slate-700">
         <h2 className="text-3xl font-semibold text-slate-900">How it works</h2>
         {howItWorksParagraphs.length > 0 ? (
           howItWorksParagraphs.map((paragraph, index) => (

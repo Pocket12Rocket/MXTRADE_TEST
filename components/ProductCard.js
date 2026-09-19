@@ -30,9 +30,9 @@ export default function ProductCard({ product }) {
           </span>
         ) : null}
       </div>
-      <div className="p-5">
+      <div className="p-4 sm:p-5">
         <div className="flex items-center gap-2">
-          <h3 className="text-lg font-semibold text-slate-900">{product.name}</h3>
+          <h3 className="line-clamp-2 text-base font-semibold text-slate-900 sm:text-lg">{product.name}</h3>
         </div>
         {product.subcategory ? <p className="mt-1 text-sm text-slate-600">{product.subcategory}</p> : null}
         {/* Show suburb and city if available */}
@@ -44,7 +44,7 @@ export default function ProductCard({ product }) {
           </p>
         )}
         <div className="mt-3">
-          <p className="text-xl font-semibold text-slate-900">R{Number(product.price || 0).toFixed(2)}</p>
+          <p className="text-lg font-semibold text-slate-900 sm:text-xl">R{Number(product.price || 0).toFixed(2)}</p>
           {isSpecialActive ? (
             <p className="text-sm text-slate-500 line-through">R{Number(product.originalPrice || 0).toFixed(2)}</p>
           ) : null}

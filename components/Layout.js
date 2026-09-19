@@ -1,17 +1,59 @@
 import Header from './Header';
+import { useRouter } from 'next/router';
+import useAuth from '../lib/useAuth';
 
 const SHOW_WHATSAPP_BUTTON = false;
+const FOOTER_LINK_ROUTES = {
+  Gear: '/shop/catalog?category=Gear',
+  'Bike Parts': '/shop/catalog?category=Parts',
+  Accessories: '/shop/catalog?category=Accessories',
+  'About Us': '/about',
+  'How it Works': '/about#how-it-works',
+  'Contact Us': '/contact',
+};
+const FOOTER_COLUMNS = [
+  {
+    title: 'Shop',
+    links: ['Gear', 'Bike Parts', 'Accessories'],
+  },
+  {
+    title: 'Sell',
+    links: ['List an Item', 'How it Works', 'Getting Paid', 'Seller Obligations', 'Shipping'],
+  },
+  {
+    title: 'Legal',
+    links: ['Terms & Conditions', 'Privacy Policy', 'Refund & Return Policy', 'Buyer & Seller Protection'],
+  },
+  {
+    title: 'Help',
+    links: ['About Us', 'Contact Us'],
+  },
+];
 
 export default function Layout({ children }) {
+  const router = useRouter();
+  const { user } = useAuth();
   const whatsappNumber = (process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '').replace(/\D/g, '');
   const whatsappLink = whatsappNumber
     ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent('Hi MXTrade, I need help with my order.')}`
     : 'https://wa.me/';
 
+  const handleFooterLinkClick = (event, link) => {
+    if (link === 'List an Item') {
+      event.preventDefault();
+      router.push(user ? '/seller/submissions' : '/login');
+      return;
+    }
+
+    if (!FOOTER_LINK_ROUTES[link]) {
+      event.preventDefault();
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[#c4c9d1] text-slate-900">
+    <div className="flex min-h-screen flex-col bg-[#c4c9d1] text-slate-900">
       <Header />
-      <main className="mx-auto max-w-[1650px] px-4 py-8 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-[1650px] flex-1 px-3 py-5 sm:px-6 sm:py-8 lg:px-8">
         {children}
       </main>
 
@@ -30,8 +72,30 @@ export default function Layout({ children }) {
       </a>
       ) : null}
 
-      <footer className="border-t border-slate-300 bg-slate-900 py-8 text-center text-xs uppercase tracking-[0.1em] text-slate-300">
-        © Fast Sport | Built by the community
+      <footer className="border-t border-[#18304f] bg-[#0b1f3a] text-slate-100">
+        <div className="mx-auto grid max-w-[1650px] grid-cols-2 gap-x-5 gap-y-6 px-5 py-6 sm:px-10 sm:py-8 md:grid-cols-4 lg:px-14">
+          {FOOTER_COLUMNS.map((column) => (
+            <div key={column.title}>
+              <h2 className="text-sm font-bold text-white">{column.title}</h2>
+              <ul className="mt-3 space-y-2">
+                {column.links.map((link) => (
+                  <li key={link}>
+                    <a
+                      href={link === 'List an Item' ? '/login' : FOOTER_LINK_ROUTES[link] || '#'}
+                      onClick={(event) => handleFooterLinkClick(event, link)}
+                      className="text-sm text-slate-300 transition hover:text-[#40E0D0] hover:underline"
+                    >
+                      {link}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+        <div className="px-6 py-3 text-center text-[11px] uppercase tracking-[0.08em] text-slate-400">
+          © Fast Sport | Built by the community
+        </div>
       </footer>
     </div>
   );
