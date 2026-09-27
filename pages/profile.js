@@ -4,11 +4,16 @@ import useAuth from '../lib/useAuth';
 import { useAuthContext } from '../lib/AuthContext';
 import TermsAndConditionsModal from '../components/TermsAndConditionsModal';
 import {
-  fetchSellerPrivateProfile,
-  upsertSellerPrivateProfile,
   uploadProfilePicture,
   updateUserProfile,
 } from '../lib/firestoreHelpers';
+import {
+  ACCOUNT_TYPE_OPTIONS,
+  SELLER_STATUS_LABELS,
+  fetchMySellerProfile,
+  saveMySellerProfile,
+} from '../lib/api/seller';
+import { getFieldErrors } from '../lib/apiClient';
 import ImageCropDialog from '../components/ImageCropDialog';
 import { useImageCropQueue } from '../lib/useImageCropQueue';
 import { AVATAR_IMAGE_ASPECT, AVATAR_IMAGE_OUTPUT_WIDTH } from '../lib/cropImage';
@@ -77,10 +82,10 @@ const countryCodeToFlag = (cc) => {
 };
 
 export default function ProfilePage() {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, refreshProfile } = useAuth();
   // updateProfileLocal isn't part of useAuth()'s public return shape (kept identical to
   // avoid touching other consumers) — read it straight from the shared context here so
-  // known-payload saves below can skip the extra users/{uid} read (PERF-18).
+  // known-payload saves below can skip an extra /me read.
   const { updateProfileLocal } = useAuthContext();
   const fileInputRef = useRef(null);
 
@@ -117,6 +122,9 @@ export default function ProfilePage() {
   };
   const [sellerProfileForm, setSellerProfileForm] = useState(EMPTY_SELLER_PROFILE_FORM);
   const [savedSellerProfileForm, setSavedSellerProfileForm] = useState(EMPTY_SELLER_PROFILE_FORM);
+  // Why: the saved application from the backend: status, rejection reason and the last 4 digits
+  // of the ID and account numbers (the full numbers are never returned).
+  const [sellerApplication, setSellerApplication] = useState(null);
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
   const [pendingTermsAction, setPendingTermsAction] = useState(null);
@@ -241,40 +249,47 @@ export default function ProfilePage() {
     return () => clearTimeout(timer);
   }, [saveSuccess]);
 
+  /**
+   * Why: Turns a saved application into form values. The ID and account numbers are never
+   * returned by the backend, so they always start empty and must be re-entered to save.
+   * @param {object|null} application - The `SellerProfile` from the backend, or null.
+   * @returns {object} Form values.
+   */
+  const toSellerForm = (application) => ({
+    ...EMPTY_SELLER_PROFILE_FORM,
+    streetAddress: application?.streetAddress || '',
+    suburb: application?.suburb || '',
+    city: application?.city || '',
+    postCode: application?.postCode || '',
+    bankName: application?.bankName || '',
+    accountType: application?.accountType || '',
+    branchName: application?.branchName || '',
+    branchCode: application?.branchCode || '',
+  });
+
   useEffect(() => {
-    if (!user?.uid) {
+    if (!user?.id) {
       return;
     }
 
     let isMounted = true;
 
-    const loadSellerPrivateProfile = async () => {
+    const loadSellerApplication = async () => {
       setSellerProfileLoading(true);
       setSellerProfileError('');
       try {
-        const sellerPrivateProfile = await fetchSellerPrivateProfile(user.id);
+        const application = await fetchMySellerProfile();
         if (!isMounted) {
           return;
         }
 
-        const loadedSellerProfile = {
-          idNumber: sellerPrivateProfile?.idNumber || '',
-          streetAddress: sellerPrivateProfile?.streetAddress || '',
-          suburb: sellerPrivateProfile?.suburb || '',
-          city: sellerPrivateProfile?.city || '',
-          postCode: sellerPrivateProfile?.postCode || '',
-          bankName: sellerPrivateProfile?.bankName || '',
-          accountType: sellerPrivateProfile?.accountType || '',
-          branchName: sellerPrivateProfile?.branchName || '',
-          branchCode: sellerPrivateProfile?.branchCode || '',
-          accountNumber: sellerPrivateProfile?.accountNumber || '',
-        };
-
+        const loadedSellerProfile = toSellerForm(application);
+        setSellerApplication(application);
         setSellerProfileForm(loadedSellerProfile);
         setSavedSellerProfileForm(loadedSellerProfile);
-      } catch {
+      } catch (err) {
         if (isMounted) {
-          setSellerProfileError('Could not load seller profile details.');
+          setSellerProfileError(toUserMessage(err, 'Could not load seller profile details.'));
         }
       } finally {
         if (isMounted) {
@@ -283,12 +298,12 @@ export default function ProfilePage() {
       }
     };
 
-    loadSellerPrivateProfile();
+    loadSellerApplication();
 
     return () => {
       isMounted = false;
     };
-  }, [user?.uid]);
+  }, [user?.id]);
 
   const handleSellerFieldChange = (fieldName, value) => {
     setSellerProfileForm((currentValue) => ({
@@ -316,15 +331,23 @@ export default function ProfilePage() {
     setSellerProfileSuccess('');
 
     try {
-      await upsertSellerPrivateProfile(user, sellerProfileForm);
-      // upsertSellerPrivateProfile's users/{uid} write is a known, fixed payload
-      // (sellerProfileComplete/canSell) — update locally instead of re-reading (PERF-18).
-      updateProfileLocal({ sellerProfileComplete: true, canSell: true });
-      setSavedSellerProfileForm(sellerProfileForm);
-      setSellerProfileSuccess('Seller profile saved securely.');
+      const saved = await saveMySellerProfile(sellerProfileForm);
+      const savedForm = toSellerForm(saved);
+      setSellerApplication(saved);
+      setSellerProfileForm(savedForm);
+      setSavedSellerProfileForm(savedForm);
+      // Why: the backend decides sellerStatus/canSell (a bank or ID change sends an approved
+      // seller back to review), so re-read /me rather than guessing locally.
+      await refreshProfile();
+      setSellerProfileSuccess(saved?.status === 'approved'
+        ? 'Seller profile saved securely.'
+        : 'Seller application submitted. We will email you once it has been reviewed.');
       setIsEditingSellerProfile(false);
     } catch (error) {
-      setSellerProfileError(toUserMessage(error, 'Failed to save seller profile. Please try again.'));
+      const fieldMessages = Object.values(getFieldErrors(error));
+      setSellerProfileError(fieldMessages.length > 0
+        ? fieldMessages.join(' ')
+        : toUserMessage(error, 'Failed to save seller profile. Please try again.'));
     } finally {
       setSellerProfileSaving(false);
     }
@@ -405,10 +428,12 @@ export default function ProfilePage() {
     }
   };
 
-  const maskedAccountNumber = sellerProfileForm.accountNumber
-    ? `****${sellerProfileForm.accountNumber.slice(-4)}`
-    : 'Not set';
-  const hasCompletedSellerProfile = Boolean(profile?.sellerProfileComplete && profile?.canSell);
+  const sellerStatus = profile?.sellerStatus || 'none';
+  const maskedAccountNumber = sellerApplication?.accountLast4 ? `****${sellerApplication.accountLast4}` : 'Not set';
+  const maskedIdNumber = sellerApplication?.idNumberLast4 ? `Ending in ${sellerApplication.idNumberLast4}` : 'Not set';
+  const accountTypeLabel = ACCOUNT_TYPE_OPTIONS.find((option) => option.value === sellerApplication?.accountType)?.label
+    || sellerApplication?.accountType || 'Not set';
+  const hasCompletedSellerProfile = Boolean(sellerApplication);
   // Why: the backend flags when the accepted version is missing or out of date.
   const hasAcceptedTermsOnce = Boolean(profile?.termsAcceptedVersion) && !profile?.termsReacceptRequired;
   const hasAcceptedSellerTermsOnce = Boolean(profile?.sellerTermsAcceptedVersion) && !profile?.sellerTermsReacceptRequired;
@@ -600,12 +625,28 @@ export default function ProfilePage() {
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Selling status</p>
-            <p className="mt-2 text-base font-semibold text-slate-900">{profile?.canSell ? 'Enabled' : 'Not enabled yet'}</p>
+            <p className="mt-2 text-base font-semibold text-slate-900">{SELLER_STATUS_LABELS[sellerStatus] || SELLER_STATUS_LABELS.none}</p>
           </div>
         </div>
       )}
 
-      {(!profile?.sellerProfileComplete || !profile?.canSell) && (
+      {sellerStatus === 'pending' && (
+        <div className="py-2">
+          <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#00C5CD]">Under review</p>
+          <h2 className="mt-2 text-2xl font-semibold text-slate-900">Your seller application is being reviewed</h2>
+          <p className="mt-3 text-slate-600">We will email you once an admin has reviewed your details. You can keep browsing and buying in the meantime.</p>
+        </div>
+      )}
+
+      {sellerStatus === 'rejected' && (
+        <div className="py-2">
+          <p className="text-sm font-semibold uppercase tracking-[0.08em] text-rose-700">Not approved</p>
+          <h2 className="mt-2 text-2xl font-semibold text-slate-900">Your seller application needs changes</h2>
+          <p className="mt-3 text-slate-600">{sellerApplication?.rejectionReason || 'Please review your details and resubmit.'}</p>
+        </div>
+      )}
+
+      {sellerStatus === 'none' && (
         <div className="py-2">
           <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#00C5CD]">Next step</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-900">Complete your seller profile</h2>
@@ -623,7 +664,7 @@ export default function ProfilePage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">ID Number</p>
-                  <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.idNumber || 'Not set'}</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{maskedIdNumber}</p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Street Address</p>
@@ -647,7 +688,7 @@ export default function ProfilePage() {
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Account Type</p>
-                  <p className="mt-2 text-sm font-semibold text-slate-900">{sellerProfileForm.accountType || 'Not set'}</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900">{accountTypeLabel}</p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Branch Name</p>
@@ -672,16 +713,20 @@ export default function ProfilePage() {
               onClick={handleOpenSellerProfileEdit}
               className="rounded-3xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800"
             >
-              {hasCompletedSellerProfile ? 'Edit seller profile' : 'Complete seller profile'}
+              {sellerStatus === 'rejected' ? 'Update and resubmit' : (hasCompletedSellerProfile ? 'Edit seller profile' : 'Complete seller profile')}
             </button>
           </div>
         ) : (
           <form onSubmit={handleSellerProfileSubmit} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block sm:col-span-2">
-                <span className="text-sm font-medium text-slate-700">ID Number</span>
+                <span className="text-sm font-medium text-slate-700">
+                  ID Number{sellerApplication?.idNumberLast4 ? ` (re-enter in full; saved number ends in ${sellerApplication.idNumberLast4})` : ''}
+                </span>
                 <input
                   type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
                   value={sellerProfileForm.idNumber}
                   onChange={(event) => handleSellerFieldChange('idNumber', event.target.value)}
                   required
@@ -756,8 +801,9 @@ export default function ProfilePage() {
                   className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
                 >
                   <option value="">Select account type</option>
-                  <option value="Current/Cheque">Current/Cheque</option>
-                  <option value="Savings">Savings</option>
+                  {ACCOUNT_TYPE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
                 </select>
               </label>
 
@@ -786,9 +832,13 @@ export default function ProfilePage() {
               </label>
 
               <label className="block">
-                <span className="text-sm font-medium text-slate-700">Account Number</span>
+                <span className="text-sm font-medium text-slate-700">
+                  Account Number{sellerApplication?.accountLast4 ? ` (re-enter in full; saved number ends in ${sellerApplication.accountLast4})` : ''}
+                </span>
                 <input
                   type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
                   value={sellerProfileForm.accountNumber}
                   onChange={(event) => handleSellerFieldChange('accountNumber', event.target.value)}
                   required
