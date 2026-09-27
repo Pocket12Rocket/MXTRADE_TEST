@@ -29,23 +29,38 @@ Status key: `Done`, `In progress`, `Blocked (reason)`, `Not started`.
 | 4 | Update `AGENTS.md`, `CLAUDE.md` and `README.md` for the new architecture and commit rule | Done | Rewritten for the three-repo split, the backend API rules, the `dev` branch, commits with no co-author, Vitest and the cropper |
 
 ## Backend repo (FastSport_BackEnd), owned by the backend session
+Status as of end of day 2026-09-27. `main` is clean. Every commit is pushed except `22fd418`. 73 tests pass, and `openapi/openapi.json` is current.
+
 | Milestone | Status | Notes |
 |---|---|---|
-| DECISIONS.md | Done | `cc4dfab` |
-| AGENTS.md, CLAUDE.md and README.md | Requested | Taylor flagged these as missing |
-| DATABASE.md (schema and ER overview) | Done | Postgres 18, node-pg-migrate, uuidv7, `*_cents`. Auth tables exist; the rest are planned |
-| Scaffold (health, problem+json, openapi.json) | Done | `3251462` |
-| Auth (JWT with role, 15-minute access, 7-day session, Google, verify, reset) and seeded admin | Done | `3251462`. The session is an absolute 7 days (Taylor confirmed); there is no forced password change for the seeded admin |
-| Catalog, then profile, submissions, orders with PayFast, refunds and contact | Catalog next | |
-| Mailer (Gmail API via a Workspace service account; noreply@ with Reply-To support@) | After catalog | |
-| Local run (Postgres 18 installed natively; Docker isn't installed) | Waiting on Taylor's Postgres install | |
+| DECISIONS.md (D-01 to D-21) | Done | Answered by Tyron (`6d7f9b4`) |
+| AGENTS.md, CLAUDE.md, README.md, DATABASE.md | Done | README has a section on what Tyron needs to supply for email |
+| Scaffold (health at `/health/live` and `/health/ready`, problem+json, openapi.json) | Done | `3251462` |
+| Auth (JWT with role, 15-minute access, absolute 7-day session, Google, verify, reset) and seeded admin | Done | `3251462`. The admin was seeded once Taylor set `SEED_ADMIN_*` |
+| Catalog (products, popular, new, detail, views, config, FAQs, About) | Done | `9babcc9`, `9241d19` (labels), `f39d94d` (same-site CORP) |
+| Mailer (Gmail API, Workspace service account, from support@) | Done (dev uses the log transport) | `5dfaa1e`, `5c7e9d5`. Tyron still has to supply the key |
+| Seller profiles (D-03 final: automatic approval, admin suspend and reinstate) | Done | `a7ec2e0` (it replaced `bda3a30`) |
+| Image uploads (WebP, metadata stripped, 4:3 and 1:1, thumbnails, `/files`), `/me/photo` | Done | `f435972`. D-18 size caps recorded in `f2b5592` |
+| `PATCH /me` (name, phone, country code) | Done, **not pushed** | `22fd418` |
+| Seller submissions (3–5 images, 500 characters, D-04 markup, D-12 re-approval) | **Next** | |
+| Admin moderation (queue, approve creates the product and updates catalog config, reject) | After submissions | The admin session is waiting on it |
+| Orders and checkout (guest checkout, 30-minute hold, delivery fee, forward-only status, late payment), PayFast with a validated ITN | Planned | D-05, D-07, D-09, D-10 |
+| Refunds (24 hours, images required, EFT mark-paid), payouts (D-06), contact, admin CLI (D-19) | Planned | |
+
+**Local services:** Postgres 18 (Windows service `postgresql-x64-18`, **port 5433**) stays running and holds the schema, the catalog seed, the admin and the test users. The API is **not** left running. To start it tomorrow, run `npm run dev` in FastSport_BackEnd (:4000).
 
 ## Admin repo (FastSport_Admin), owned by the admin session
+Status as of end of day 2026-09-27. `main` is clean. It's pushed up to `50d53d1`; only `5bd02ab` isn't pushed.
+
 | Item | Status | Notes |
 |---|---|---|
-| AGENTS.md, CLAUDE.md and README.md | Done | Per the admin session |
-| Scaffold, auth and dashboard | Done | Per the admin session |
-| Submissions, products and pricing, refunds, sales kanban, late payments, About, FAQs, seed | In progress | |
+| AGENTS.md, CLAUDE.md, README.md, Playwright MCP (`.mcp.json`) | Done | `e30b970` |
+| Ported: submission moderation, products and pricing, refund review, sales kanban, late payments, About, FAQs | Done | `70efbb5`, `939e5df`, `eb2c514`. The live contract is adopted for catalog and content (`09c301c`, `8b1b3a4`); screens are gated by `/me` permissions (`7bf0a94`) |
+| Tyron's decisions applied | Done | `3628ace`: demo seed removed (D-17), seller approval UI dropped (D-03), delivery fee always refunded (D-08) |
+| Seller oversight (Active and Suspended, suspend with a reason, reinstate) | Done | `5d9300a`, `b1d08ff` |
+| Refund EFT step (To review and Awaiting EFT, Record EFT payment) | Done, **not pushed** | `5bd02ab`. Built to the planned API shape (assumptions listed in ARCH-02) |
+| Tests | Passing | 101 unit; 111 mocked end-to-end (1 skipped: drag on mobile); typecheck, lint and format clean; 2 of 2 live end-to-end runs against :4000 at `50d53d1` |
+| Next: regenerate types for backend `f435972` (thumbnails, photoUrl); move each feature to generated types as backend `/admin/*` lands (ARCH-01 and ARCH-02); delivery-fee setting screen (D-05); payouts (D-06) | Not started | Waiting on the backend's `/admin/*` contracts |
 
 ## Business decisions that affect the client (Tyron, backend `6d7f9b4`)
 - D-01: show and charge `effectivePriceCents`. Done (the catalog adapter).
@@ -62,12 +77,42 @@ Status key: `Done`, `In progress`, `Blocked (reason)`, `Not started`.
 - D-17: demo products are removed, so there is no product data until submissions land.
 - D-18: 10 MB per image.
 
-## Open questions for Taylor or the business
-- All of D-01 to D-20 in `FastSport_BackEnd/docs/DECISIONS.md`.
+## Open questions and waiting items
+**Taylor**
+- Push the unpushed commits: backend `22fd418` and admin `5bd02ab`. (The client `dev` branch is fully pushed.)
+- Local email: keep the backend's log transport (links read from the API log), or switch to SMTP with a support@ app password?
+- The admin session asks whether it may push without asking first. That permission reached it only through relays.
 - DX-05: is the stray `MXTRADE_TEST` gitlink at the repo root accidental?
-- Should the GitHub Pages workflow (`.github/workflows/static.yml`), which publishes the whole repo, be removed?
+- GitHub Pages workflow: deferred until work reaches main.
+
+**Tyron / business / legal**
+- The Gmail service-account key, and confirmation that support@ is the delegated sender (backend README, "Email (Google Workspace)").
+- A bank-account verification (AVS) provider (a launch blocker, backend TECH_DEBT SEC-02).
+- A legal check of the D-08 24-hour refund window against the ECT Act's 7-day cooling-off period (LEGAL-14).
+- PayFast confirmation that hold-and-pay-later is allowed (D-06).
 
 ## Change log
+- **2026-09-27 (end of day). Where each session stopped:**
+  - **Client:** clean and fully pushed at `dev` (the audit commit is on top).
+    - Done today:
+      - auth, catalog, search, product pages and cart
+      - seller application
+      - profile details and photo
+      - all admin code removed
+      - Next 16 and React 19
+      - docs consolidated into AGENTS.md
+    - Verified live against the local backend.
+    - **Tomorrow:** port seller submit and edit (3–5 images at 4:3, 500 characters, backend markup, D-12) once the backend's submissions milestone lands; then orders and checkout (guest checkout), then refunds.
+  - **Backend:** clean on `main`.
+    - **Tomorrow:** seller submissions, then admin moderation, then orders, PayFast, refunds.
+  - **Admin:** clean on `main`.
+    - **Tomorrow:** regenerate types for thumbnails and photoUrl, then wire each screen to the backend's `/admin/*` contracts as they land.
+  - **How to restart tomorrow:**
+    - Postgres is already running as a service on port 5433.
+    - Start the backend: `npm run dev` in FastSport_BackEnd (:4000).
+    - Start the client: `NEXT_PUBLIC_API_URL=http://localhost:4000/v1 npx next dev -p 3000`.
+    - Start the admin app on :3001.
+    - The test buyer and seller account is `test@fastsport.local`. Ask Taylor for the password; it isn't recorded here.
 - **2026-09-27 (later):**
   - Migration work is on the `dev` branch (Taylor's decision); master stays on Firebase.
   - Client auth switched to the backend.
