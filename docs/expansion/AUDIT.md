@@ -32,6 +32,8 @@ Status key: `Done`, `In progress`, `Blocked (reason)`, `Not started`.
 | Scaffold (health, problem+json, openapi.json) | Done | `3251462` |
 | Auth (JWT with role, 15-minute access, 7-day session, Google, verify, reset) and seeded admin | Done | `3251462`. The session is an absolute 7 days (Taylor confirmed); there is no forced password change for the seeded admin |
 | Catalog, then profile, submissions, orders with PayFast, refunds and contact | Catalog next | |
+| Mailer (Gmail API via a Workspace service account; noreply@ with Reply-To support@) | After catalog | |
+| Local run (Postgres 18 installed natively; Docker isn't installed) | Waiting on Taylor's Postgres install | |
 
 ## Admin repo (FastSport_Admin), owned by the admin session
 | Item | Status | Notes |
