@@ -3,8 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import useAuth from '../lib/useAuth';
 import { useAuthContext } from '../lib/AuthContext';
 import TermsAndConditionsModal from '../components/TermsAndConditionsModal';
-import { updateUserProfile } from '../lib/firestoreHelpers';
-import { uploadMyPhoto } from '../lib/api/profile';
+import { updateMe, uploadMyPhoto } from '../lib/api/profile';
 import {
   ACCOUNT_TYPE_OPTIONS,
   SELLER_STATUS_LABELS,
@@ -154,27 +153,20 @@ export default function ProfilePage() {
     setSaveError('');
     setSaving(true);
     try {
-      await updateUserProfile(user, {
+      // The backend returns the normalised Me, so store that rather than guessing locally.
+      updateProfileLocal(await updateMe({
         firstName: editFirstName,
         lastName: editLastName,
         phone: editPhone,
-        countryCode: editCountryCode,
-      });
-      // Write payload is known (mirrors updateUserProfile's own normalization), so
-      // update the shared profile locally instead of re-reading users/{uid} (PERF-18).
-      const trimmedFirstName = editFirstName.trim();
-      const trimmedLastName = editLastName.trim();
-      updateProfileLocal({
-        firstName: trimmedFirstName,
-        lastName: trimmedLastName,
-        displayName: `${trimmedFirstName} ${trimmedLastName}`.trim(),
-        phone: editPhone.trim(),
-        countryCode: (editCountryCode || '+27').trim(),
-      });
+        countryCode: editCountryCode || '+27',
+      }));
       setSaveSuccess(true);
       setEditing(false);
-    } catch {
-      setSaveError('Failed to save changes. Please try again.');
+    } catch (err) {
+      const fieldMessages = Object.values(getFieldErrors(err));
+      setSaveError(fieldMessages.length > 0
+        ? fieldMessages.join(' ')
+        : toUserMessage(err, 'Failed to save changes. Please try again.'));
     } finally {
       setSaving(false);
     }
