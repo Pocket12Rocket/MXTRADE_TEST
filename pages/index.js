@@ -2,16 +2,12 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import ProductCard from '../components/ProductCard';
 import CarouselControl from '../components/CarouselControl';
-import { fetchLiveProducts, fetchMostClickedProducts, fetchThisWeeksNewProductsByCategory } from '../lib/firestoreHelpers';
+import { fetchNewProducts, fetchPopularProducts } from '../lib/api/catalog';
 import { reportError } from '../lib/userMessage';
 
 /**
- * Why: Home page — PERF-01. Previously called the live-products fetch 4 separate times (once
- * inside fetchMostClickedProducts and once inside each of the three
- * fetchThisWeeksNewProductsByCategory calls), each running its own Firestore query, for four
- * 6-item carousels built from what is otherwise the same underlying live-product list. Now
- * fetches live products exactly once and derives all four carousels from that single result by
- * passing it into the (still-independently-callable) helper functions.
+ * Why: Home page. Each carousel asks the backend for exactly the items it shows (popular by
+ * 7-day views, and new-this-week per category), so no full-catalog download is needed.
  * @returns {JSX.Element} The home page markup (popular carousel + three category carousels).
  */
 export default function Home() {
@@ -37,18 +33,14 @@ export default function Home() {
   useEffect(() => {
     let isMounted = true;
 
-    // Why: single shared fetch (PERF-01) — see the fetchLiveProducts() call below. All four
-    // carousels are derived from this one result instead of each issuing its own query.
+    // Why: four small, cacheable backend reads in parallel, one per carousel.
     const loadHomeCarousels = async () => {
       try {
-        const products = await fetchLiveProducts();
-        if (!isMounted) return;
-
         const [popular, gear, parts, accessories] = await Promise.all([
-          fetchMostClickedProducts(6, products),
-          fetchThisWeeksNewProductsByCategory('gear', 6, products),
-          fetchThisWeeksNewProductsByCategory('parts', 6, products),
-          fetchThisWeeksNewProductsByCategory('accessories', 6, products),
+          fetchPopularProducts({ limit: 6 }),
+          fetchNewProducts({ category: 'gear', limit: 6 }),
+          fetchNewProducts({ category: 'parts', limit: 6 }),
+          fetchNewProducts({ category: 'accessories', limit: 6 }),
         ]);
         if (!isMounted) return;
 

@@ -1,6 +1,6 @@
 
 import { useEffect, useState } from 'react';
-import { fetchFaqs } from '../lib/firestoreHelpers';
+import { fetchFaqs } from '../lib/api/catalog';
 import { toUserMessage } from '../lib/userMessage';
 
 /**

@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import CarouselControl from '../../components/CarouselControl';
-import { fetchProductById } from '../../lib/firestoreHelpers';
+import { fetchProductById, recordProductView } from '../../lib/api/catalog';
 import { useCart } from '../../lib/cartContext';
-import { toUserMessage, reportError } from '../../lib/userMessage';
+import { toUserMessage } from '../../lib/userMessage';
 
 /**
  * Why: Product detail page (client-side fetch, no SSR/SEO). Never render a raw Firestore error —
@@ -177,12 +177,9 @@ export default function ProductDetail() {
       });
   }, [id]);
 
-  // Why: PERF-05/DOS-03 — a client-writable `clickCount` field let anyone game "Popular this
-  // week" (BUG-08) and billed a Firestore write on every anonymous view. Records the view through
-  // a server-side API route instead, deduped per product per browser session (sessionStorage) so
-  // a reload/re-render of the same product in the same tab doesn't double-count it. Fire-and-
-  // forget: never awaited, errors are only logged (ARCH-14), and it doesn't block or depend on
-  // the product fetch above.
+  // Why: counts the view on the backend for "Popular this week", deduped per product per browser
+  // session (sessionStorage) so a reload of the same product in the same tab doesn't
+  // double-count it. Fire-and-forget: `recordProductView` never throws and nothing waits on it.
   useEffect(() => {
     if (!id || typeof window === 'undefined') return;
 
@@ -195,9 +192,7 @@ export default function ProductDetail() {
       // worst case is an extra view counted within this session.
     }
 
-    fetch(`/api/products/${id}/view`, { method: 'POST', keepalive: true }).catch((err) =>
-      reportError('product-view', err)
-    );
+    recordProductView(id);
   }, [id]);
 
   useEffect(() => {
@@ -354,8 +349,8 @@ export default function ProductDetail() {
 
           <div>
             <p className="text-xs font-medium text-slate-500">
-              {Number(product.quantity || 1) > 0 ? (
-                <span className="text-green-600">✓ In Stock ({product.quantity || 1} available)</span>
+              {Number(product.quantity ?? 0) > 0 ? (
+                <span className="text-green-600">✓ In Stock ({product.quantity ?? 0} available)</span>
               ) : (
                 <span className="text-red-600">Out of Stock</span>
               )}
@@ -371,16 +366,16 @@ export default function ProductDetail() {
           <button
             type="button"
             onClick={handleAddToCart}
-            disabled={Number(product.quantity || 1) === 0}
+            disabled={Number(product.quantity ?? 0) === 0}
             className={`mt-2 w-full rounded-2xl px-5 py-3.5 text-sm font-bold uppercase tracking-[0.12em] transition ${
-              Number(product.quantity || 1) === 0
+              Number(product.quantity ?? 0) === 0
                 ? 'cursor-not-allowed bg-slate-300 text-slate-500'
                 : addedToCart
                   ? 'bg-green-500 text-white shadow-lg shadow-green-500/20'
                   : 'bg-[#00CED1] text-white shadow-lg shadow-[#00CED1]/25 hover:-translate-y-0.5 hover:bg-[#00C5CD]'
             }`}
           >
-            {Number(product.quantity || 1) === 0 ? 'Out of Stock' : addedToCart ? 'Added to cart!' : 'Add to cart'}
+            {Number(product.quantity ?? 0) === 0 ? 'Out of Stock' : addedToCart ? 'Added to cart!' : 'Add to cart'}
           </button>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchAboutContent } from '../lib/firestoreHelpers';
+import { fetchAboutContent } from '../lib/api/catalog';
 import { toUserMessage } from '../lib/userMessage';
 
 function renderBoldText(value) {
@@ -24,7 +24,6 @@ export default function About() {
     aboutUsBody: '',
     howItWorksBody: '',
     updatedAt: null,
-    updatedBy: '',
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -41,7 +40,6 @@ export default function About() {
           aboutUsBody: data?.aboutUsBody || '',
           howItWorksBody: data?.howItWorksBody || '',
           updatedAt: data?.updatedAt || null,
-          updatedBy: data?.updatedBy || '',
         });
       })
       .catch((err) => {
