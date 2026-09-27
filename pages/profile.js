@@ -445,26 +445,6 @@ export default function ProfilePage() {
         <div>
           <p className="text-sm uppercase tracking-[0.3em] text-slate-500">Profile</p>
           <h1 className="mt-3 text-3xl font-semibold text-slate-900">My profile</h1>
-          {/* Seller badge and trust score */}
-          {profile?.canSell && (
-            <div className="mt-3 flex items-center gap-3">
-              {sellerProfileForm.sellerBadge === 'gold' && (
-                <span title="Gold Seller" className="inline-flex items-center gap-1 rounded-full bg-yellow-400/80 px-2 py-0.5 text-xs font-bold text-yellow-900">
-                  <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="10" r="9" /></svg>
-                  Gold Seller
-                </span>
-              )}
-              {sellerProfileForm.sellerBadge === 'platinum' && (
-                <span title="Platinum Seller" className="inline-flex items-center gap-1 rounded-full bg-gray-300/80 px-2 py-0.5 text-xs font-bold text-gray-900">
-                  <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="10" r="9" /></svg>
-                  Platinum Seller
-                </span>
-              )}
-              {typeof sellerProfileForm.sellerTrustScore === 'number' && (
-                <span className="ml-2 text-xs font-semibold text-slate-700">Trust Score: {sellerProfileForm.sellerTrustScore}</span>
-              )}
-            </div>
-          )}
         </div>
         {!editing && (
           <button
