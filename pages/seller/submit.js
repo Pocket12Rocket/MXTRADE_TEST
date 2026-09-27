@@ -40,6 +40,9 @@ function SellingPriceInfo({ price }) {
 import useAuth from '../../lib/useAuth';
 import { fetchBikeModelOptions, fetchGearBrandOptions, fetchSubcategoryOptionsForCategories, submitProductRequest } from '../../lib/firestoreHelpers';
 import { toUserMessage } from '../../lib/userMessage';
+import ImageCropDialog from '../../components/ImageCropDialog';
+import { useImageCropQueue } from '../../lib/useImageCropQueue';
+import { LISTING_IMAGE_ASPECT, LISTING_IMAGE_OUTPUT_WIDTH } from '../../lib/cropImage';
 import { BIKE_MODELS_BY_MANUFACTURER, DIRT_BIKE_CATEGORIES, GEAR_BRAND_OPTIONS, GEAR_CONDITION_OPTIONS, GEAR_ITEM_OPTIONS } from '../../lib/dirtBikeCategories';
 
 const SELL_CATEGORY_OPTIONS = [
@@ -376,8 +379,14 @@ export default function SellerSubmit() {
     };
   }, [selectedFilePreviews]);
 
-  const handleFilesChange = (event) => {
-    const incomingFiles = Array.from(event.target.files || []);
+  /**
+   * Why: Adds one cropped photo to the listing, enforcing the 5-image cap after cropping so a
+   * skipped photo doesn't count against the seller.
+   * @param {File} croppedFile - The cropped image from `ImageCropDialog`.
+   * @returns {void}
+   */
+  const handleCroppedFile = (croppedFile) => {
+    const incomingFiles = [croppedFile];
 
     setFiles((prev) => {
       const mergedFiles = mergeUniqueFiles(prev, incomingFiles);
@@ -390,7 +399,18 @@ export default function SellerSubmit() {
       setStatus('');
       return mergedFiles;
     });
+  };
 
+  const cropQueue = useImageCropQueue(handleCroppedFile);
+
+  /**
+   * Why: Every picked photo goes through the 4:3 cropper first so it matches the storefront
+   * cards and carousel exactly.
+   * @param {Event} event - The file input change event.
+   * @returns {void}
+   */
+  const handleFilesChange = (event) => {
+    cropQueue.enqueue(Array.from(event.target.files || []));
     // Allow selecting the same file again in a later pick.
     event.target.value = '';
   };
@@ -672,6 +692,15 @@ export default function SellerSubmit() {
         <p className="text-sm uppercase tracking-[0.3em] text-slate-500">Seller</p>
         <h1 className="mt-3 text-3xl font-semibold text-slate-900">Submit new product</h1>
       </div>
+      <ImageCropDialog
+        file={cropQueue.currentFile}
+        aspect={LISTING_IMAGE_ASPECT}
+        maxWidth={LISTING_IMAGE_OUTPUT_WIDTH}
+        title="Crop listing photo"
+        progressLabel={cropQueue.progressLabel}
+        onConfirm={cropQueue.confirm}
+        onSkip={cropQueue.skip}
+      />
       <form onSubmit={handleSubmit} className="mt-8 space-y-6">
         <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
           <div>

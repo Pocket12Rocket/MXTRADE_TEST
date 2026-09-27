@@ -20,6 +20,9 @@ import {
 } from '../../lib/firestoreHelpers';
 import { BIKE_MODELS_BY_MANUFACTURER, DIRT_BIKE_CATEGORIES, GEAR_BRAND_OPTIONS, GEAR_CONDITION_OPTIONS, GEAR_ITEM_OPTIONS } from '../../lib/dirtBikeCategories';
 import { toUserMessage } from '../../lib/userMessage';
+import ImageCropDialog from '../../components/ImageCropDialog';
+import { useImageCropQueue } from '../../lib/useImageCropQueue';
+import { LISTING_IMAGE_ASPECT, LISTING_IMAGE_OUTPUT_WIDTH } from '../../lib/cropImage';
 
 const HIDDEN_SUBMISSION_KEYS = new Set([
   'id',
@@ -575,8 +578,13 @@ export default function SellerSubmissions() {
     setIsResubmitting(false);
   };
 
-  const handleEditNewFilesChange = (event) => {
-    const incomingFiles = Array.from(event.target.files || []);
+  /**
+   * Why: Adds one cropped photo to the edit, capped so kept + new photos never exceed 5.
+   * @param {File} croppedFile - The cropped image from `ImageCropDialog`.
+   * @returns {void}
+   */
+  const handleEditCroppedFile = (croppedFile) => {
+    const incomingFiles = [croppedFile];
 
     setEditNewFiles((prev) => {
       const mergedFiles = mergeUniqueFiles(prev, incomingFiles);
@@ -590,7 +598,17 @@ export default function SellerSubmissions() {
       setError('');
       return mergedFiles;
     });
+  };
 
+  const editCropQueue = useImageCropQueue(handleEditCroppedFile);
+
+  /**
+   * Why: New photos on an edit go through the same 4:3 cropper as new listings.
+   * @param {Event} event - The file input change event.
+   * @returns {void}
+   */
+  const handleEditNewFilesChange = (event) => {
+    editCropQueue.enqueue(Array.from(event.target.files || []));
     // Allow selecting the same file again in a later pick.
     event.target.value = '';
   };
@@ -952,6 +970,15 @@ export default function SellerSubmissions() {
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-6">
+      <ImageCropDialog
+        file={editCropQueue.currentFile}
+        aspect={LISTING_IMAGE_ASPECT}
+        maxWidth={LISTING_IMAGE_OUTPUT_WIDTH}
+        title="Crop listing photo"
+        progressLabel={editCropQueue.progressLabel}
+        onConfirm={editCropQueue.confirm}
+        onSkip={editCropQueue.skip}
+      />
       <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--mx-tertiary)]">Seller centre</p>

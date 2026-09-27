@@ -11,7 +11,9 @@
     "migrate:seller-public-profiles": "node scripts/migrate-seller-public-profiles.js",
     "migrate:seller-public-profiles:apply": "node scripts/migrate-seller-public-profiles.js --apply",
     "migrate:active-status": "node scripts/migrate-active-to-listed.js",
-    "migrate:active-status:apply": "node scripts/migrate-active-to-listed.js --apply"
+    "migrate:active-status:apply": "node scripts/migrate-active-to-listed.js --apply",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -24,11 +26,20 @@
     "nodemailer": "^8.0.7",
     "react": "18.3.1",
     "react-dom": "18.3.1",
+    "react-easy-crop": "^6.2.3",
     "uuid": "^14.0.1"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.4.19",
+    "jsdom": "^30.1.1",
     "postcss": "^8.4.35",
-    "tailwindcss": "^3.4.4"
+    "tailwindcss": "^3.4.4",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
   }
 }

@@ -11,7 +11,9 @@ import {
   uploadProfilePicture,
   updateUserProfile,
 } from '../lib/firestoreHelpers';
-import { compressImage } from '../lib/compressImage';
+import ImageCropDialog from '../components/ImageCropDialog';
+import { useImageCropQueue } from '../lib/useImageCropQueue';
+import { AVATAR_IMAGE_ASPECT, AVATAR_IMAGE_OUTPUT_WIDTH } from '../lib/cropImage';
 import { toUserMessage } from '../lib/userMessage';
 
 const COUNTRY_CODES = [
@@ -189,8 +191,38 @@ export default function ProfilePage() {
     setShowTermsModal(true);
   };
 
-  const handleFileChange = async (event) => {
+  /**
+   * Why: Uploads the avatar once the user has cropped it to a square; the cropper already
+   * bounds it to 512px, so no separate compression pass is needed.
+   * @param {File} croppedFile - The square-cropped image from `ImageCropDialog`.
+   * @returns {Promise<void>}
+   */
+  const handleCroppedAvatar = async (croppedFile) => {
+    setUploadError('');
+    setUploading(true);
+    try {
+      const url = await uploadProfilePicture(user, croppedFile);
+      // uploadProfilePicture writes exactly { photoURL: url } to users/{uid} — payload
+      // is known, so update locally instead of re-reading (PERF-18).
+      updateProfileLocal({ photoURL: url });
+      setPhotoURL(url);
+    } catch {
+      setUploadError('Upload failed. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const avatarCropQueue = useImageCropQueue(handleCroppedAvatar);
+
+  /**
+   * Why: Validates the picked file type, then opens the square cropper for it.
+   * @param {Event} event - The file input change event.
+   * @returns {void}
+   */
+  const handleFileChange = (event) => {
     const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) return;
 
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -200,24 +232,7 @@ export default function ProfilePage() {
     }
 
     setUploadError('');
-    setUploading(true);
-    try {
-      const optimizedFile = await compressImage(file, { maxSizeBytes: 5 * 1024 * 1024 });
-      if (optimizedFile.size > 5 * 1024 * 1024) {
-        setUploadError('Could not compress image under 5 MB. Please choose a smaller image.');
-        return;
-      }
-      const url = await uploadProfilePicture(user, optimizedFile);
-      // uploadProfilePicture writes exactly { photoURL: url } to users/{uid} — payload
-      // is known, so update locally instead of re-reading (PERF-18).
-      updateProfileLocal({ photoURL: url });
-      setPhotoURL(url);
-    } catch {
-      setUploadError('Upload failed. Please try again.');
-    } finally {
-      setUploading(false);
-      event.target.value = '';
-    }
+    avatarCropQueue.enqueue([file]);
   };
 
   // Dismiss success banner after 4 seconds
@@ -418,6 +433,15 @@ export default function ProfilePage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+      <ImageCropDialog
+        file={avatarCropQueue.currentFile}
+        aspect={AVATAR_IMAGE_ASPECT}
+        maxWidth={AVATAR_IMAGE_OUTPUT_WIDTH}
+        cropShape="round"
+        title="Crop profile picture"
+        onConfirm={avatarCropQueue.confirm}
+        onSkip={avatarCropQueue.skip}
+      />
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
