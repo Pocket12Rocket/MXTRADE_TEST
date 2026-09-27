@@ -4,8 +4,6 @@ import useAuth from '../lib/useAuth';
 import { useAuthContext } from '../lib/AuthContext';
 import TermsAndConditionsModal from '../components/TermsAndConditionsModal';
 import {
-  acceptSellerTermsAndConditions,
-  acceptTermsAndConditions,
   fetchSellerPrivateProfile,
   upsertSellerPrivateProfile,
   uploadProfilePicture,
@@ -15,6 +13,8 @@ import ImageCropDialog from '../components/ImageCropDialog';
 import { useImageCropQueue } from '../lib/useImageCropQueue';
 import { AVATAR_IMAGE_ASPECT, AVATAR_IMAGE_OUTPUT_WIDTH } from '../lib/cropImage';
 import { toUserMessage } from '../lib/userMessage';
+import { acceptSellerTerms, acceptTerms } from '../lib/api/auth';
+import { BUYER_TERMS_VERSION, SELLER_TERMS_VERSION } from '../lib/termsVersions';
 
 const COUNTRY_CODES = [
   { cc: 'US', code: '+1', name: 'United States' },
@@ -77,7 +77,7 @@ const countryCodeToFlag = (cc) => {
 };
 
 export default function ProfilePage() {
-  const { user, profile, loading, refreshProfile } = useAuth();
+  const { user, profile, loading } = useAuth();
   // updateProfileLocal isn't part of useAuth()'s public return shape (kept identical to
   // avoid touching other consumers) — read it straight from the shared context here so
   // known-payload saves below can skip the extra users/{uid} read (PERF-18).
@@ -123,7 +123,7 @@ export default function ProfilePage() {
   const [showSellerTermsModal, setShowSellerTermsModal] = useState(false);
   const [hasAcceptedSellerTerms, setHasAcceptedSellerTerms] = useState(false);
 
-  const currentPhoto = photoURL || profile?.photoURL || null;
+  const currentPhoto = photoURL || profile?.photoUrl || null;
   const initials = profile
     ? `${(profile.firstName || '').charAt(0)}${(profile.lastName || '').charAt(0)}`.toUpperCase()
     : '?';
@@ -202,9 +202,8 @@ export default function ProfilePage() {
     setUploading(true);
     try {
       const url = await uploadProfilePicture(user, croppedFile);
-      // uploadProfilePicture writes exactly { photoURL: url } to users/{uid} — payload
-      // is known, so update locally instead of re-reading (PERF-18).
-      updateProfileLocal({ photoURL: url });
+      // The upload returns the new URL, so update locally instead of re-reading /me.
+      updateProfileLocal({ photoUrl: url });
       setPhotoURL(url);
     } catch {
       setUploadError('Upload failed. Please try again.');
@@ -253,7 +252,7 @@ export default function ProfilePage() {
       setSellerProfileLoading(true);
       setSellerProfileError('');
       try {
-        const sellerPrivateProfile = await fetchSellerPrivateProfile(user.uid);
+        const sellerPrivateProfile = await fetchSellerPrivateProfile(user.id);
         if (!isMounted) {
           return;
         }
@@ -372,12 +371,10 @@ export default function ProfilePage() {
     setHasAcceptedSellerTerms(false);
 
     try {
-      await acceptSellerTermsAndConditions(user);
-      // acceptSellerTermsAndConditions writes a serverTimestamp() — the resolved value
-      // isn't known client-side, so re-read rather than guess it via updateProfileLocal.
-      await refreshProfile(user);
-    } catch {
-      setSellerProfileError('Could not record seller terms acceptance. Please try again.');
+      // The backend returns the updated Me, so no extra /me read is needed.
+      updateProfileLocal(await acceptSellerTerms(SELLER_TERMS_VERSION));
+    } catch (err) {
+      setSellerProfileError(toUserMessage(err, 'Could not record seller terms acceptance. Please try again.'));
       return;
     }
 
@@ -394,13 +391,12 @@ export default function ProfilePage() {
     setHasAcceptedTerms(false);
 
     try {
-      await acceptTermsAndConditions(user);
-      // acceptTermsAndConditions writes a serverTimestamp() — the resolved value isn't
-      // known client-side, so re-read rather than guess it via updateProfileLocal.
-      await refreshProfile(user);
-    } catch {
-      setSaveError('Could not record terms acceptance. Please try again.');
-      setSellerProfileError('Could not record terms acceptance. Please try again.');
+      // The backend returns the updated Me, so no extra /me read is needed.
+      updateProfileLocal(await acceptTerms(BUYER_TERMS_VERSION));
+    } catch (err) {
+      const termsMessage = toUserMessage(err, 'Could not record terms acceptance. Please try again.');
+      setSaveError(termsMessage);
+      setSellerProfileError(termsMessage);
       return;
     }
 
@@ -413,8 +409,9 @@ export default function ProfilePage() {
     ? `****${sellerProfileForm.accountNumber.slice(-4)}`
     : 'Not set';
   const hasCompletedSellerProfile = Boolean(profile?.sellerProfileComplete && profile?.canSell);
-  const hasAcceptedTermsOnce = Boolean(profile?.termsAcceptedAt || profile?.termsAcceptedVersion);
-  const hasAcceptedSellerTermsOnce = Boolean(profile?.sellerTermsAcceptedAt || profile?.sellerTermsAcceptedVersion);
+  // Why: the backend flags when the accepted version is missing or out of date.
+  const hasAcceptedTermsOnce = Boolean(profile?.termsAcceptedVersion) && !profile?.termsReacceptRequired;
+  const hasAcceptedSellerTermsOnce = Boolean(profile?.sellerTermsAcceptedVersion) && !profile?.sellerTermsReacceptRequired;
 
   if (loading) {
     return <p>Loading profile...</p>;
@@ -871,7 +868,7 @@ export default function ProfilePage() {
         isSubmitting={sellerProfileSaving}
         confirmLabel="I agree and save seller profile"
         title="FastSport Seller Terms & Conditions"
-        subtitle="Effective Date: 2026-07-01"
+        subtitle={`Effective Date: ${SELLER_TERMS_VERSION}`}
         mode="seller"
         checkboxLabel="I have read and agree to the seller terms and conditions"
       />

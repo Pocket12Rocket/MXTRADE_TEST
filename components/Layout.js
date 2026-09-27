@@ -1,4 +1,5 @@
 import Header from './Header';
+import TermsReacceptGate from './TermsReacceptGate';
 import { useRouter } from 'next/router';
 import useAuth from '../lib/useAuth';
 
@@ -62,6 +63,7 @@ export default function Layout({ children }) {
   return (
     <div className="flex min-h-screen flex-col bg-[#c4c9d1] text-slate-900">
       <Header />
+      <TermsReacceptGate />
       <main className="mx-auto w-full max-w-[1650px] flex-1 px-3 py-5 sm:px-6 sm:py-8 lg:px-8">
         {children}
       </main>

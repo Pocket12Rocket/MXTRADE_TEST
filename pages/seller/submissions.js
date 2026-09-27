@@ -371,13 +371,13 @@ export default function SellerSubmissions() {
 
   useEffect(() => {
     if (!loading && user) {
-      fetchSellerSubmissions(user.uid)
+      fetchSellerSubmissions(user.id)
         .then(setSubmissions)
         .catch((err) => {
           setError(toUserMessage(err, "We couldn't load your submissions right now. Please try again."));
         });
 
-      fetchSellerLiveProducts(user.uid)
+      fetchSellerLiveProducts(user.id)
         .then(setProducts)
         .catch((err) => {
           setError(toUserMessage(err, "We couldn't load your listings right now. Please try again."));
@@ -873,14 +873,14 @@ export default function SellerSubmissions() {
       if (editingListingType === 'product') {
         await resubmitSellerProductForApproval({ product: editingSubmission, updates: updatesWithImages });
         const [refreshedProducts, refreshedSubmissions] = await Promise.all([
-          fetchSellerLiveProducts(user.uid),
-          fetchSellerSubmissions(user.uid),
+          fetchSellerLiveProducts(user.id),
+          fetchSellerSubmissions(user.id),
         ]);
         setProducts(refreshedProducts);
         setSubmissions(refreshedSubmissions);
       } else {
         await updateSellerSubmission(editingSubmission.id, updatesWithImages);
-        const refreshedSubmissions = await fetchSellerSubmissions(user.uid);
+        const refreshedSubmissions = await fetchSellerSubmissions(user.id);
         setSubmissions(refreshedSubmissions);
         const refreshedSubmission = refreshedSubmissions.find((item) => item.id === editingSubmission.id);
         if (refreshedSubmission) {

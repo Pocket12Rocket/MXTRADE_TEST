@@ -1,10 +1,22 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { auth } from '../lib/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { createUserProfile } from '../lib/firestoreHelpers';
+import {
+  forgotPassword,
+  getGoogleSignInUrl,
+  login,
+  register,
+  resendVerification,
+} from '../lib/api/auth';
+import { useAuthContext } from '../lib/AuthContext';
 import TermsAndConditionsModal from '../components/TermsAndConditionsModal';
 import { toUserMessage } from '../lib/userMessage';
+
+// Why: friendly copy for the `?error=` codes the backend's Google callback redirects back with.
+const GOOGLE_ERROR_MESSAGES = {
+  GOOGLE_AUTH_UNAVAILABLE: 'Google sign-in is not available right now. Please use your email and password.',
+  GOOGLE_AUTH_FAILED: "We couldn't sign you in with Google. Please try again.",
+  GOOGLE_EMAIL_NOT_VERIFIED: 'Your Google email address is not verified. Please verify it with Google or use email and password.',
+};
 
 export default function Login() {
       // Handle confirm password change and blur
@@ -26,6 +38,7 @@ export default function Login() {
     const defaultInputClass = "mt-2 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 w-full focus:outline-none";
     const requiredSignupInputClass = "mt-2 rounded-3xl border border-red-300 bg-red-50 px-4 py-3 w-full focus:outline-none";
   const router = useRouter();
+  const { setSignedInUser } = useAuthContext();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mode, setMode] = useState('login');
@@ -81,24 +94,29 @@ export default function Login() {
     return String.fromCodePoint(...codePoints);
   };
 
-  // useEffect for message removed (no default info message)
+  // Why: the backend's Google callback redirects failures back here as `?error=<code>`.
+  useEffect(() => {
+    if (!router.isReady) return;
+    const errorCode = router.query.error;
+    if (errorCode) {
+      setMessage(GOOGLE_ERROR_MESSAGES[errorCode] || GOOGLE_ERROR_MESSAGES.GOOGLE_AUTH_FAILED);
+    }
+  }, [router.isReady, router.query.error]);
 
   /**
-   * Why: Single place that turns a Firebase Auth error into the sentence shown on the login/
-   * register form — routes through the shared `toUserMessage()` helper (ARCH-14) instead of a
-   * hand-copied code-to-sentence map, so this page stays in sync with every other error mapping
-   * in the app. `auth/email-already-in-use` additionally switches the form to login mode, since
-   * that's this page's own UX decision rather than message text.
-   * @param {*} error - The error thrown by a `firebase/auth` call (has a `.code` such as
-   *   `auth/wrong-password`).
+   * Why: Single place that turns a backend auth problem into the sentence shown on the login/
+   * register form via the shared `toUserMessage()` helper. An unverified email switches to the
+   * "check your email" screen (with a resend button) instead of just showing text.
+   * @param {*} error - The error thrown by a `lib/api/auth` call (an `ApiProblemError`).
    * @returns {void}
    * @example
-   * try { await signInWithEmailAndPassword(auth, email, password); }
-   * catch (error) { handleAuthError(error); }
+   * try { await login(email, password); } catch (error) { handleAuthError(error); }
    */
   const handleAuthError = (error) => {
-    if (error?.code === 'auth/email-already-in-use') {
-      setMode('login');
+    if (error?.code === 'AUTH_EMAIL_NOT_VERIFIED') {
+      setPendingVerification(true);
+      setMessage('Your email is not verified yet. Use the link we emailed you, or resend it below.');
+      return;
     }
 
     setMessage(toUserMessage(error, 'Something went wrong. Please try again.'));
@@ -112,16 +130,14 @@ export default function Login() {
     setRegistering(true);
     setMessage('');
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      await createUserProfile(userCredential.user, 'customer', {
-        firstName,
-        lastName,
-        phone,
+      await register({
+        email: email.trim(),
+        password,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        phone: phone.trim(),
         countryCode,
-        hasAcceptedTerms: true,
       });
-      await sendEmailVerification(userCredential.user);
-      await auth.signOut();
       setPendingVerification(true);
       setShowTermsModal(false);
     } catch (error) {
@@ -135,14 +151,8 @@ export default function Login() {
     event.preventDefault();
     if (mode === 'login') {
       try {
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        if (!userCredential.user.emailVerified) {
-          await sendEmailVerification(userCredential.user);
-          await auth.signOut();
-          setPendingVerification(true);
-          setMessage('Your account is not verified yet. We have sent a verification link to your email address.');
-          return;
-        }
+        const me = await login(email.trim(), password);
+        setSignedInUser(me);
         setMessage('Signed in successfully. Redirecting...');
         await router.push('/');
       } catch (error) {
@@ -178,48 +188,36 @@ export default function Login() {
     const normalizedEmail = email.trim().toLowerCase();
 
     try {
-      const response = await fetch('/api/auth/password-reset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: normalizedEmail }),
-      });
-
-      const data = await response.json().catch(() => ({}));
-      if (response.ok) {
-        setResetSent(true);
-        return;
-      }
-
-      // Why: the API route only ever returns a curated, safe-to-show message here (see
-      // pages/api/auth/password-reset.js) — never a raw SMTP/internal error — so it's fine to
-      // render directly.
-      setMessage(data?.message || 'We could not send the password reset email right now. Please try again later.');
+      await forgotPassword(normalizedEmail);
+      setResetSent(true);
     } catch (error) {
       setMessage(toUserMessage(error, 'We could not send the password reset email right now. Please try again later.'));
     }
   };
 
   const handleResendVerification = async () => {
+    if (!email.trim()) {
+      setMessage('Please enter your email address, then resend.');
+      return;
+    }
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      await sendEmailVerification(userCredential.user);
-      await auth.signOut();
-      setMessage('Verification email resent. Please check your inbox.');
-    } catch {
-      setMessage('Could not resend verification email. Please try logging in again.');
+      await resendVerification(email.trim().toLowerCase());
+      setMessage("If your account still needs verifying, we've sent a new link. Please check your inbox.");
+    } catch (error) {
+      setMessage(toUserMessage(error, 'Could not resend the verification email. Please try again later.'));
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      // Optional: create user profile in Firestore if new user
-      setMessage('Signed in with Google. Redirecting...');
-      await router.push('/');
-    } catch (error) {
-      setMessage(toUserMessage(error, 'Something went wrong signing you in with Google. Please try again.'));
-    }
+  /**
+   * Why: Google sign-in is a full-page redirect through the backend (state + PKCE); the backend
+   * sets the session cookies and sends the browser back to the home page, or to
+   * `/login?error=<code>` on failure.
+   * @returns {void}
+   * @example
+   * <button type="button" onClick={handleGoogleSignIn}>Continue with Google</button>
+   */
+  const handleGoogleSignIn = () => {
+    window.location.assign(getGoogleSignInUrl('/'));
   };
 
   if (mode === 'forgot') {
@@ -237,7 +235,7 @@ export default function Login() {
                 <p className="text-sm uppercase tracking-[0.3em] text-slate-500">Password recovery</p>
                 <h1 className="mt-2 text-2xl font-semibold text-slate-900">Check your inbox</h1>
                 <p className="mt-3 text-slate-600">
-                  We sent a secure reset link to <span className="font-medium text-slate-900">{email}</span>. Follow it to choose a new password.
+                  If an account exists for <span className="font-medium text-slate-900">{email}</span>, we&apos;ve sent a secure reset link. Follow it to choose a new password.
                 </p>
               </div>
             </div>
@@ -436,6 +434,13 @@ export default function Login() {
         ) : null}
         <button className="w-full rounded-3xl bg-slate-900 px-4 py-3 text-white hover:bg-slate-800">
           {mode === 'login' ? 'Log in' : 'Register'}
+        </button>
+        <button
+          type="button"
+          onClick={handleGoogleSignIn}
+          className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-slate-700 hover:bg-slate-50"
+        >
+          Continue with Google
         </button>
         <p className="text-center text-sm text-slate-600">
           {mode === 'login' ? 'Need an account?' : 'Already have an account?'}{' '}

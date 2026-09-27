@@ -16,7 +16,7 @@ export default function SellerDashboard() {
 
   useEffect(() => {
     if (!loading && user) {
-      fetchSellerSubmissions(user.uid)
+      fetchSellerSubmissions(user.id)
         .then(setSubmissions)
         .catch((err) => setError(toUserMessage(err, "We couldn't load your submissions right now. Please try again.")));
     }

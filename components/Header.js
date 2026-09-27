@@ -1,15 +1,13 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { signOut } from 'firebase/auth';
 import { DIRT_BIKE_CATEGORIES } from '../lib/dirtBikeCategories';
 import { useCart } from '../lib/cartContext';
-import useAuth from '../lib/useAuth';
 import { subscribeAdminBadgeCounts } from '../lib/firestoreHelpers';
 import CartDrawer from './CartDrawer';
 import CategoryTabs from './CategoryTabs';
 import MobileNavigationDrawer from './MobileNavigationDrawer';
-import { auth } from '../lib/firebase';
+import { useAuthContext } from '../lib/AuthContext';
 
 const navItems = [
   { href: '/shop', label: 'Shop' },
@@ -38,7 +36,7 @@ const topCategoryTabs = [
 export default function Header() {
   const router = useRouter();
   const { totalItems } = useCart();
-  const { user, profile } = useAuth();
+  const { user, profile, signOut } = useAuthContext();
   const [activeTopTab, setActiveTopTab] = useState(null);
   const [isMegaMenuOpen, setIsMegaMenuOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -124,7 +122,7 @@ export default function Header() {
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
+    await signOut();
     setIsProfileMenuOpen(false);
     router.push('/login');
   };
@@ -268,15 +266,15 @@ export default function Header() {
                   type="button"
                   onClick={() => setIsProfileMenuOpen((currentValue) => !currentValue)}
                   className={`flex h-9 w-9 items-center justify-center rounded-xl border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mx-primary)] focus-visible:ring-offset-2 ${
-                    profile?.photoURL
+                    profile?.photoUrl
                       ? 'border-slate-300 bg-white hover:border-[var(--mx-primary)]'
                       : 'border-[var(--mx-tertiary)] bg-[var(--mx-primary)] text-white hover:bg-[var(--mx-tertiary)]'
                   }`}
                   aria-label="Open profile menu"
                 >
-                  {profile?.photoURL ? (
+                  {profile?.photoUrl ? (
                     <img
-                      src={profile.photoURL}
+                      src={profile.photoUrl}
                       alt="Profile"
                       className="h-full w-full rounded-[11px] object-cover"
                     />
