@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { DIRT_BIKE_CATEGORIES } from '../lib/dirtBikeCategories';
 import { useCart } from '../lib/cartContext';
-import { subscribeAdminBadgeCounts } from '../lib/firestoreHelpers';
 import CartDrawer from './CartDrawer';
 import CategoryTabs from './CategoryTabs';
 import MobileNavigationDrawer from './MobileNavigationDrawer';
@@ -12,8 +11,6 @@ import { useAuthContext } from '../lib/AuthContext';
 const navItems = [
   { href: '/shop', label: 'Shop' },
   { href: '/seller/dashboard', label: 'Seller' },
-  { href: '/admin/dashboard', label: 'Admin' },
-  { href: '/admin/sales', label: 'Sales' },
   { href: '/about', label: 'About' },
   { href: '/contact', label: 'Contact' },
   { href: '/faq', label: 'FAQ' },
@@ -44,24 +41,14 @@ export default function Header() {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [brandImageError, setBrandImageError] = useState(false);
-  const isAdminUser = Boolean(user && profile?.role === 'admin');
   const isShopRoute = router.pathname === '/shop' || router.pathname.startsWith('/shop/');
   const isProductRoute = router.pathname === '/product/[id]';
   const showMegaMenu = !isShopRoute && !isProductRoute;
-  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const brandLogoSrc = process.env.NEXT_PUBLIC_BRAND_LOGO || '/images/Fast%20Sports%20main%20Logo.png';
 
   const headerNavItems = navItems.filter((item) => {
     if (item.href === '/seller/dashboard') {
       return false;
-    }
-
-    if (item.href === '/admin/dashboard') {
-      return isAdminUser;
-    }
-
-    if (item.href === '/admin/sales') {
-      return isAdminUser;
     }
 
     return true;
@@ -84,25 +71,6 @@ export default function Header() {
     setIsMobileMenuOpen(false);
     setIsProfileMenuOpen(false);
   }, [router.asPath]);
-
-  // Why: PERF-03 — the pending-approval badge used to poll every 30s (even in background tabs),
-  // downloading full result sets just to count them. Now it holds a single pair of realtime
-  // listeners (via subscribeAdminBadgeCounts), attached only while the signed-in user is an
-  // admin and detached immediately on sign-out/unmount or when isAdminUser flips false.
-  useEffect(() => {
-    if (!isAdminUser) {
-      setPendingApprovalCount(0);
-      return undefined;
-    }
-
-    const unsubscribe = subscribeAdminBadgeCounts((count) => {
-      setPendingApprovalCount(count);
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [isAdminUser]);
 
   const handleTopTabClick = (tab) => {
     setActiveTopTab(tab);
@@ -253,11 +221,6 @@ export default function Header() {
                 className="relative inline-flex items-center text-xs font-semibold uppercase tracking-[0.1em] text-slate-600 hover:text-slate-900"
               >
                 {item.label}
-                {item.href === '/admin/dashboard' && pendingApprovalCount > 0 ? (
-                  <span className="absolute -right-4 -top-2 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold text-white">
-                    {pendingApprovalCount > 99 ? '99+' : pendingApprovalCount}
-                  </span>
-                ) : null}
               </Link>
             ))}
             {user ? (
@@ -384,7 +347,6 @@ export default function Header() {
       onClose={() => setIsMobileMenuOpen(false)}
       items={headerNavItems}
       isSignedIn={Boolean(user)}
-      pendingApprovalCount={pendingApprovalCount}
       onLogout={handleLogout}
     />
     </>

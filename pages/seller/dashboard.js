@@ -37,7 +37,7 @@ export default function SellerDashboard() {
     );
   }
 
-  if (!profile?.canSell && profile?.role !== 'admin') {
+  if (!profile?.canSell) {
     return (
       <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
         <p className="text-slate-600">Selling is not enabled on your account yet. Complete your profile before you can list products.</p>

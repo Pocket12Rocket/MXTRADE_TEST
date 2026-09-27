@@ -13,13 +13,12 @@ import ListItemText from '@mui/material/ListItemText';
  * @param {() => void} props.onClose - Closes the drawer.
  * @param {Array<{href: string, label: string}>} props.items - Primary navigation links.
  * @param {boolean} props.isSignedIn - Whether signed-in-only actions are available.
- * @param {number} props.pendingApprovalCount - Admin badge count.
  * @param {() => void} props.onLogout - Signs the user out.
  * @returns {JSX.Element} A left-side navigation drawer for compact screens.
  * @example
- * <MobileNavigationDrawer open={open} onClose={close} items={items} isSignedIn={false} pendingApprovalCount={0} onLogout={logout} />
+ * <MobileNavigationDrawer open={open} onClose={close} items={items} isSignedIn={false} onLogout={logout} />
  */
-export default function MobileNavigationDrawer({ open, onClose, items, isSignedIn, pendingApprovalCount, onLogout }) {
+export default function MobileNavigationDrawer({ open, onClose, items, isSignedIn, onLogout }) {
   return (
     <Drawer
       anchor="right"
@@ -43,11 +42,6 @@ export default function MobileNavigationDrawer({ open, onClose, items, isSignedI
                 primary={item.label}
                 primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}
               />
-              {item.href === '/admin/dashboard' && pendingApprovalCount > 0 ? (
-                <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                  {pendingApprovalCount > 99 ? '99+' : pendingApprovalCount}
-                </span>
-              ) : null}
             </ListItemButton>
           ))}
           <ListItemButton component={Link} href="/profile/orders" onClick={onClose} sx={{ borderRadius: '12px', px: 1.5, py: 1.25, color: '#334155' }}>

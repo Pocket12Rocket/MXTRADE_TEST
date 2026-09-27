@@ -649,7 +649,7 @@ export default function SellerSubmit() {
     );
   }
 
-  if (!profile?.canSell && profile?.role !== 'admin') {
+  if (!profile?.canSell) {
     return (
       <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
         <p className="text-slate-600">Your account is not enabled for selling yet. Complete your profile to unlock product listings.</p>
