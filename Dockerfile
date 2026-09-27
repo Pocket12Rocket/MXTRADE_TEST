@@ -1,4 +1,4 @@
-# Why: Multi-stage build for self-hosting on Docker/k3s. Stage 1 installs deps, stage 2 builds
+# Why: Multi-stage build for later self-hosting (not used for local dev). Stage 1 installs deps, stage 2 builds
 # the Next.js standalone server, stage 3 is a minimal runtime running as a non-root user.
 # NEXT_PUBLIC_* values are inlined into the browser bundle at build time, so they are build
 # args, not runtime env vars.

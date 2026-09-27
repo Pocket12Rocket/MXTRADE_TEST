@@ -1,8 +1,8 @@
 # AGENTS.md: Fast Sport client (MXTRADE_TEST)
 
-This is the guidance for any AI coding agent or human contributor working in this repository.
-`CLAUDE.md` is a short pointer to it. If you're an AI agent, read this whole document before
-making changes.
+This is the single source of truth for any AI coding agent (Claude, Codex, ...) or human
+contributor working in this repository. `CLAUDE.md` only points here. If you're an AI agent, read
+this whole document before making changes.
 
 ## Current state: pre-launch, migrating off Firebase
 
@@ -70,8 +70,10 @@ session:
 - **Payments:** PayFast, sandbox only, handled entirely by the backend.
 - **Email:** sent only by the backend, through the Gmail API with a Workspace service account
   (D-21). The client never sends email.
-- **Hosting:** a self-hosted Ubuntu server running Docker, possibly k3s. The Dockerfile is at the
-  repo root and runs on Node 24 LTS.
+- **Running it:** for now everything runs **locally only**: this app on :3000, the admin app on
+  :3001 and the API on :4000 against a local Postgres 18. Deployment (a self-hosted Ubuntu server)
+  is out of scope until the local stack works end to end. The root `Dockerfile` (Node 24 LTS) is
+  kept for later, but isn't part of the local workflow.
   - Production hosts: `fastsport.co.za` (client), `admin.fastsport.co.za`,
     `api.fastsport.co.za`.
   - Local ports: client 3000, admin 3001, API 4000.
@@ -117,7 +119,7 @@ lib/
 tests/                      Vitest suites (lib/, components/, pages/) and setup.js
 docs/expansion/             Cross-repo plan and progress audit
 docs/TECH_DEBT.md           Issue register (read before starting work)
-Dockerfile, .dockerignore   Multi-stage standalone image (Node 24 LTS, non-root)
+Dockerfile, .dockerignore   Standalone image for later deployment (not used locally)
 ```
 
 **Oddities:** `MXTRADE_TEST/` at the root is an empty, orphaned gitlink (TECH_DEBT DX-05); leave
@@ -226,13 +228,29 @@ Add or update Vitest tests with every logic change (`tests/lib`, `tests/componen
 - Never trust the client for money, stock, status or roles; the backend decides.
 - The session cookies are httpOnly; don't try to read them. Every state-changing request must
   carry the `X-Requested-With: FastSport` header, which `apiClient` adds automatically.
-- Never put a secret in a `NEXT_PUBLIC_*` variable, and never commit `.env*` files or print their
-  contents.
+- Never put a secret in a `NEXT_PUBLIC_*` variable, and never commit `.env*` files.
+- **Never open, print or otherwise surface the contents of `.env.local`** (or any `.env*` other
+  than `.env.example`), whether in conversation, in a file you write, or in command output. Use
+  `.env.example` for variable names.
 - Render API text as plain text. Content bodies (About, FAQ) interpret only `**bold**`; never use
   `dangerouslySetInnerHTML`.
 - `returnTo` values for Google sign-in must be relative paths (`getGoogleSignInUrl` enforces
   this).
 - Never log tokens, emails or user objects.
+
+## Agent sessions and communication
+
+- Three Claude sessions work in parallel: **"client"** (this repo), **"admin"**
+  (`FastSport_Admin`) and **"backend"** (`FastSport_BackEnd`). Each edits only its own repo.
+- They coordinate through SendMessage using those names. Relay any cross-repo requirement from
+  the user to the sessions it affects.
+- Ask for missing API fields or behaviour from "backend". Ask "admin" about admin features. Never
+  edit another repo.
+- In local development, email goes to the backend's log, so ask "backend" for verification and
+  password-reset links.
+- **When you're unsure what the user wants, ask rather than assume**, especially around
+  payments, pricing, order status or security-sensitive behaviour. Business-rule questions belong
+  in `FastSport_BackEnd/docs/DECISIONS.md`, for the business to answer.
 
 ## Workflow for agents
 
@@ -241,8 +259,9 @@ Add or update Vitest tests with every logic change (`tests/lib`, `tests/componen
    `SEC-`, `BUG-`, `ARCH-`, `DX-`, `DOS-`, `LEGAL-`), rather than silently fixing it.
    - Tables are ordered by severity. IDs are never reused.
    - A fixed row is deleted and recorded in the `## Fixed log` with its commit hash.
-3. Verify in the running app with Playwright against the local backend, and say what you actually
-   verified. Create your own clearly named test data, and don't modify others' records.
+3. **Verify UI changes in the browser; don't assert from reading code.** Use the Playwright MCP
+   server (`.mcp.json`) against a dev server pointed at the local backend, and say exactly what
+   you verified. Create your own clearly named test data, and don't modify others' records.
 4. **Commits:**
    - Commit on `dev`, in logical chunks, as the repo owner's git identity only.
    - **Never add a `Co-Authored-By` line or any AI attribution.**

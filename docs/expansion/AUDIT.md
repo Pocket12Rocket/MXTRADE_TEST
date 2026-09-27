@@ -20,8 +20,9 @@ Status key: `Done`, `In progress`, `Blocked (reason)`, `Not started`.
 | 2 | Delete Firebase code, rules, config and dependencies | Not started | After every helper has been replaced |
 | 3 | Standalone output and Dockerfile | Done | `npm run build` passes. Docker is not installed on the dev machine, so the image build has not been tested |
 | 3 | `next/image` remotePatterns for backend `/files/**` | Done | `e6caa5b` |
-| 3 | k3s manifests | Done (placeholders) | `deploy/k3s/client.yaml`: Deployment (2 replicas, non-root, probes), Service, and a Traefik Ingress for fastsport.co.za and www with a cert-manager placeholder |
-| 3 | Dependency upgrades (Next 16, React 19; Tailwind 4 left to Codex) and the GitHub Pages workflow decision | Not started, needs Taylor's OK | |
+| 3 | k3s manifests | Dropped | Taylor: local-only for now, so k3s won't be tested and `deploy/` was removed |
+| 3 | Dependency upgrades (Next 16, React 19; Tailwind 4 left to Codex) | Next, once admin has set up the Playwright MCP | Taylor OK'd |
+| 3 | GitHub Pages workflow | Deferred | Leave alone until work reaches main (Taylor) |
 | 3 | Vitest setup | Done | `vitest.config.mjs`, `tests/`; `npm test` passes 24 tests across 5 files |
 | 4 | Update `AGENTS.md`, `CLAUDE.md` and `README.md` for the new architecture and commit rule | Done | Rewritten for the three-repo split, the backend API rules, the `dev` branch, commits with no co-author, Vitest and the cropper |
 

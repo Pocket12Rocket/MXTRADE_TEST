@@ -62,7 +62,7 @@ docker run -p 3000:3000 fastsport-client
 ```
 
 The image is a Next.js standalone build on `node:24-alpine`. It runs as a non-root user and has a
-health check. Example k3s manifests are in [deploy/k3s](deploy/k3s).
+health check. It's kept for later deployment; for now the project runs locally only.
 
 ## How it works
 

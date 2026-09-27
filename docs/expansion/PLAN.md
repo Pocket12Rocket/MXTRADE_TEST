@@ -37,7 +37,7 @@ Each repo is owned by one Claude session. Each session edits only its own repo, 
 - **Email:** sent through the **Gmail API**, using a Google Workspace service account with domain-wide delegation (Taylor confirmed). Emails come from `Fast Sport <noreply@fastsport.co.za>` with Reply-To `support@fastsport.co.za`. Tyron supplies the credentials, as backend env vars or a secret file only; Resend is dropped.
 - **Branching:** client migration work goes on `dev`, and master stays on Firebase until the client reaches parity.
 - **Seeded admin user:** created from the env vars `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`, which are never committed. The seed is idempotent.
-- **Files:** stored on a plain k3s PVC behind the backend's storage interface.
+- **Files:** stored on disk (a volume later) behind the backend's storage interface.
   - **All images are stored as WebP.** The backend converts every upload format, strips metadata and caps dimensions.
   - Public images are served at `/files/**`; refund images are private.
 - **Cropping:** the client crops before uploading, using `react-easy-crop`.
@@ -45,7 +45,7 @@ Each repo is owned by one Claude session. Each session edits only its own repo, 
   - Profile pictures are **1:1**.
 - **Data:** start fresh, with no Firestore migration. The seed data is the catalog config (brands, models and subcategories), FAQs, About content and the admin user.
 - **Known bugs** are fixed during the port, not copied across. The intended rules come from DECISIONS.md, and until an item is decided its "Recommended" option applies.
-- **Hosting:** a self-hosted Ubuntu server running Docker, possibly k3s.
+- **Running it:** **local only for now** (Taylor, 2026-09-27): this app on :3000, admin on :3001, the API on :4000 against a local Postgres 18. Deployment to the self-hosted Ubuntu server, and k3s, are out of scope and won't be tested until the local stack works end to end.
   - Hosts: `fastsport.co.za` (client), `admin.fastsport.co.za` (admin), `api.fastsport.co.za` (API).
   - Local ports: client on 3000, admin on 3001, API on 4000 (`http://localhost:4000/v1`).
 - **Testing:** Vitest for unit and component tests in all repos, and Playwright for end-to-end tests.
@@ -87,7 +87,6 @@ The backend owns the schema, and its source of truth will be `FastSport_BackEnd/
    - Delete all Firebase code, rules, config and dependencies.
 3. **Packaging.**
    - `output: 'standalone'` and a Dockerfile on Node 24 LTS (move to Node 26 once it becomes LTS on 2026-10-28).
-   - k3s manifests under `deploy/`.
    - Upgrade to the latest stable dependencies, flagging any major upgrade before applying it.
    - Decide whether to keep the GitHub Pages workflow.
 4. **Docs.** Update `AGENTS.md`, `CLAUDE.md` and `README.md` for the new architecture and commit rule, and retire the Firestore-specific entries in TECH_DEBT and FIRESTORE_TODO.
