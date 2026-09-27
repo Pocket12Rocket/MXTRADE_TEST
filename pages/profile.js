@@ -10,6 +10,7 @@ import {
 import {
   ACCOUNT_TYPE_OPTIONS,
   SELLER_STATUS_LABELS,
+  SELLER_SUPPORT_EMAIL,
   fetchMySellerProfile,
   saveMySellerProfile,
 } from '../lib/api/seller';
@@ -340,8 +341,8 @@ export default function ProfilePage() {
       // seller back to review), so re-read /me rather than guessing locally.
       await refreshProfile();
       setSellerProfileSuccess(saved?.status === 'approved'
-        ? 'Seller profile saved securely.'
-        : 'Seller application submitted. We will email you once it has been reviewed.');
+        ? 'Seller profile saved. Selling is enabled on your account.'
+        : 'Seller profile saved.');
       setIsEditingSellerProfile(false);
     } catch (error) {
       const fieldMessages = Object.values(getFieldErrors(error));
@@ -630,19 +631,16 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {sellerStatus === 'pending' && (
+      {sellerStatus === 'suspended' && (
         <div className="py-2">
-          <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#00C5CD]">Under review</p>
-          <h2 className="mt-2 text-2xl font-semibold text-slate-900">Your seller application is being reviewed</h2>
-          <p className="mt-3 text-slate-600">We will email you once an admin has reviewed your details. You can keep browsing and buying in the meantime.</p>
-        </div>
-      )}
-
-      {sellerStatus === 'rejected' && (
-        <div className="py-2">
-          <p className="text-sm font-semibold uppercase tracking-[0.08em] text-rose-700">Not approved</p>
-          <h2 className="mt-2 text-2xl font-semibold text-slate-900">Your seller application needs changes</h2>
-          <p className="mt-3 text-slate-600">{sellerApplication?.rejectionReason || 'Please review your details and resubmit.'}</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.08em] text-rose-700">Selling suspended</p>
+          <h2 className="mt-2 text-2xl font-semibold text-slate-900">Your seller account has been suspended</h2>
+          {sellerApplication?.suspensionReason ? (
+            <p className="mt-3 text-slate-600">{sellerApplication.suspensionReason}</p>
+          ) : null}
+          <p className="mt-3 text-slate-600">
+            Please contact <a href={`mailto:${SELLER_SUPPORT_EMAIL}`} className="font-semibold text-[#00C5CD]">{SELLER_SUPPORT_EMAIL}</a> to resolve this. Updating your details will not lift the suspension.
+          </p>
         </div>
       )}
 
@@ -650,7 +648,7 @@ export default function ProfilePage() {
         <div className="py-2">
           <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[#00C5CD]">Next step</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-900">Complete your seller profile</h2>
-          <p className="mt-3 text-slate-600">To start selling on the marketplace, you'll need to complete your seller profile. The information requested is required to ensure the safety and security of both buyers and sellers, enable FastSport to securely distribute payments, and facilitate smooth product delivery. Once your profile has been completed and approved, selling will be activated on your account.</p>
+          <p className="mt-3 text-slate-600">To start selling on the marketplace, you'll need to complete your seller profile. The information requested is required to ensure the safety and security of both buyers and sellers, enable FastSport to securely distribute payments, and facilitate smooth product delivery. Once your details pass our automatic checks, selling is activated on your account straight away.</p>
           <p className="mt-4 text-slate-600">In the meantime, you can still browse the marketplace, search for products, add items to your cart, and manage your account using your basic profile.</p>
         </div>
       )}
@@ -713,7 +711,7 @@ export default function ProfilePage() {
               onClick={handleOpenSellerProfileEdit}
               className="rounded-3xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800"
             >
-              {sellerStatus === 'rejected' ? 'Update and resubmit' : (hasCompletedSellerProfile ? 'Edit seller profile' : 'Complete seller profile')}
+              {hasCompletedSellerProfile ? 'Edit seller profile' : 'Complete seller profile'}
             </button>
           </div>
         ) : (
