@@ -3,10 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import useAuth from '../lib/useAuth';
 import { useAuthContext } from '../lib/AuthContext';
 import TermsAndConditionsModal from '../components/TermsAndConditionsModal';
-import {
-  uploadProfilePicture,
-  updateUserProfile,
-} from '../lib/firestoreHelpers';
+import { updateUserProfile } from '../lib/firestoreHelpers';
+import { uploadMyPhoto } from '../lib/api/profile';
 import {
   ACCOUNT_TYPE_OPTIONS,
   SELLER_STATUS_LABELS,
@@ -91,7 +89,6 @@ export default function ProfilePage() {
   const fileInputRef = useRef(null);
 
   // Photo upload state
-  const [photoURL, setPhotoURL] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
 
@@ -132,7 +129,7 @@ export default function ProfilePage() {
   const [showSellerTermsModal, setShowSellerTermsModal] = useState(false);
   const [hasAcceptedSellerTerms, setHasAcceptedSellerTerms] = useState(false);
 
-  const currentPhoto = photoURL || profile?.photoUrl || null;
+  const currentPhoto = profile?.photoUrl || null;
   const initials = profile
     ? `${(profile.firstName || '').charAt(0)}${(profile.lastName || '').charAt(0)}`.toUpperCase()
     : '?';
@@ -202,7 +199,7 @@ export default function ProfilePage() {
 
   /**
    * Why: Uploads the avatar once the user has cropped it to a square; the cropper already
-   * bounds it to 512px, so no separate compression pass is needed.
+   * bounds it to 512px and the backend re-encodes it, so no client compression pass is needed.
    * @param {File} croppedFile - The square-cropped image from `ImageCropDialog`.
    * @returns {Promise<void>}
    */
@@ -210,12 +207,10 @@ export default function ProfilePage() {
     setUploadError('');
     setUploading(true);
     try {
-      const url = await uploadProfilePicture(user, croppedFile);
-      // The upload returns the new URL, so update locally instead of re-reading /me.
-      updateProfileLocal({ photoUrl: url });
-      setPhotoURL(url);
-    } catch {
-      setUploadError('Upload failed. Please try again.');
+      // The backend returns the updated Me, so no extra /me read is needed.
+      updateProfileLocal(await uploadMyPhoto(croppedFile));
+    } catch (err) {
+      setUploadError(toUserMessage(err, 'Upload failed. Please try again.'));
     } finally {
       setUploading(false);
     }
