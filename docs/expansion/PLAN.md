@@ -34,6 +34,8 @@ Each repo is owned by one Claude session. Each session edits only its own repo, 
   - A login lasts **7 days**. The refresh token rotates on every use, and reusing an old one revokes the whole session family.
   - Both tokens are httpOnly, Secure, SameSite=Lax, host-only cookies on the API host.
   - CSRF protection: the SameSite cookie, an Origin allowlist, and a required `X-Requested-With: FastSport` header on every data-changing request.
+- **Email:** sent through **Google Workspace**. Tyron holds the API credentials, which are supplied as backend env or secrets only; Resend is dropped.
+- **Branching:** client migration work goes on `dev`, and master stays on Firebase until the client reaches parity.
 - **Seeded admin user:** created from the env vars `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`, which are never committed. The seed is idempotent.
 - **Files:** stored on a plain k3s PVC behind the backend's storage interface.
   - **All images are stored as WebP.** The backend converts every upload format, strips metadata and caps dimensions.

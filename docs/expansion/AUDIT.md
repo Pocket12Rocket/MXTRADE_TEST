@@ -14,7 +14,7 @@ Status key: `Done`, `In progress`, `Blocked (reason)`, `Not started`.
 | 2 | `lib/apiClient.js` (cookies, CSRF header, refresh on `AUTH_TOKEN_EXPIRED`, RFC 9457) | Done | Commits `e6caa5b`; Vitest `tests/lib/apiClient.test.js` |
 | 2 | `toUserMessage` handles backend problems | Done | Vitest `tests/lib/userMessage.test.js` |
 | 2 | Image cropper (4:3 listings, 1:1 avatar) wired into submit, edit and profile | Done | `components/ImageCropDialog.js`, `lib/cropImage.js`, `lib/useImageCropQueue.js`; Vitest tests. Build passes. Playwright check on 2026-09-27 found no runtime errors on `/profile`, `/seller/submit` and the `/seller/submissions` edit form. A full crop-and-upload run is pending the backend's uploads |
-| 2 | AuthContext and login, register, verify, reset and Google pages on the backend | In progress | Backend auth landed (`3251462`). Me changes: `id` replaces `uid`, `photoUrl` replaces `photoURL`, and there are new terms re-acceptance fields |
+| 2 | AuthContext and login, register, verify, reset and Google pages on the backend | Done (not yet run against a live backend) | `0b35e97` on `dev`: cookie-session `AuthContext`, login and register, Google redirect, `/verify-email`, `/reset-password`, `TermsReacceptGate`, logout; 39 Vitest tests pass and the build passes. The Playwright run against the backend is pending until the backend's `docker compose` is up locally |
 | 2 | Catalog, profile, submissions, orders, refunds and contact on the backend | Blocked (waiting for the backend milestones in order) | |
 | 2 | Delete Firebase code, rules, config and dependencies | Not started | After every helper has been replaced |
 | 3 | Standalone output and Dockerfile | Done | `npm run build` passes. Docker is not installed on the dev machine, so the image build has not been tested |
@@ -46,6 +46,10 @@ Status key: `Done`, `In progress`, `Blocked (reason)`, `Not started`.
 - Should the GitHub Pages workflow (`.github/workflows/static.yml`), which publishes the whole repo, be removed?
 
 ## Change log
+- **2026-09-27 (later):**
+  - Migration work is on the `dev` branch (Taylor's decision); master stays on Firebase.
+  - Client auth switched to the backend.
+  - Email goes through Google Workspace; Tyron holds the API details. The backend is building the mailer against it and will confirm the method and sender with Taylor.
 - **2026-09-27:**
   - Plan approved.
   - Coordination messages sent.
