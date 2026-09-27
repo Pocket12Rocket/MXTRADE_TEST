@@ -1,38 +1,44 @@
 import { useRouter } from 'next/router';
 import { useEffect, useRef, useState } from 'react';
 import ProductCard from '../../components/ProductCard';
-import { GEAR_CONDITION_OPTIONS, DIRT_BIKE_CATEGORIES } from '../../lib/dirtBikeCategories';
-import { fetchLiveProducts } from '../../lib/firestoreHelpers';
+import { CATEGORY_LABELS, fetchCatalogConfig, fetchProducts } from '../../lib/api/catalog';
 import { toUserMessage } from '../../lib/userMessage';
-// Manufacturer and model options for filtering
-const MANUFACTURERS = [
-  'Honda', 'Yamaha', 'KTM', 'Kawasaki', 'Suzuki', 'Husqvarna', 'GasGas', 'Beta', 'Sherco', 'TM Racing',
-  'Stark Future', 'Fantic', 'Sur-Ron', 'Kayo', 'Osset', 'Triumph', 'Universal', 'Other'
-];
-const MODELS = {
-  Honda: ['CRF450R','CRF450RWE','CRF250R','CRF250RWE','CRF450RX','CRF250RX','CRF450X','CRF250F','CRF125F','CRF110F','CRF50F'],
-  Yamaha: ['YZ450F','YZ250F','YZ250','YZ125','YZ450FX','YZ250FX','WR450F','WR250F','TT-R230','TT-R125LE','TT-R110E','TT-R50E','PW50','YZ65','YZ85'],
-  KTM: ['450 SX-F','350 SX-F','250 SX-F','300 SX','250 SX','125 SX','85 SX','65 SX','50 SX','450 XC-F','350 XC-F','250 XC-F','300 XC','250 XC'],
-  Kawasaki: ['KX450','KX250','KX112','KX85','KX65','KX450X','KX250X','KLX300R','KLX230R','KLX140R','KLX110R'],
-  Suzuki: ['RM-Z450','RM-Z250','DR-Z125L','DR-Z50','RM-250','RM-125','RM-85'],
-  Husqvarna: ['FC 450','FC 350','FC 250','TC 300','TC 250','TC 125','TC 85','TC 65','TC 50','TE 300','FE 350','FE 501','FE 450','FE 350','FE 250','TE 300','TE 250','TE 150','TE 125'],
-  GasGas: ['MC 450F','MC 250F','MC 250','MC 125','MC 85','MC 65','MC 50','EC 500F','EC 350F','EC 300.','EX 300'],
-  Beta: ['RX 350','RX 250','RX 450','125 RR Race','200 RR Race','250 RR Race','300 RR Race','350 RR Race','390 RR Race','430 RR Race','480 RR Race'],
-  Sherco: ['125 SE Factory','250 SE Factory','300 SE Factory','4-Stroke Models','250 SEF Factory','300 SEF Factory','450 SEF Factory','500 SEF Factory','250 SE Xtrem'],
-  'TM Racing': ['EN 125 Fi','EN 144 Fi','EN 250 Fi','EN 300 Fi','EN 250Fi','EN 300Fi','EN 450Fi','MX 85','MX 125','MX 144','MX 250','MX 300','MX 250Fi','MX 300Fi','MX 450Fi'],
-  'Stark Future': ['VARG MX','VARG EX'],
-  Fantic: ['XEF 450','XEF 310','XEF 250','XE 300','XE 125','XEF 125','XE 50','XXF 450','XXF 250','XX 250','XX 125'],
-  'Sur-Ron': ['Light Bee X','Light Bee L1E','Light Bee S','Ultra Bee','Ultra Bee T','Ultra Bee R','Storm Bee F','Storm Bee E','Storm Bee R'],
-  Osset: ['TXP-24','TXP-20','TXP-16','TXP-12'],
-  Triumph: ['TF 450-X','TF 250-X','TF 250-C','TF 450-C','TF 250-E','TF 450-E'],
+
+// Why: Page size for both the initial fetch and "Load more", matching the backend's default.
+const PAGE_SIZE = 24;
+
+// Why: Debounces every filter-driven fetch (not just free-text search) by ~300ms. This covers
+// the required search debounce, and also collapses the fetch that would otherwise fire while the
+// URL-driven filters (category/subcategory) settle right after mount, and smooths rapid changes
+// like dragging the price slider — all without adding a second, separate debounce path.
+const SEARCH_DEBOUNCE_MS = 300;
+
+// Why: The full catalog is no longer downloaded client-side (filtering/sorting moved server-side
+// in this change), so there is no product list left to derive a real maximum price from for the
+// slider. Use a fixed ceiling instead; raise this constant if genuinely priced items exceed it.
+const PRICE_CEILING_RANDS = 100000;
+
+// Why: The sort <select> keeps its existing hyphenated option values (Codex-owned markup); the
+// backend's `sort` filter uses underscored values instead.
+const SORT_API_MAP = {
+  relevance: 'relevance',
+  popular: 'popular',
+  'price-asc': 'price_asc',
+  'price-desc': 'price_desc',
 };
 
+// Why: Reuses the one canonical category-label list (lib/api/catalog.js) instead of keeping a
+// second copy here, per AGENTS.md's "no duplicate code" rule.
+const CORE_CATEGORY_OPTIONS = Object.values(CATEGORY_LABELS);
 
-
-
-
-const CORE_CATEGORY_OPTIONS = ['Gear', 'Accessories', 'Parts'];
-
+/**
+ * Why: Normalizes a `?category=` query value (any casing) to the canonical label so it matches
+ * the category <select>'s option values.
+ * @param {string} value - Raw `category` query param value.
+ * @returns {string} The canonical label (e.g. `'Gear'`) if recognized, otherwise the trimmed input.
+ * @example
+ * normalizeCategoryValue('gear'); // 'Gear'
+ */
 function normalizeCategoryValue(value) {
   const trimmedValue = (value || '').trim();
   const matchedCoreCategory = CORE_CATEGORY_OPTIONS.find((category) => category.toLowerCase() === trimmedValue.toLowerCase());
@@ -40,114 +46,34 @@ function normalizeCategoryValue(value) {
 }
 
 /**
- * Why: Main browse/search/filter catalog page. Never render a raw Firestore error — show a
- * short friendly sentence via the shared `toUserMessage()` helper (ARCH-14) instead.
- * @returns {JSX.Element} The shop catalog with filters, sorting, and product grid.
+ * Why: Main browse/search/filter catalog page. Filtering, search and sorting all happen
+ * server-side via `fetchProducts()`/`fetchCatalogConfig()` (lib/api/catalog.js) instead of
+ * downloading the whole catalog and filtering it in the browser (the old `fetchLiveProducts()`
+ * path). Never render a raw API error — show a short friendly sentence via the shared
+ * `toUserMessage()` helper (ARCH-14) instead.
+ * @returns {JSX.Element} The shop catalog with filters, sorting, pagination and product grid.
  */
 export default function Shop() {
-
   const router = useRouter();
-  const [products, setProducts] = useState([]);
+  const [items, setItems] = useState([]);
+  const [nextCursor, setNextCursor] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
+  const [catalogConfig, setCatalogConfig] = useState(null);
   const [selectedSort, setSelectedSort] = useState('popular');
   const [selectedManufacturer, setSelectedManufacturer] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
 
-  // Manufacturer/model filtering logic will be placed after productsForSubcategories is defined
+  // Why: Guards every fetch (page-1 and "Load more") so a response from a superseded request is
+  // discarded instead of overwriting newer results.
+  const requestIdRef = useRef(0);
 
   const searchQuery = typeof router.query.q === 'string' ? router.query.q.trim() : '';
   const queryCategory = typeof router.query.category === 'string' ? normalizeCategoryValue(router.query.category) : '';
   const querySubcategory = typeof router.query.sub === 'string' ? router.query.sub.trim() : '';
-  const normalizedSearchQuery = searchQuery.toLowerCase();
-  const defaultSort = normalizedSearchQuery ? 'relevance' : 'popular';
+  const defaultSort = searchQuery ? 'relevance' : 'popular';
 
-  const SEARCH_TERM_ALIASES = {
-    shirt: ['shirts', 'jersey', 'jerseys'],
-    shirts: ['shirt', 'jersey', 'jerseys'],
-    jersey: ['jerseys', 'shirt', 'shirts'],
-    jerseys: ['jersey', 'shirt', 'shirts'],
-    boot: ['boots'],
-    boots: ['boot'],
-  };
-
-  const tokenizeSearchValue = (value) => {
-    return (value || '')
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .map((token) => token.trim())
-      .filter(Boolean);
-  };
-
-  const getTermVariants = (term) => {
-    const normalizedTerm = (term || '').toLowerCase().trim();
-    if (!normalizedTerm) {
-      return [];
-    }
-
-    const variants = new Set([normalizedTerm]);
-
-    if (normalizedTerm.endsWith('ies') && normalizedTerm.length > 3) {
-      variants.add(`${normalizedTerm.slice(0, -3)}y`);
-    }
-
-    if (normalizedTerm.endsWith('s') && normalizedTerm.length > 2) {
-      variants.add(normalizedTerm.slice(0, -1));
-    } else {
-      variants.add(`${normalizedTerm}s`);
-    }
-
-    const aliasTerms = SEARCH_TERM_ALIASES[normalizedTerm] || [];
-    aliasTerms.forEach((alias) => variants.add(alias));
-
-    return Array.from(variants);
-  };
-
-  const getSearchMatch = (product, queryTerms) => {
-    if (queryTerms.length === 0) {
-      return { matches: true, score: 0 };
-    }
-
-    const primaryText = [
-      product.name,
-      product.category,
-      product.subcategory,
-      ...(Array.isArray(product.specifications) ? product.specifications : []),
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase();
-
-    const secondaryText = [
-      product.description,
-      product.sellerName,
-      product.sellerEmail,
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase();
-
-    const primaryTokens = new Set(tokenizeSearchValue(primaryText));
-    const secondaryTokens = new Set(tokenizeSearchValue(secondaryText));
-
-    let score = 0;
-
-    for (const term of queryTerms) {
-      const variants = getTermVariants(term);
-      const matchesPrimary = variants.some((variant) => primaryTokens.has(variant));
-      const matchesSecondary = variants.some((variant) => secondaryTokens.has(variant));
-
-      if (!matchesPrimary && !matchesSecondary) {
-        return { matches: false, score: 0 };
-      }
-
-      score += matchesPrimary ? 3 : 1;
-    }
-
-    return { matches: true, score };
-  };
-
-  const queryTerms = tokenizeSearchValue(normalizedSearchQuery);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedSubcategory, setSelectedSubcategory] = useState('');
   const [selectedBrands, setSelectedBrands] = useState([]);
@@ -160,56 +86,6 @@ export default function Shop() {
   const [draggingPriceThumb, setDraggingPriceThumb] = useState('');
   const priceSliderTrackRef = useRef(null);
   const brandPickerRef = useRef(null);
-
-  const normalizeSubcategoryValue = (value) => {
-    const normalizedValue = (value || '').toLowerCase();
-    return normalizedValue === 'knee braces' ? 'protection' : normalizedValue;
-  };
-
-  const normalizeConditionValue = (value) => {
-    return (value || '').trim().toLowerCase();
-  };
-
-  const extractSpecificationValue = (product, label) => {
-    const targetLabel = (label || '').toLowerCase().trim();
-    if (!targetLabel || !Array.isArray(product?.specifications)) {
-      return '';
-    }
-
-    const matchedLine = product.specifications.find((line) => {
-      if (typeof line !== 'string') {
-        return false;
-      }
-      return line.toLowerCase().startsWith(`${targetLabel}:`);
-    });
-
-    if (!matchedLine) {
-      return '';
-    }
-
-    return matchedLine.split(':').slice(1).join(':').trim();
-  };
-
-  const getProductBrand = (product) => {
-    return (
-      product.gearBrand
-      || product.accessoriesBrand
-      || product.brand
-      || extractSpecificationValue(product, 'Brand')
-      || ''
-    ).trim();
-  };
-
-  const getProductCondition = (product) => {
-    const rawCondition = (
-      product.gearCondition
-      || product.accessoriesCondition
-      || product.condition
-      || extractSpecificationValue(product, 'Condition')
-      || ''
-    );
-    return normalizeConditionValue(rawCondition);
-  };
 
   useEffect(() => {
     setSelectedCategory(queryCategory);
@@ -232,216 +108,176 @@ export default function Shop() {
     });
   }, [defaultSort]);
 
+  // Why: Loads the filter panel's option lists once. Kept independent of the product fetch so a
+  // config failure never blocks the page — it just renders without those filter options.
   useEffect(() => {
-    fetchLiveProducts()
-      .then((results) => setProducts(results))
-      .catch((err) => setError(toUserMessage(err, "We couldn't load the shop right now. Please try again.")))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    fetchCatalogConfig()
+      .then((result) => {
+        if (!cancelled) {
+          setCatalogConfig(result);
+        }
+      })
+      .catch((err) => {
+        console.error('[shop/catalog] catalog config', err?.code || err);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const categoryOptions = Array.from(
-    new Set([
-      ...CORE_CATEGORY_OPTIONS,
-      ...products.map((product) => normalizeCategoryValue(product.category)).filter(Boolean),
-    ])
-  ).sort((a, b) => a.localeCompare(b));
+  // Why: A stable primitive to depend on for the fetch effect below. The backend accepts a
+  // comma-separated brand list (any match), so every checked brand is sent.
+  const brandKey = selectedBrands.join(',');
 
+  /**
+   * Why: Builds the `fetchProducts()` filters object from the current filter state. Shared by
+   * the page-1 fetch effect and the "Load more" handler so both stay in sync.
+   * @returns {object} Filters for `fetchProducts()` — prices in rands, category/condition as
+   *   labels/keys, `undefined` for anything not currently set.
+   * @example
+   * const filters = buildFilters(); // { category: 'Gear', sort: 'relevance', ... }
+   */
+  function buildFilters() {
+    const manufacturerActive = Boolean(selectedManufacturer) && selectedManufacturer !== 'Universal';
+    const modelActive = manufacturerActive && selectedManufacturer !== 'Other' && Boolean(selectedModel);
 
-  const productsForSubcategories = selectedCategory
-    ? products.filter((product) => (product.category || '').toLowerCase() === selectedCategory.toLowerCase())
-    : products;
-
-  // Manufacturer/model filtering logic (must come after productsForSubcategories)
-  // Custom manufacturer/model filtering logic
-  const productsForManufacturer = selectedManufacturer && selectedManufacturer !== 'Universal'
-    ? productsForSubcategories.filter((product) => {
-        // Always include Gear and Accessories
-        const category = (product.category || '').toLowerCase();
-        if (category === 'gear' || category === 'accessories') return true;
-        // For Parts, include if manufacturer matches or is Universal
-        const manufacturer = (product.manufacturer || '').toLowerCase();
-        return manufacturer === selectedManufacturer.toLowerCase() || manufacturer === 'universal';
-      })
-    : productsForSubcategories;
-
-  const productsForModel = selectedModel && selectedManufacturer && selectedManufacturer !== 'Universal' && MODELS[selectedManufacturer]
-    ? productsForManufacturer.filter((product) => {
-        // Always include Gear and Accessories
-        const category = (product.category || '').toLowerCase();
-        if (category === 'gear' || category === 'accessories') return true;
-        // For Parts, include if model matches or manufacturer is Universal
-        const manufacturer = (product.manufacturer || '').toLowerCase();
-        if (manufacturer === 'universal') return true;
-
-        const productModels = Array.isArray(product.model)
-          ? product.model.map((modelValue) => String(modelValue || '').toLowerCase().trim()).filter(Boolean)
-          : [String(product.model || '').toLowerCase().trim()].filter(Boolean);
-
-        return productModels.includes(selectedModel.toLowerCase());
-      })
-    : productsForManufacturer;
-
-  // Use static subcategories for Parts, Gear, Accessories
-  let subcategoryOptions = [];
-  if (selectedCategory === 'Parts') {
-    subcategoryOptions = Array.from(
-      new Set([
-        ...DIRT_BIKE_CATEGORIES.Parts,
-        ...productsForSubcategories
-          .map((product) => (product.subcategory || '').trim())
-          .filter(Boolean),
-      ])
-    ).sort((a, b) => a.localeCompare(b));
-  } else if (selectedCategory === 'Gear') {
-    subcategoryOptions = DIRT_BIKE_CATEGORIES.Gear;
-  } else if (selectedCategory === 'Accessories') {
-    subcategoryOptions = Array.from(
-      new Set([
-        ...DIRT_BIKE_CATEGORIES.Accessories,
-        ...productsForSubcategories
-          .map((product) => (product.subcategory || '').trim())
-          .filter(Boolean),
-      ])
-    ).sort((a, b) => a.localeCompare(b));
-  } else {
-    subcategoryOptions = Array.from(
-      new Set(
-        productsForSubcategories
-          .map((product) => (product.subcategory || '').trim())
-          .filter(Boolean)
-      )
-    ).sort((a, b) => a.localeCompare(b));
+    return {
+      q: searchQuery || undefined,
+      category: selectedCategory || undefined,
+      subcategory: selectedSubcategory || undefined,
+      brand: brandKey || undefined,
+      condition: selectedCondition || undefined,
+      manufacturer: manufacturerActive ? selectedManufacturer : undefined,
+      model: modelActive ? selectedModel : undefined,
+      minPrice: priceMin === '' ? undefined : Number(priceMin),
+      maxPrice: priceMax === '' ? undefined : Number(priceMax),
+      sort: SORT_API_MAP[selectedSort] || defaultSort,
+    };
   }
 
-  const brandOptions = Array.from(new Set(products.map((product) => getProductBrand(product)).filter(Boolean))).sort((a, b) => a.localeCompare(b));
-  const filteredBrandOptions = brandOptions.filter((brand) => brand.toLowerCase().includes(brandFilterQuery.toLowerCase().trim()));
-  const conditionOptions = Array.from(
-    new Set([
-      ...GEAR_CONDITION_OPTIONS,
-      ...products
-        .map((product) => {
-          const normalized = getProductCondition(product);
-          if (!normalized) {
-            return '';
+  // Why: Resets to page 1 and refetches every time a filter changes (debounced — see
+  // SEARCH_DEBOUNCE_MS). `buildFilters`/`defaultSort` intentionally aren't in the deps array:
+  // they're derived from the same state values already listed, and including the functions
+  // themselves would refire this effect on every render.
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      const requestId = ++requestIdRef.current;
+      setLoading(true);
+      setError('');
+
+      fetchProducts({ ...buildFilters(), limit: PAGE_SIZE })
+        .then(({ items: newItems, nextCursor: newNextCursor }) => {
+          if (requestIdRef.current !== requestId) {
+            return;
           }
-          return normalized
-            .split(' ')
-            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-            .join(' ');
+          setItems(newItems);
+          setNextCursor(newNextCursor);
         })
-        .filter(Boolean),
-    ])
-  ).sort((a, b) => a.localeCompare(b));
+        .catch((err) => {
+          if (requestIdRef.current !== requestId) {
+            return;
+          }
+          setError(toUserMessage(err, "We couldn't load the shop right now. Please try again."));
+          setItems([]);
+          setNextCursor(null);
+        })
+        .finally(() => {
+          if (requestIdRef.current === requestId) {
+            setLoading(false);
+          }
+        });
+    }, SEARCH_DEBOUNCE_MS);
 
-  const productPrices = products
-    .map((product) => Number(product.price))
-    .filter((price) => Number.isFinite(price) && price >= 0);
-  const maxProductPrice = productPrices.length > 0 ? Math.max(...productPrices) : 1000;
-  const sliderMax = Math.max(100, Math.ceil(maxProductPrice / 50) * 50);
+    return () => clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    searchQuery,
+    selectedCategory,
+    selectedSubcategory,
+    selectedManufacturer,
+    selectedModel,
+    brandKey,
+    selectedCondition,
+    priceMin,
+    priceMax,
+    selectedSort,
+  ]);
 
+  /**
+   * Why: "Load more" button handler — fetches the next page with the cursor the server returned
+   * and appends it to the current results, ignoring a stale response the same way the page-1
+   * effect does.
+   * @returns {void}
+   * @example
+   * <button onClick={handleLoadMore}>Load more</button>
+   */
+  function handleLoadMore() {
+    if (!nextCursor || loadingMore) {
+      return;
+    }
+
+    const requestId = ++requestIdRef.current;
+    setLoadingMore(true);
+
+    fetchProducts({ ...buildFilters(), cursor: nextCursor, limit: PAGE_SIZE })
+      .then(({ items: newItems, nextCursor: newNextCursor }) => {
+        if (requestIdRef.current !== requestId) {
+          return;
+        }
+        setItems((current) => [...current, ...newItems]);
+        setNextCursor(newNextCursor);
+      })
+      .catch((err) => {
+        if (requestIdRef.current !== requestId) {
+          return;
+        }
+        setError(toUserMessage(err, "We couldn't load more products right now. Please try again."));
+      })
+      .finally(() => {
+        if (requestIdRef.current === requestId) {
+          setLoadingMore(false);
+        }
+      });
+  }
+
+  const categoryOptions = (catalogConfig?.categories || []).map((category) => category.label);
+
+  const selectedCategoryConfig = catalogConfig?.categories.find((category) => category.label === selectedCategory);
+  const subcategoryOptions = !catalogConfig
+    ? []
+    : selectedCategoryConfig
+      ? selectedCategoryConfig.subcategories || []
+      : Array.from(new Set(catalogConfig.categories.flatMap((category) => category.subcategories || [])))
+        .sort((a, b) => a.localeCompare(b));
+
+  const brandOptions = catalogConfig?.brands || [];
+  const filteredBrandOptions = brandOptions.filter((brand) => brand.toLowerCase().includes(brandFilterQuery.toLowerCase().trim()));
+  const conditionOptions = catalogConfig?.conditions || [];
+  const manufacturerOptions = catalogConfig?.bikeManufacturers || [];
+  const selectedManufacturerConfig = manufacturerOptions.find((manufacturer) => manufacturer.name === selectedManufacturer);
+  const modelOptions = selectedManufacturerConfig?.models || [];
+
+  const sliderMax = PRICE_CEILING_RANDS;
   const sliderMinValue = Math.max(0, Math.min(priceMin === '' ? 0 : Number(priceMin), sliderMax));
   const sliderMaxValue = Math.max(sliderMinValue, Math.min(priceMax === '' ? sliderMax : Number(priceMax), sliderMax));
   const sliderMinPercent = sliderMax > 0 ? (sliderMinValue / sliderMax) * 100 : 0;
   const sliderMaxPercent = sliderMax > 0 ? (sliderMaxValue / sliderMax) * 100 : 100;
 
-  const normalizedSelectedCondition = normalizeConditionValue(selectedCondition);
-  const numericMinPrice = priceMin === '' ? null : Number(priceMin);
-  const numericMaxPrice = priceMax === '' ? null : Number(priceMax);
-
-  const filteredEntries = productsForModel
-      // In the filter UI (wherever your filters are rendered):
-      /*
-        Add this inside your filter sidebar or filter section:
-        <label className="block mt-4">
-          <span className="text-sm font-medium text-slate-700">Bike Manufacturer</span>
-          <select
-            value={selectedManufacturer}
-            onChange={e => { setSelectedManufacturer(e.target.value); setSelectedModel(''); }}
-            className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-          >
-            <option value="">All Manufacturers</option>
-            {MANUFACTURERS.map(m => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
-        </label>
-        {selectedManufacturer && selectedManufacturer !== 'Universal' && selectedManufacturer !== 'Other' && (
-          <label className="block mt-4">
-            <span className="text-sm font-medium text-slate-700">Bike Model</span>
-            <select
-              value={selectedModel}
-              onChange={e => setSelectedModel(e.target.value)}
-              className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-            >
-              <option value="">All Models</option>
-              {MODELS[selectedManufacturer]?.map(mod => (
-                <option key={mod} value={mod}>{mod}</option>
-              ))}
-            </select>
-          </label>
-        )}
-      */
-    .map((product) => {
-      const searchMatch = getSearchMatch(product, queryTerms);
-
-      const productCategory = (product.category || '').toLowerCase();
-      const matchesCategory = selectedCategory ? productCategory === selectedCategory.toLowerCase() : true;
-
-      const matchesSubcategory = selectedSubcategory
-        ? normalizeSubcategoryValue(product.subcategory) === normalizeSubcategoryValue(selectedSubcategory)
-        : true;
-
-      const productBrand = getProductBrand(product);
-      const normalizedSelectedBrands = selectedBrands.map((brand) => brand.toLowerCase());
-      const matchesBrand = normalizedSelectedBrands.length > 0
-        ? normalizedSelectedBrands.includes(productBrand.toLowerCase())
-        : true;
-
-      const productCondition = getProductCondition(product);
-      const matchesCondition = normalizedSelectedCondition ? productCondition === normalizedSelectedCondition : true;
-
-      const productPrice = Number(product.price);
-      const hasValidPrice = !Number.isNaN(productPrice);
-      const matchesMinPrice = numericMinPrice === null || (!Number.isNaN(numericMinPrice) && hasValidPrice && productPrice >= numericMinPrice);
-      const matchesMaxPrice = numericMaxPrice === null || (!Number.isNaN(numericMaxPrice) && hasValidPrice && productPrice <= numericMaxPrice);
-
-      const matchesAllFilters = searchMatch.matches
-        && matchesCategory
-        && matchesSubcategory
-        && matchesBrand
-        && matchesCondition
-        && matchesMinPrice
-        && matchesMaxPrice;
-
-      return {
-        product,
-        score: searchMatch.score,
-        matchesAllFilters,
-      };
-    })
-    .filter((entry) => entry.matchesAllFilters);
-
-  const filteredProducts = [...filteredEntries]
-    .sort((a, b) => {
-      if (selectedSort === 'price-asc') {
-        return Number(a.product.price || 0) - Number(b.product.price || 0);
-      }
-
-      if (selectedSort === 'price-desc') {
-        return Number(b.product.price || 0) - Number(a.product.price || 0);
-      }
-
-      if (selectedSort === 'popular') {
-        return Number(b.product.clickCount || 0) - Number(a.product.clickCount || 0);
-      }
-
-      if (b.score !== a.score) {
-        return b.score - a.score;
-      }
-
-      return (a.product.name || '').localeCompare(b.product.name || '');
-    })
-    .map((entry) => entry.product);
+  // Why: With filtering server-side, an empty page can mean either "the whole catalog is empty"
+  // or "these filters matched nothing" — there's no unfiltered count to tell them apart anymore.
+  // Treat "no filters active" as the first case, matching the original page's intent closely.
+  const hasActiveFilters = Boolean(
+    searchQuery
+    || selectedCategory
+    || selectedSubcategory
+    || selectedBrands.length > 0
+    || selectedCondition
+    || priceMin
+    || priceMax
+    || (selectedManufacturer && selectedManufacturer !== 'Universal')
+    || selectedModel
+  );
 
   const activeFilterSummary = [
     selectedCategory,
@@ -453,12 +289,26 @@ export default function Shop() {
     .filter(Boolean)
     .join(' • ');
 
+  /**
+   * Why: Category <select> onChange — also clears the subcategory, since the previous
+   * subcategory choice may not exist under the newly picked category.
+   * @param {React.ChangeEvent<HTMLSelectElement>} event - The select change event.
+   * @returns {void}
+   * @example
+   * <select onChange={handleCategoryChange}>...</select>
+   */
   const handleCategoryChange = (event) => {
     const nextCategory = event.target.value;
     setSelectedCategory(nextCategory);
     setSelectedSubcategory('');
   };
 
+  /**
+   * Why: "Clear all" resets every filter control back to its default.
+   * @returns {void}
+   * @example
+   * <button onClick={clearFilters}>Clear all</button>
+   */
   const clearFilters = () => {
     setSelectedCategory('');
     setSelectedSubcategory('');
@@ -500,7 +350,6 @@ export default function Shop() {
           </select>
         </label>
 
-
         {/* Manufacturer filter */}
         <label className="block mt-4">
           <span className="text-sm font-medium text-slate-700">Bike Manufacturer</span>
@@ -510,8 +359,8 @@ export default function Shop() {
             className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
           >
             <option value="">All Manufacturers</option>
-            {MANUFACTURERS.map(m => (
-              <option key={m} value={m}>{m}</option>
+            {manufacturerOptions.map(m => (
+              <option key={m.name} value={m.name}>{m.name}</option>
             ))}
           </select>
         </label>
@@ -525,7 +374,7 @@ export default function Shop() {
               className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
             >
               <option value="">All Models</option>
-              {MODELS[selectedManufacturer]?.map(mod => (
+              {modelOptions.map(mod => (
                 <option key={mod} value={mod}>{mod}</option>
               ))}
             </select>
@@ -539,7 +388,7 @@ export default function Shop() {
           <select value={selectedCondition} onChange={(event) => setSelectedCondition(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-base text-slate-700">
             <option value="">All</option>
             {conditionOptions.map((option) => (
-              <option key={option} value={option}>{option}</option>
+              <option key={option.key} value={option.key}>{option.label}</option>
             ))}
           </select>
         </label>
@@ -592,6 +441,13 @@ export default function Shop() {
     </>
   );
 
+  /**
+   * Why: Toggles one brand in/out of the multi-select brand filter's local selection.
+   * @param {string} brand - The brand name to toggle.
+   * @returns {void}
+   * @example
+   * toggleBrandSelection('Fox Racing');
+   */
   const toggleBrandSelection = (brand) => {
     setSelectedBrands((current) => {
       if (current.includes(brand)) {
@@ -675,6 +531,13 @@ export default function Shop() {
     </label>
   );
 
+  /**
+   * Why: Keeps a dragged price-slider thumb within `[0, sliderMax]`.
+   * @param {number} value - A candidate slider value in rands.
+   * @returns {number} The value clamped to `[0, sliderMax]` (0 when not finite).
+   * @example
+   * clampPriceValue(-10); // 0
+   */
   const clampPriceValue = (value) => {
     if (!Number.isFinite(value)) {
       return 0;
@@ -682,6 +545,14 @@ export default function Shop() {
     return Math.max(0, Math.min(value, sliderMax));
   };
 
+  /**
+   * Why: Converts a mouse X position over the slider track into a rand value, snapped to the
+   * nearest 10, for both click-to-jump and drag interactions.
+   * @param {number} clientX - The mouse event's `clientX`.
+   * @returns {number|null} The rand value, or `null` if the track isn't mounted/measurable.
+   * @example
+   * const value = getSliderValueFromClientX(event.clientX);
+   */
   const getSliderValueFromClientX = (clientX) => {
     const sliderTrack = priceSliderTrackRef.current;
     if (!sliderTrack) {
@@ -698,6 +569,15 @@ export default function Shop() {
     return clampPriceValue(rawValue);
   };
 
+  /**
+   * Why: Shared by drag-move and click-to-jump handling to move one thumb without crossing the
+   * other.
+   * @param {number} clientX - The mouse event's `clientX`.
+   * @param {'min'|'max'} thumb - Which thumb is being moved.
+   * @returns {void}
+   * @example
+   * updatePriceFromPointer(event.clientX, 'min');
+   */
   const updatePriceFromPointer = (clientX, thumb) => {
     const nextValue = getSliderValueFromClientX(clientX);
     if (nextValue === null) {
@@ -716,6 +596,13 @@ export default function Shop() {
     }
   };
 
+  /**
+   * Why: Clicking the track jumps the nearer thumb to that position and starts dragging it.
+   * @param {React.MouseEvent} event - The track's mousedown event.
+   * @returns {void}
+   * @example
+   * <div onMouseDown={handlePriceTrackMouseDown} />
+   */
   const handlePriceTrackMouseDown = (event) => {
     const nextValue = getSliderValueFromClientX(event.clientX);
     if (nextValue === null) {
@@ -727,23 +614,54 @@ export default function Shop() {
     updatePriceFromPointer(event.clientX, thumbToDrag);
   };
 
+  /**
+   * Why: Starts dragging the min-price thumb without also triggering the track's own
+   * mousedown handler.
+   * @param {React.MouseEvent} event - The thumb's mousedown event.
+   * @returns {void}
+   * @example
+   * <div onMouseDown={handleMinThumbMouseDown} />
+   */
   const handleMinThumbMouseDown = (event) => {
     event.preventDefault();
     event.stopPropagation();
     setDraggingPriceThumb('min');
   };
 
+  /**
+   * Why: Starts dragging the max-price thumb without also triggering the track's own
+   * mousedown handler.
+   * @param {React.MouseEvent} event - The thumb's mousedown event.
+   * @returns {void}
+   * @example
+   * <div onMouseDown={handleMaxThumbMouseDown} />
+   */
   const handleMaxThumbMouseDown = (event) => {
     event.preventDefault();
     event.stopPropagation();
     setDraggingPriceThumb('max');
   };
 
+  /**
+   * Why: Keyboard/native-range fallback for moving the min-price thumb (accessibility path
+   * alongside the custom-styled drag thumbs).
+   * @param {React.ChangeEvent<HTMLInputElement>} event - The hidden range input's change event.
+   * @returns {void}
+   * @example
+   * <input type="range" onChange={handleMinPriceSliderChange} />
+   */
   const handleMinPriceSliderChange = (event) => {
     const nextMin = Math.min(Number(event.target.value), sliderMaxValue);
     setPriceMin(String(nextMin));
   };
 
+  /**
+   * Why: Keyboard/native-range fallback for moving the max-price thumb.
+   * @param {React.ChangeEvent<HTMLInputElement>} event - The hidden range input's change event.
+   * @returns {void}
+   * @example
+   * <input type="range" onChange={handleMaxPriceSliderChange} />
+   */
   const handleMaxPriceSliderChange = (event) => {
     const nextMax = Math.max(Number(event.target.value), sliderMinValue);
     setPriceMax(String(nextMax));
@@ -796,9 +714,9 @@ export default function Shop() {
         <p>Loading products…</p>
       ) : error ? (
         <p className="text-red-600">{error}</p>
-      ) : products.length === 0 ? (
+      ) : items.length === 0 && !hasActiveFilters ? (
         <p className="text-slate-600">No products are live yet. Admin approval is required.</p>
-      ) : filteredProducts.length === 0 ? (
+      ) : items.length === 0 ? (
         <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-6">
           <button
             type="button"
@@ -832,7 +750,7 @@ export default function Shop() {
 
           <div className="space-y-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-              {searchQuery || activeFilterSummary ? <p className="text-sm text-slate-500">{filteredProducts.length} result{filteredProducts.length === 1 ? '' : 's'} found.</p> : <span />}
+              {searchQuery || activeFilterSummary ? <p className="text-sm text-slate-500">{items.length} result{items.length === 1 ? '' : 's'} found.</p> : <span />}
               <label className="flex w-full items-center justify-between gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:w-auto sm:justify-start">
                 Sort by
                 <select
@@ -848,10 +766,22 @@ export default function Shop() {
               </label>
             </div>
             <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {filteredProducts.map((product) => (
+              {items.map((product) => (
                 <ProductCard key={product.id} product={product} />
               ))}
             </div>
+            {nextCursor ? (
+              <div className="flex justify-center pt-2">
+                <button
+                  type="button"
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {loadingMore ? 'Loading…' : 'Load more'}
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       )}
