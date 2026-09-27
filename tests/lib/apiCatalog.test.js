@@ -83,6 +83,25 @@ describe('toClientProduct', () => {
   });
 });
 
+describe('toClientProduct thumbnails', () => {
+  it('uses server thumbnails when present', () => {
+    const product = toClientProduct({
+      ...summary,
+      primaryThumbnailUrl: 'thumb.webp',
+      images: [{ url: 'a.webp', thumbnailUrl: 'a-thumb.webp', width: 1600, height: 1200 }],
+    });
+
+    expect(product.primaryThumbnail).toBe('thumb.webp');
+    expect(product.thumbnails).toEqual(['a-thumb.webp']);
+    expect(product.images).toEqual(['a.webp']);
+  });
+
+  it('falls back to the full image before thumbnails exist', () => {
+    const product = toClientProduct(summary);
+    expect(product.primaryThumbnail).toBe(summary.primaryImageUrl);
+  });
+});
+
 describe('toCategoryKey', () => {
   it('accepts labels or keys', () => {
     expect(toCategoryKey('Gear')).toBe('gear');

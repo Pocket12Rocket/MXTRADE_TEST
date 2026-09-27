@@ -217,8 +217,8 @@ export default function Home() {
                   className="min-w-0 rounded-2xl border border-white/20 bg-black/35 p-4 backdrop-blur-sm"
                 >
                   <div className="aspect-[4/3] overflow-hidden rounded-xl bg-slate-700/40">
-                    {product.primaryImage || product.images?.[0] ? (
-                      <img src={product.primaryImage || product.images?.[0]} alt={product.name} className="h-full w-full object-cover" />
+                    {product.primaryThumbnail || product.primaryImage ? (
+                      <img src={product.primaryThumbnail || product.primaryImage} alt={product.name} className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center text-xs font-semibold uppercase tracking-[0.1em] text-slate-300">
                         No image uploaded
@@ -256,8 +256,8 @@ export default function Home() {
                       className="min-w-0 shrink-0 basis-1/3 rounded-2xl border border-white/20 bg-black/35 p-4 backdrop-blur-sm"
                     >
                       <div className="aspect-[4/3] overflow-hidden rounded-xl bg-slate-700/40">
-                        {product.primaryImage || product.images?.[0] ? (
-                          <img src={product.primaryImage || product.images?.[0]} alt={product.name} className="h-full w-full object-cover" />
+                        {product.primaryThumbnail || product.primaryImage ? (
+                          <img src={product.primaryThumbnail || product.primaryImage} alt={product.name} className="h-full w-full object-cover" />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center text-xs font-semibold uppercase tracking-[0.1em] text-slate-300">
                             No image uploaded
@@ -312,8 +312,8 @@ export default function Home() {
                   className="min-w-0 rounded-2xl border border-white/20 bg-black/35 p-4 backdrop-blur-sm"
                 >
                   <div className="aspect-[4/3] overflow-hidden rounded-xl bg-slate-700/40">
-                    {product.primaryImage || product.images?.[0] ? (
-                      <img src={product.primaryImage || product.images?.[0]} alt={product.name} className="h-full w-full object-cover" />
+                    {product.primaryThumbnail || product.primaryImage ? (
+                      <img src={product.primaryThumbnail || product.primaryImage} alt={product.name} className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center text-xs font-semibold uppercase tracking-[0.1em] text-slate-300">
                         No image uploaded
@@ -351,8 +351,8 @@ export default function Home() {
                       className="min-w-0 shrink-0 basis-1/3 rounded-2xl border border-white/20 bg-black/35 p-4 backdrop-blur-sm"
                     >
                       <div className="aspect-[4/3] overflow-hidden rounded-xl bg-slate-700/40">
-                        {product.primaryImage || product.images?.[0] ? (
-                          <img src={product.primaryImage || product.images?.[0]} alt={product.name} className="h-full w-full object-cover" />
+                        {product.primaryThumbnail || product.primaryImage ? (
+                          <img src={product.primaryThumbnail || product.primaryImage} alt={product.name} className="h-full w-full object-cover" />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center text-xs font-semibold uppercase tracking-[0.1em] text-slate-300">
                             No image uploaded
@@ -407,8 +407,8 @@ export default function Home() {
                   className="min-w-0 rounded-2xl border border-white/20 bg-black/35 p-4 backdrop-blur-sm"
                 >
                   <div className="aspect-[4/3] overflow-hidden rounded-xl bg-slate-700/40">
-                    {product.primaryImage || product.images?.[0] ? (
-                      <img src={product.primaryImage || product.images?.[0]} alt={product.name} className="h-full w-full object-cover" />
+                    {product.primaryThumbnail || product.primaryImage ? (
+                      <img src={product.primaryThumbnail || product.primaryImage} alt={product.name} className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center text-xs font-semibold uppercase tracking-[0.1em] text-slate-300">
                         No image uploaded
@@ -446,8 +446,8 @@ export default function Home() {
                       className="min-w-0 shrink-0 basis-1/3 rounded-2xl border border-white/20 bg-black/35 p-4 backdrop-blur-sm"
                     >
                       <div className="aspect-[4/3] overflow-hidden rounded-xl bg-slate-700/40">
-                        {product.primaryImage || product.images?.[0] ? (
-                          <img src={product.primaryImage || product.images?.[0]} alt={product.name} className="h-full w-full object-cover" />
+                        {product.primaryThumbnail || product.primaryImage ? (
+                          <img src={product.primaryThumbnail || product.primaryImage} alt={product.name} className="h-full w-full object-cover" />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center text-xs font-semibold uppercase tracking-[0.1em] text-slate-300">
                             No image uploaded

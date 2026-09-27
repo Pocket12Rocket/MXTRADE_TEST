@@ -1,7 +1,7 @@
 import Link from 'next/link';
 
 export default function ProductCard({ product }) {
-  const imageSrc = product.primaryImage || product.images?.[0] || null;
+  const imageSrc = product.primaryThumbnail || product.primaryImage || product.images?.[0] || null;
   const conditionValue = `${product.gearCondition || ''} ${product.condition || ''}`.toLowerCase();
   const isNewItem = conditionValue.includes('new');
   const isSpecialActive = Boolean(product.isSpecialActive && Number(product.originalPrice) > Number(product.price));
