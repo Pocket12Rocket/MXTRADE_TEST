@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import useAuth from '../../lib/useAuth';
 import {
   fetchPendingSubmissions,
@@ -11,12 +11,6 @@ import {
   fetchSellerPrivateProfile,
   updateSellerTrustScore,
   fetchAllSellers,
-  fetchFaqs,
-  addFaq,
-  updateFaq,
-  deleteFaq,
-  fetchAboutContent,
-  updateAboutContent,
   fetchRefundPendingOrders,
   fetchRefundRequestForOrder,
   markAdminNotificationsRead,
@@ -80,32 +74,10 @@ function getDescriptionPreview(value, maxLength = 140) {
   return `${text.slice(0, maxLength)}...`;
 }
 
-function addBoldMarkup(value, selectionStart, selectionEnd) {
-  const selectedText = value.slice(selectionStart, selectionEnd) || 'bold text';
-  const replacement = `**${selectedText}**`;
-  return {
-    value: `${value.slice(0, selectionStart)}${replacement}${value.slice(selectionEnd)}`,
-    selectionStart: selectionStart + 2,
-    selectionEnd: selectionStart + 2 + selectedText.length,
-  };
-}
-
 function AdminDashboard() {
-          // State for products, submissions, faqs
+          // State for products and submissions
           const [products, setProducts] = useState([]);
           const [submissions, setSubmissions] = useState([]);
-          const [faqs, setFaqs] = useState([]);
-          const [faqForm, setFaqForm] = useState({ question: '', answer: '' });
-          const [faqEditId, setFaqEditId] = useState(null);
-          const [faqError, setFaqError] = useState('');
-          const [faqLoading, setFaqLoading] = useState(true);
-          const [aboutForm, setAboutForm] = useState({ aboutUsBody: '', howItWorksBody: '' });
-          const [aboutLoading, setAboutLoading] = useState(true);
-          const [aboutSaving, setAboutSaving] = useState(false);
-          const [aboutError, setAboutError] = useState('');
-          const [aboutSuccess, setAboutSuccess] = useState('');
-          const aboutUsRef = useRef(null);
-          const howItWorksRef = useRef(null);
           const [error, setError] = useState('');
           const [pricingError, setPricingError] = useState('');
           const [processingId, setProcessingId] = useState(null);
@@ -133,28 +105,18 @@ function AdminDashboard() {
             let isMounted = true;
             async function fetchData() {
               try {
-                const [subs, prods, faqList, aboutContent] = await Promise.all([
+                const [subs, prods] = await Promise.all([
                   fetchPendingSubmissions(),
                   fetchLiveProducts({ includeAllStatuses: true }),
-                  fetchFaqs(),
-                  fetchAboutContent(),
                 ]);
                 if (isMounted) {
                   setSubmissions(subs || []);
                   setProducts(prods || []);
-                  setFaqs(faqList || []);
-                  setAboutForm({
-                    aboutUsBody: aboutContent?.aboutUsBody || '',
-                    howItWorksBody: aboutContent?.howItWorksBody || '',
-                  });
-                  setFaqLoading(false);
-                  setAboutLoading(false);
                   setLoading(false);
                 }
               } catch (err) {
                 if (isMounted) {
                   setError(toUserMessage(err, "We couldn't load the dashboard right now. Please try again."));
-                  setAboutLoading(false);
                   setLoading(false);
                 }
               }
@@ -307,19 +269,6 @@ function AdminDashboard() {
     }
   };
 
-  const handleAddBoldMarkup = (field, inputRef) => {
-    const input = inputRef.current;
-    const currentValue = aboutForm[field] || '';
-    const selectionStart = input?.selectionStart ?? currentValue.length;
-    const selectionEnd = input?.selectionEnd ?? currentValue.length;
-    const result = addBoldMarkup(currentValue, selectionStart, selectionEnd);
-
-    setAboutForm((prev) => ({ ...prev, [field]: result.value }));
-    window.requestAnimationFrame(() => {
-      input?.focus();
-      input?.setSelectionRange(result.selectionStart, result.selectionEnd);
-    });
-  };
   // ...other state and handlers...
 
   // --- Main return block ---
@@ -789,174 +738,6 @@ function AdminDashboard() {
         </div>
       ) : null}
 
-      {/* --- FAQ Management Section --- */}
-      <details className="group">
-        <summary className="flex cursor-pointer list-none items-center justify-between rounded-3xl border border-slate-200 bg-white px-6 py-5 text-xl font-semibold text-slate-900 shadow-sm marker:hidden">
-          About page blog content
-          <span className="text-2xl font-normal text-slate-400 transition-transform group-open:rotate-180">⌄</span>
-        </summary>
-        <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm text-slate-600">Update the public About page article content anytime.</p>
-
-        {aboutLoading ? <p className="mt-4 text-slate-600">Loading about content...</p> : null}
-        {aboutError ? <p className="mt-4 text-sm text-red-600">{aboutError}</p> : null}
-        {aboutSuccess ? <p className="mt-4 text-sm text-emerald-700">{aboutSuccess}</p> : null}
-
-        <form
-          onSubmit={async (event) => {
-            event.preventDefault();
-            setAboutError('');
-            setAboutSuccess('');
-            setAboutSaving(true);
-
-            try {
-              await updateAboutContent(aboutForm, user?.uid || 'admin');
-              setAboutSuccess('About page content updated successfully.');
-            } catch (err) {
-              setAboutError(toUserMessage(err, 'Failed to update About page content. Please try again.'));
-            } finally {
-              setAboutSaving(false);
-            }
-          }}
-          className="mt-4 space-y-4"
-        >
-          <label className="block text-sm font-medium text-slate-700">
-            About us (Use a blank line between paragraphs)
-            <button
-              type="button"
-              onClick={() => handleAddBoldMarkup('aboutUsBody', aboutUsRef)}
-              className="mt-2 rounded border border-slate-300 bg-white px-3 py-1 text-xs font-bold text-slate-700 hover:border-[#00CED1]"
-            >
-              B Bold
-            </button>
-            <textarea
-              ref={aboutUsRef}
-              value={aboutForm.aboutUsBody}
-              onChange={(event) => setAboutForm((prev) => ({ ...prev, aboutUsBody: event.target.value }))}
-              rows={8}
-              required
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
-            />
-          </label>
-
-          <label className="block text-sm font-medium text-slate-700">
-            How it works (Use a blank line between paragraphs)
-            <button
-              type="button"
-              onClick={() => handleAddBoldMarkup('howItWorksBody', howItWorksRef)}
-              className="mt-2 rounded border border-slate-300 bg-white px-3 py-1 text-xs font-bold text-slate-700 hover:border-[#00CED1]"
-            >
-              B Bold
-            </button>
-            <textarea
-              ref={howItWorksRef}
-              value={aboutForm.howItWorksBody}
-              onChange={(event) => setAboutForm((prev) => ({ ...prev, howItWorksBody: event.target.value }))}
-              rows={10}
-              required
-              className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
-            />
-          </label>
-
-          <button
-            type="submit"
-            disabled={aboutSaving || aboutLoading}
-            className="rounded-3xl bg-[#00CED1] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#00C5CD] disabled:opacity-60"
-          >
-            {aboutSaving ? 'Saving...' : 'Save About page content'}
-          </button>
-        </form>
-        </div>
-      </details>
-
-      <details className="group">
-        <summary className="flex cursor-pointer list-none items-center justify-between rounded-3xl border border-slate-200 bg-white px-6 py-5 text-xl font-semibold text-slate-900 shadow-sm marker:hidden">
-          FAQs
-          <span className="text-2xl font-normal text-slate-400 transition-transform group-open:rotate-180">⌄</span>
-        </summary>
-        <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <p className="text-sm text-slate-600">Manage Frequently Asked Questions displayed on the public FAQ page.</p>
-        {faqError && <p className="text-red-600 text-sm mb-2">{faqError}</p>}
-        <form onSubmit={async (e) => {
-          e.preventDefault();
-          setFaqError('');
-          try {
-            if (faqEditId) {
-              await updateFaq(faqEditId, faqForm);
-              setFaqs((prev) => prev.map((f) => f.id === faqEditId ? { ...f, ...faqForm } : f));
-            } else {
-              const id = await addFaq(faqForm);
-              setFaqs((prev) => [...prev, { id, ...faqForm }]);
-            }
-            setFaqForm({ question: '', answer: '' });
-            setFaqEditId(null);
-          } catch (err) {
-            setFaqError(toUserMessage(err, 'Failed to save FAQ. Please try again.'));
-          }
-        }} className="mb-4 flex flex-col gap-2 max-w-xl">
-          <input
-            type="text"
-            name="question"
-            value={faqForm.question}
-            onChange={e => setFaqForm(f => ({ ...f, question: e.target.value }))}
-            placeholder="Question"
-            className="rounded border px-3 py-2"
-            required
-          />
-          <textarea
-            name="answer"
-            value={faqForm.answer}
-            onChange={e => setFaqForm(f => ({ ...f, answer: e.target.value }))}
-            placeholder="Answer"
-            className="rounded border px-3 py-2"
-            required
-            rows={3}
-          />
-          <div className="flex gap-2">
-            <button type="submit" className="bg-emerald-600 text-white px-4 py-2 rounded">
-              {faqEditId ? 'Update FAQ' : 'Add FAQ'}
-            </button>
-            {faqEditId && (
-              <button type="button" className="bg-slate-400 text-white px-4 py-2 rounded" onClick={() => { setFaqEditId(null); setFaqForm({ question: '', answer: '' }); }}>
-                Cancel
-              </button>
-            )}
-          </div>
-        </form>
-        {faqLoading ? (
-          <p>Loading FAQs...</p>
-        ) : faqs.length === 0 ? (
-          <p className="text-slate-600">No FAQs found.</p>
-        ) : (
-          <ul className="divide-y divide-slate-200">
-            {faqs.map((faq) => (
-              <li key={faq.id} className="py-2 flex flex-col md:flex-row md:items-center md:gap-4">
-                <div className="flex-1">
-                  <p className="font-semibold">Q: {faq.question}</p>
-                  <p className="text-slate-700">A: {faq.answer}</p>
-                </div>
-                <div className="flex gap-2 mt-2 md:mt-0">
-                  <button className="bg-amber-500 text-white px-3 py-1 rounded" onClick={() => { setFaqEditId(faq.id); setFaqForm({ question: faq.question, answer: faq.answer }); }}>Edit</button>
-                  <button className="bg-rose-600 text-white px-3 py-1 rounded" onClick={async () => {
-                    setFaqError('');
-                    try {
-                      await deleteFaq(faq.id);
-                      setFaqs((prev) => prev.filter((f) => f.id !== faq.id));
-                      if (faqEditId === faq.id) {
-                        setFaqEditId(null);
-                        setFaqForm({ question: '', answer: '' });
-                      }
-                    } catch (err) {
-                      setFaqError(toUserMessage(err, "We couldn't delete that FAQ. Please try again."));
-                    }
-                  }}>Delete</button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-        </div>
-      </details>
     </div>
   );
 }
