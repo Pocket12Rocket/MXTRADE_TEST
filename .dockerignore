@@ -1,0 +1,14 @@
+node_modules
+.next
+out
+.git
+.idea
+.env
+.env.*
+!.env.example
+.playwright-mcp
+.playwright-ui-review
+docs
+*.png
+*.log
+MXTRADE_TEST
