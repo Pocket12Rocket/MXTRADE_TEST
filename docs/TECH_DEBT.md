@@ -1,7 +1,7 @@
 # Tech debt register — Fast Sport / MXTrade
 
 **Date:** 2026-09-19
-**Next free IDs:** `PERF-20` · `BUG-12` · `SEC-37` · `DOS-20` · `ARCH-15` · `DX-06` · `LEGAL-30`
+**Next free IDs:** `PERF-20` · `BUG-12` · `SEC-37` · `DOS-20` · `ARCH-15` · `DX-07` · `LEGAL-30`
 
 This register collects the findings of four read-only audits (Firestore query/caching cost, security & rules, repo structure & architecture, denial-of-service & cost amplification) plus a legal/compliance research pass, run against this repo on 2026-09-19, plus the owner's decisions on how to treat them. It exists so that issues found once don't need to be rediscovered: every row is a discrete, evidence-backed item that any contributor (human or agent) can pick up, fix, and close.
 
@@ -220,6 +220,7 @@ The recommended design (PERF-00) sits within a four-layer model the caching audi
 | DX-03 | Low | `reactStrictMode` doubles effects and writes in development | `next.config.js` — `reactStrictMode: true` | Every `useEffect` (including data-fetching effects) and every write inside one (notably the `clickCount` increment, PERF-05) fires twice in local development, which is expected React behaviour but is worth knowing when interpreting local read/write counts or reasoning about "is this query actually running twice in prod" — it isn't; this only affects dev. | No code change needed; keep this note visible so nobody "fixes" a doubled dev-mode read count by chasing a production bug that doesn't exist. Worth calling out explicitly during any cost-testing session run locally. | Won't fix — expected React dev-mode behaviour, not a defect |
 | DX-04 | Low | The `faqs` Firestore collection does not exist in the live project | Verified 2026-09-19 via a read-only Admin SDK probe against the live project — the `faqs` collection has zero documents; `pages/faq.js:11-14,29` calls `fetchFaqs()` and renders "No FAQs found." for every visitor | The FAQ page is effectively empty for every visitor today; not a code bug, but a content gap that looks broken/unfinished. | Seed FAQ content via the admin CMS (`fetchFaqs`/`addFaq`/`updateFaq` already exist in `lib/firestoreHelpers.js`), or hide/remove the `/faq` page and its nav/footer link until content exists. | Open |
 | DX-05 | Low | Stray `MXTRADE_TEST` gitlink (orphan submodule) at the repo root | `git ls-files -s MXTRADE_TEST` shows mode `160000` commit `67bcf0dd` with no `.gitmodules` file; the folder is empty on disk | Clones get an empty, un-initialisable `MXTRADE_TEST/` folder; tools that recurse the tree (and the Docker build context, now excluded in `.dockerignore`) can trip over it, and it confuses which folder is the real repo. | Confirm with the owner it is accidental, then `git rm --cached MXTRADE_TEST` and delete the empty folder. | Open |
+| DX-06 | Low | Next 16 dev overlay logs `[HMR] Invalid message: isrManifest` TypeErrors | Seen in the browser console during `next dev` (Next 16.3.6, Turbopack, Pages Router) on every route change, 2026-09-27: `TypeError: Cannot read properties of undefined (reading 'components') at handleStaticIndicator` | Dev-only console noise; not present in the production build. It can hide real errors when reading the console during Playwright checks. | Re-check after the next Next 16 patch release; if it persists, report upstream or filter it when reviewing console output. | Open |
 
 ---
 

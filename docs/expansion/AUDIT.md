@@ -21,7 +21,7 @@ Status key: `Done`, `In progress`, `Blocked (reason)`, `Not started`.
 | 3 | Standalone output and Dockerfile | Done | `npm run build` passes. Docker is not installed on the dev machine, so the image build has not been tested |
 | 3 | `next/image` remotePatterns for backend `/files/**` | Done | `e6caa5b` |
 | 3 | k3s manifests | Dropped | Taylor: local-only for now, so k3s won't be tested and `deploy/` was removed |
-| 3 | Dependency upgrades (Next 16, React 19; Tailwind 4 left to Codex) | Next, once admin has set up the Playwright MCP | Taylor OK'd |
+| 3 | Dependency upgrades (Next 16, React 19; Tailwind 4 left to Codex) | Done | Next 16.3.6 (Turbopack) and React 19.3.0. 50 tests pass and the build passes. Browser check: login, catalog, profile. `data-scroll-behavior` added for Next 16 smooth scrolling. DX-06 logged (dev-only HMR console noise) |
 | 3 | GitHub Pages workflow | Deferred | Leave alone until work reaches main (Taylor) |
 | 3 | Vitest setup | Done | `vitest.config.mjs`, `tests/`; `npm test` passes 24 tests across 5 files |
 | 4 | Update `AGENTS.md`, `CLAUDE.md` and `README.md` for the new architecture and commit rule | Done | Rewritten for the three-repo split, the backend API rules, the `dev` branch, commits with no co-author, Vitest and the cropper |

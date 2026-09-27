@@ -44,9 +44,9 @@ session:
 
 ## Project summary
 
-- **Framework:** Next.js 15 (Pages Router), fully client-rendered (no
+- **Framework:** Next.js 16 (Pages Router, Turbopack), fully client-rendered (no
   `getServerSideProps`/`getStaticProps`). `output: 'standalone'` is set for Docker.
-- **UI:** React 18 function components, Tailwind CSS 3 plus a shared MUI theme
+- **UI:** React 19 function components, Tailwind CSS 3 plus a shared MUI theme
   (`themes/muiTheme.js`, `themes/tokens.js`). Image cropping uses `react-easy-crop`.
 - **Backend:** the FastSport API (`FastSport_BackEnd`), reached at `NEXT_PUBLIC_API_URL`, which
   includes the version prefix (for example `http://localhost:4000/v1`).
@@ -299,3 +299,13 @@ Add or update Vitest tests with every logic change (`tests/lib`, `tests/componen
 - `docs/LEGAL_COMPLIANCE.md`: legal requirements and the PayFast go-live checklist.
 - `FastSport_BackEnd/docs/DECISIONS.md`, `DATABASE.md` and `openapi/openapi.json`: business
   rules, schema and contract.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
