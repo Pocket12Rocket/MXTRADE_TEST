@@ -1,253 +1,165 @@
-# AGENTS.md — Fast Sport / MXTrade
+# AGENTS.md: Fast Sport client (MXTRADE_TEST)
 
-This is the canonical guidance for any AI coding agent or human contributor working in this
-repository. `CLAUDE.md` is a short pointer to this file — if you're an AI agent, read this
-whole document before making changes.
+This is the guidance for any AI coding agent or human contributor working in this repository.
+`CLAUDE.md` is a short pointer to it. If you're an AI agent, read this whole document before
+making changes.
 
-## Current state: pre-launch, testing
+## Current state: pre-launch, migrating off Firebase
 
-This app is **not live**. It is in active development/testing:
+The app is **not live** and is being split into three repos, each owned by its own Claude
+session:
 
-- PayFast runs in **sandbox mode intentionally** (`PAYFAST_SANDBOX=true` in `apphosting.yaml`,
-  backend `fastsportprod`). No real payments happen. ITN (payment notification) signature/IP
-  validation is currently skipped in sandbox — that is expected during testing, not a bug to
-  silently "fix", but it **is** a launch blocker (see below).
-- Test data (products, orders, submissions) may be reset at any time (see
-  `scripts/reset-test-data.js`). Do not assume anything you read in Firestore is real production
-  data, a real order, or a real payment.
-- Before this app can go live, see **docs/TECH_DEBT.md → "Sandbox → production launch
-  checklist"** (that file is the tech-debt register maintained alongside this one; if it does not
-  exist yet in your checkout, treat launch-readiness items in this file as still open and ask the
-  repo owner before assuming otherwise).
+| Repo | Owner session | Role |
+|---|---|---|
+| `MXTRADE_TEST` (this repo) | client | Buyer and seller storefront only (Next.js) |
+| `FastSport_Admin` | admin | All admin screens (Vite, React and MUI) |
+| `FastSport_BackEnd` | backend | Express, TypeScript and PostgreSQL API. It owns auth, business logic, files, email and the API contract |
+
+- **The plan and progress:** [docs/expansion/PLAN.md](docs/expansion/PLAN.md) and
+  [docs/expansion/AUDIT.md](docs/expansion/AUDIT.md). Update AUDIT.md whenever a step moves.
+- **Business rules:** `FastSport_BackEnd/docs/DECISIONS.md` (D-01 onwards). Tyron (business) is
+  answering them. Until an item is decided, its "Recommended" option applies.
+- **Branching:**
+  - Migration work happens on **`dev`**.
+  - `master` still runs the old Firebase app, and stays that way until `dev` reaches parity.
+  - On `dev`, pages whose backend endpoints don't exist yet still call Firestore through
+    `lib/firestoreHelpers.js`. They are expected to be broken until they are ported.
+- **Admin code does not belong here.** Every admin feature lives in `FastSport_Admin`. Don't add
+  admin screens, admin routes or role bypasses to this repo.
+- PayFast is sandbox-only and test data can be reset at any time. Don't treat anything you read
+  as real orders, payments or customers.
 - **Concurrent editors:** a separate Codex session owns UI *styling* (Tailwind classNames,
-  layout, sizing) in components/ and pages/. Claude Code agents own *logic* (data access,
-  caching, security, API routes, docs). Never revert or "fix" styling-only diffs you didn't make;
-  re-read a file right before editing it; make small targeted edits (Edit, not whole-file Write);
-  if an edit fails because the text changed, re-read and retry. `.playwright-ui-review/` is that
-  session's screenshot output — leave it alone (it should be gitignored).
+  layout, sizing) in `components/` and `pages/`. Claude sessions own *logic*.
+  - Never revert or "fix" styling-only diffs you didn't make.
+  - Re-read a file right before editing it, and make small targeted edits.
+  - `.playwright-ui-review/` is that session's screenshot output; leave it alone.
 
 ## Priorities
 
-1. Reduce Firebase billing — above all Firestore document reads and writes (unbounded queries,
-   N+1 reads, polling, per-view writes, and cost-amplification vectors in docs/TECH_DEBT.md
-   DOS-xx are the first things to remove).
-2. Performance (page load, time-to-content).
-3. Everything else, unless it is a launch blocker.
-
-When two approaches differ, prefer the one with fewer billed reads/writes; every change to data
-access must state reads-per-page-load before and after in its summary.
+1. Finish moving every page from Firebase to the backend API (`lib/api/*`), fixing known bugs
+   during the port rather than copying them across.
+2. Performance (page load, time-to-content). Let the backend's HTTP caching (`Cache-Control` and
+   `ETag`) do the caching; don't add client-side persistent caches of API data.
+3. Everything else, unless it's a launch blocker (docs/TECH_DEBT.md, docs/LEGAL_COMPLIANCE.md).
 
 ## Project summary
 
-- **Framework:** Next.js `15.2.9`, Pages Router (no `app/` directory, no `getStaticProps`/
-  `getServerSideProps`/`next/head` in use anywhere today — everything is client-rendered).
-- **UI:** React `18.3.1` function components, Tailwind CSS `3.4.4` utility classes.
-- **Backend/data:** Firebase — Auth, Firestore (database `(default)`, region **`africa-south1`**,
-  see `firebase.json`), Storage. Client SDK `firebase ^12.13.0`; API routes use
-  `firebase-admin ^13.10.0` (`lib/firebaseAdmin.js`).
-- **Payments:** PayFast (South African gateway), currently sandbox credentials only.
-- **Email:** `nodemailer ^8.0.7` (SMTP) with a Resend API fallback/alternative — see
-  `lib/emails.js`.
-- **Hosting:** Firebase App Hosting, backend id `fastsportprod` (`apphosting.yaml`,
-  `firebase.json`). Secrets (PayFast keys, SMTP/Resend creds) live in Cloud Secret Manager, wired
-  in via `secret:` entries in `apphosting.yaml`.
-- **Node:** 22.x (verified locally: `node --version` → `v22.12.0`). No `engines` field in
-  `package.json` and no `.nvmrc` — if you add one, keep it at 22.
-- **Data volume:** per a live read-only check of the Firestore project (2026-09-19), each
-  collection currently holds only single-digit to low-double-digit documents. This is why
-  whole-catalog client-side caching (rather than paginated/indexed queries) is the chosen interim
-  strategy — re-check this assumption before it becomes load-bearing at higher volume.
+- **Framework:** Next.js 15 (Pages Router), fully client-rendered (no
+  `getServerSideProps`/`getStaticProps`). `output: 'standalone'` is set for Docker.
+- **UI:** React 18 function components, Tailwind CSS 3 plus a shared MUI theme
+  (`themes/muiTheme.js`, `themes/tokens.js`). Image cropping uses `react-easy-crop`.
+- **Backend:** the FastSport API (`FastSport_BackEnd`), reached at `NEXT_PUBLIC_API_URL`, which
+  includes the version prefix (for example `http://localhost:4000/v1`).
+  - The contract is OpenAPI, generated from Zod: `GET /v1/openapi.json`, with a copy at
+    `FastSport_BackEnd/openapi/openapi.json`.
+  - Errors are RFC 9457 `application/problem+json`: `type`, `title`, `status`, `detail`, and the
+    extensions `code` and `errors[{path, message}]`.
+  - Money is integer cents in ZAR, and IDs are UUIDs.
+  - Lists use cursor pagination: `{items, nextCursor}`.
+- **Auth:** the backend sets httpOnly cookies.
+  - The access token lasts 15 minutes. A session lasts an absolute 7 days, and the refresh token
+    rotates on every use.
+  - The client never sees or stores tokens.
+  - Login methods are email and password, and Google, which is a full-page redirect through the
+    backend.
+- **Images:** the backend stores everything as WebP.
+  - The client crops before upload: listings are 4:3 (at most 1600×1200), avatars are 1:1 (at
+    most 512×512).
+  - Public images are served from `<api host>/files/**`. Refund images are private and must not
+    go through `next/image`.
+- **Payments:** PayFast, sandbox only, handled entirely by the backend.
+- **Email:** sent only by the backend, through the Gmail API with a Workspace service account
+  (D-21). The client never sends email.
+- **Hosting:** a self-hosted Ubuntu server running Docker, possibly k3s. The Dockerfile is at the
+  repo root and runs on Node 24 LTS.
+  - Production hosts: `fastsport.co.za` (client), `admin.fastsport.co.za`,
+    `api.fastsport.co.za`.
+  - Local ports: client 3000, admin 3001, API 4000.
+- **Tests:** Vitest with jsdom and React Testing Library (`tests/`). Playwright (MCP) is used for
+  in-browser checks.
 
 ## Repo structure
 
 ```
-pages/                     Next.js Pages Router — every file here is a route (client-rendered)
-  _app.js, _document.js    App shell / HTML document
-  index.js                 Home page — 4 near-identical product carousels (ARCH debt, see TECH_DEBT)
-  shop.js, shop/           Shop landing + catalog.js (main browse/search/filter), gear.js /
-                           parts.js / accessories.js (thin client-side redirects to catalog.js)
-  product/[id].js          Product detail page (client-side fetch, no SSR/SEO)
-  checkout.js              Cart → order creation → PayFast redirect; has its own delivery-fee logic
-  order/confirmation.js    Post-checkout confirmation page
-  profile.js               Buyer/seller profile, incl. seller private profile (bank/ID) editing
-  profile/orders.js        Buyer's order list
-  profile/orders/[orderId]/index.js, return.js   Order detail + return/refund request UI
-  seller/dashboard.js      Seller landing
-  seller/submit.js         New listing submission form (large, 1300+ lines)
-  seller/submissions.js    Seller's own submissions: list/edit/resubmit (large, near-duplicate of
-                           submit.js in places, see TECH_DEBT ARCH item)
-  admin/dashboard.js       Admin console: submissions, refunds, pricing/specials, trust, FAQ/About
-                           CMS (large, many responsibilities in one file)
-  admin/sales.js           Admin order/fulfilment board (paid → shipped → delivered, refunds)
-  admin/seed.js            Demo product seeding — reachable in production, not gated (TECH_DEBT)
-  login.js                 Auth (email/password + Google sign-in)
-  about.js, contact.js, faq.js   Static-ish content pages, data from Firestore (siteContent, faqs)
-  api/                     API routes (server-side, run with firebase-admin — this is where
-                           anything privileged/money/role-related MUST live)
-    orders/create.js       Creates an order + reserves stock (server-authoritative pricing/stock)
-    orders/cancel.js       Cancels a pending order, releases reservation
-    payfast/checkout.js    Builds the PayFast redirect (signs the request)
-    payfast/notify.js      PayFast ITN webhook — marks orders paid/failed (sandbox-mode caveats
-                           above; read this file before touching payment status logic)
-    admin/orders/update-status.js    Admin-only order status transitions (paid/shipped/delivered)
-    admin/orders/notify-status.js    Order status change email trigger
-    admin/approve.js       PLACEHOLDER — not implemented, returns a stub message. Dead route.
-    submissions.js         PLACEHOLDER — not implemented, returns a stub message. Dead route.
-    submissions/notifications.js     Admin email notifications for new/updated submissions
-    auth/password-reset.js Password reset email flow
-    contact.js              Contact form → email
+pages/                      Next.js Pages Router; every file is a route (client-rendered)
+  _app.js, _document.js     App shell: MUI theme, AuthProvider, CartProvider, Layout
+  index.js                  Home carousels: GET /products/popular and /products/new?category=
+  shop/catalog.js           Search and browse: server-side filters, sort and cursor "Load more"
+  shop.js, shop/*.js        Shop landing and thin redirects to the catalog
+  product/[id].js           Product detail and view tracking
+  login.js                  Login, register, Google redirect, forgot password, resend verification
+  verify-email.js           Landing page for the email verification link
+  reset-password.js         Landing page for the password reset link
+  profile.js                Profile, avatar (square crop), terms, seller onboarding (partly on Firebase)
+  profile/orders*, profile/orders/[orderId]/*   Orders and refund request (still on Firebase)
+  seller/*                  Seller dashboard, submit and submissions with 4:3 cropping (still on Firebase)
+  checkout.js, order/confirmation.js            Checkout and PayFast return (still on Firebase)
+  about.js, faq.js, contact.js                  Content pages (contact still uses the old API route)
+  api/                      LEGACY Firebase API routes; each is deleted as the backend takes it over
 components/
-  Header.js                Main nav, mega-menu, cart button, admin badge polling (30s interval)
-  Layout.js                Page chrome wrapper (header/footer), mounted for the whole app
-  CartDrawer.js             Slide-out cart UI
-  ProductCard.js            Shared product tile (NOT used by index.js carousels — see TECH_DEBT)
-  RefundReviewModal.js      Admin refund review UI — imported nowhere it's rendered (see TECH_DEBT,
-                           this is a shipped crash in admin/dashboard.js)
-  TermsAndConditionsModal.js  T&Cs acceptance modal
-  SellerPartsSubmissionForm.js   DEAD CODE — unused, abandoned extraction attempt. Do not build on
-                           this without confirming with the repo owner first; see docs/TECH_DEBT.md.
+  Header.js, Layout.js, MobileNavigationDrawer.js, CartDrawer.js, ProductCard.js,
+  CarouselControl.js, CategoryTabs.js, TermsAndConditionsModal.js
+  ImageCropDialog.js        react-easy-crop dialog used for every image upload
+  TermsReacceptGate.js      Blocks the site until changed terms are re-accepted (/me flag)
 lib/
-  firebase.js               Client Firebase SDK init (plain getFirestore — in-memory cache only,
-                           no offline persistence configured)
-  firebaseAdmin.js          Admin SDK init for API routes (reads FIREBASE_SERVICE_ACCOUNT_JSON)
-  firestoreHelpers.js       THE client data-access layer — ~1600 lines, 70+ exported functions.
-                           All client Firestore/Storage reads and writes are meant to go through
-                           here (see "Firebase data rules" below). Large god-module; also contains
-                           some functions that perform privileged admin writes from the browser
-                           (e.g. `approveSubmission`) — treat these as tech debt, not a pattern to
-                           copy for new privileged logic (new privileged writes belong in `pages/api/`).
-  useAuth.js                Auth hook (`onAuthStateChanged` + `users/{uid}` read). Plain hook, not
-                           a shared context — each component instance re-fetches the profile.
-  cartContext.js            Cart state via React context, persisted to `localStorage` (not Firestore)
-  adminAuth.js               `requireAdminFromRequest(req)` — verifies a bearer ID token and checks
-                           `role === 'admin'` server-side. THE pattern to copy for admin API routes.
-  apiRateLimit.js           In-memory, per-instance rate limiter keyed on `X-Forwarded-For`
-                           (spoofable — do not rely on this alone for abuse-sensitive endpoints)
-  payfast.js                DEAD CODE — unused stub (`payfastCheckout`), superseded by
-                           `pages/api/payfast/checkout.js`. See docs/TECH_DEBT.md.
-  emails.js                 `dispatchEmail` + email template builders — the shared email path.
-                           Some API routes reimplement email sending instead of using this (debt).
-  compressImage.js          Client-side image compression before upload
-  dirtBikeCategories.js     Category/brand/model constant data (`DIRT_BIKE_CATEGORIES` uses
-                           `Gear`/`Parts`/`Accessories`, capitalized — see casing note in the
-                           glossary below; other parts of the app use lowercase 'gear' etc.)
-scripts/                    One-off/maintenance Node scripts run with `node scripts/<file>.js`
-  migrate-approved-brands.js          Backfills `catalogConfig/gearBrands` from live data
-  migrate-seller-public-profiles.js   Backfills `sellerPublicProfiles` from `sellerPrivateProfiles`
-  reset-test-data.js                  Wipes orders/products/Storage test data — NO project guard,
-                           be careful which Firebase project is active before running this
-styles/, public/            Tailwind global CSS; static assets (public/images is ~55 MB, includes
-                           several very large source JPGs and a stray .psd — see docs/TECH_DEBT.md)
-firestore.rules             Firestore security rules — the actual access-control source of truth
-storage.rules                Storage security rules (only `sellerSubmissions/` and
-                           `profilePictures/` paths are defined; no `refunds/` path rule exists
-                           even though `firestoreHelpers.js` uploads refund images there — a known
-                           gap, see docs/TECH_DEBT.md)
-firestore.indexes.json      Composite index definitions. Currently only defines one index
-                           (`productSubmissions` by `status`+`createdAt`) — several queries used
-                           in the app (e.g. `orders` by `buyerEmail`+`createdAt`, `orders` by
-                           `status`+`createdAt`) need composite indexes not present here; if you
-                           add a new composite query, add the index here in the same change.
-firebase.json                Firebase project config: Firestore region/rules/indexes paths,
-                           Storage rules path, App Hosting backend id (`fastsportprod`)
-apphosting.yaml              App Hosting env vars/secrets for the deployed backend (PayFast
-                           sandbox flag, support/admin emails, Resend/SMTP secret bindings)
-next.config.js               Minimal — only sets `reactStrictMode: true`
-tailwind.config.js           Minimal — content globs over `pages/` and `components/`, empty theme
-docs/                        Repo documentation. See docs/TECH_DEBT.md (issue register — read
-                           before starting any task) and docs/LEGAL_COMPLIANCE.md (being written).
+  apiClient.js              THE only place that calls the backend with fetch: cookies, CSRF
+                            header, refresh on AUTH_TOKEN_EXPIRED, RFC 9457 parsing
+  api/auth.js               Auth endpoints and /me
+  api/catalog.js            Catalog and content endpoints, plus toClientProduct() (the adapter
+                            from the API shape to the page shape)
+  AuthContext.js, useAuth.js  Shared session state from GET /me (user, profile, signOut, ...)
+  userMessage.js            toUserMessage() and UserFacingError; the only way errors reach the UI
+  cropImage.js, useImageCropQueue.js   Crop maths and encoding, and the multi-file crop queue
+  termsVersions.js          Terms versions the modal displays (must match the backend)
+  cartContext.js            Cart in localStorage, keyed per user id
+  firestoreHelpers.js, firebase*.js, publicCache.js, catalogVersions.js, server/, emails.js,
+  apiRateLimit.js           LEGACY Firebase code, deleted once nothing imports it
+tests/                      Vitest suites (lib/, components/, pages/) and setup.js
+docs/expansion/             Cross-repo plan and progress audit
+docs/TECH_DEBT.md           Issue register (read before starting work)
+Dockerfile, .dockerignore   Multi-stage standalone image (Node 24 LTS, non-root)
 ```
 
-**Oddities worth knowing about:**
+**Oddities:** `MXTRADE_TEST/` at the root is an empty, orphaned gitlink (TECH_DEBT DX-05); leave
+it alone. `.agents/` and `skills-lock.json` are tool reference docs, not app code.
+`.github/workflows/static.yml` publishes the whole repo to GitHub Pages; that is an open decision
+in AUDIT.md.
 
-- `MXTRADE_TEST/` at the repo root is an **empty directory tracked as a git submodule/gitlink**
-  (no `.gitmodules` file). It resolves to nothing useful. Do not put files in it; do not try to
-  "fix" it without asking the repo owner — it may be an accidental artifact from repo setup.
-- `.agents/` and `skills-lock.json` at the repo root are **Firebase/Genkit AI skill reference
-  docs**, not application code. Don't treat anything under `.agents/` as part of the app.
-- `.env-check.js` and `.smtp-test.js` at the repo root are ad-hoc scripts (not in `scripts/`) that
-  read `.env.local` directly to sanity-check config. Treat them as dev tooling, not app code —
-  and never run them in a way that prints their output somewhere it could be logged/shared, since
-  they touch env vars.
-- `.github/workflows/static.yml` deploys the **entire repository** (`path: '.'`) to GitHub Pages
-  on every push to `master`, with no build/lint/test step. This publishes source files, including
-  `firestore.rules`, `apphosting.yaml` (which contains real admin email addresses), and
-  `.env-check.js`. Do not assume this workflow is safe to leave as-is; it's flagged in
-  docs/TECH_DEBT.md as a security item, not something to fix silently.
-- **Known dead/unused code** (do not build new features on top of these without confirming
-  intent with the repo owner — see docs/TECH_DEBT.md for the full ARCH-xx entries):
-  - `lib/payfast.js` — unused stub, superseded by `pages/api/payfast/checkout.js`.
-  - `components/SellerPartsSubmissionForm.js` — unused, not imported anywhere.
-  - `pages/api/admin/approve.js` — placeholder route, returns a stub JSON message only.
-  - `pages/api/submissions.js` — placeholder route, returns a stub JSON message only.
-
-## Commands & setup
-
-From `package.json`:
+## Commands and setup
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Starts the Next.js dev server (`next dev`) |
-| `npm run build` | Production build (`next build`) |
-| `npm run start` | Starts the production server from a build (`next start`) |
-| `npm run migrate:brands` | **Dry run** — reports what `scripts/migrate-approved-brands.js` would change, writes nothing |
-| `npm run migrate:brands:apply` | Same script with `--apply` — actually writes to Firestore |
-| `npm run migrate:seller-public-profiles` | **Dry run** for `scripts/migrate-seller-public-profiles.js` |
-| `npm run migrate:seller-public-profiles:apply` | Same script with `--apply` — actually writes |
+| `npm run dev` | Next.js dev server on :3000 |
+| `npm run build` | Production (standalone) build |
+| `npm test` | Vitest, run once |
+| `npm run test:watch` | Vitest in watch mode |
 
-Always run the dry-run variant first and read its output before running the `:apply` variant.
+**Environment:** copy `.env.example` to `.env.local`. For the migrated pages, the client needs
+only `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_BRAND_LOGO` and
+`NEXT_PUBLIC_WHATSAPP_NUMBER`. The Firebase variables remain only for the legacy pages. Never open,
+print or paste `.env.local`. To point a dev run at the local API without touching it:
+`NEXT_PUBLIC_API_URL=http://localhost:4000/v1 npx next dev -p 3000`.
 
-**Environment:** copy `.env.example` to `.env.local` and fill it in. `.env.example` lists only a
-subset of what the app actually reads from `process.env` — the full set of variable **names**
-used in the code (verified by grep; no values shown here) is:
+**Local backend:** the backend session runs the API on `:4000` against a local Postgres 18. In
+local development, email goes to the backend's log, so ask the backend session for verification
+and reset links.
 
-- **Firebase client (public, safe to expose):** `NEXT_PUBLIC_FIREBASE_API_KEY`,
-  `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`,
-  `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`,
-  `NEXT_PUBLIC_FIREBASE_APP_ID`, `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID`
-- **Site URL:** `NEXT_PUBLIC_SITE_URL` (used to build absolute links in emails/PayFast redirects —
-  `apphosting.yaml` does not currently set this for the deployed backend, which means it can fall
-  back to a request's `Host` header in some code paths; see docs/TECH_DEBT.md)
-- **SMTP / Resend / contact:** `RESEND_API_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`,
-  `SMTP_USER`, `SMTP_PASS`, `CONTACT_FROM_EMAIL`, `CONTACT_REPLY_TO_EMAIL`,
-  `CONTACT_ADMIN_EMAIL`, `CONTACT_ADMIN_EMAILS`, `ADMIN_NOTIFICATION_EMAILS`,
-  `BUYER_FROM_EMAIL`, `SUPPORT_EMAIL`
-- **PayFast:** `PAYFAST_SANDBOX`, `PAYFAST_SKIP_VALIDATION`, `PAYFAST_FORCE_SANDBOX_VALIDATION`,
-  `PAYFAST_MERCHANT_ID`, `PAYFAST_MERCHANT_KEY`, `PAYFAST_PASSPHRASE`
-- **Service account / server-side Firebase:** `FIREBASE_SERVICE_ACCOUNT_JSON` (full service
-  account JSON as a string — never print or log this), `FIREBASE_PROJECT_ID`,
-  `FIREBASE_STORAGE_BUCKET`
-- **Optional branding (used in components, not in `.env.example`):** `NEXT_PUBLIC_BRAND_LOGO`,
-  `NEXT_PUBLIC_WHATSAPP_NUMBER`
+**Port 3000 stuck (stale `next dev` on Windows):** `netstat -ano | findstr :3000`, then
+`taskkill /PID <pid> /F /T`.
 
-Never open, print, or paste the contents of `.env.local` — if you need to know what a variable is
-*named*, use `.env.example` or the list above; if you need to know whether one is *set*, check
-`apphosting.yaml` variable names for the deployed backend.
-
-**Node:** this repo runs on Node 22.
-
-**Port 3000 stuck (stale `next dev` process on Windows):**
-```
-netstat -ano | findstr :3000
-taskkill /PID <pid> /F /T
-```
-
-**Browser verification:** the Playwright MCP server is configured in `.mcp.json` at the repo
-root (`npx @playwright/mcp@latest`). Use it against the running `npm run dev` server to verify UI
-changes instead of guessing from source.
+**Browser checks:** use the Playwright MCP server (`.mcp.json`) against the running dev server.
 
 ## Coding conventions
 
-### JSDoc — mandatory on every function, hook, component and API handler
+### JSDoc: required on every function, hook, component and handler
 
-Every new or modified function, React hook, component, and API route handler must have a full
-JSDoc comment directly above it, in this format:
+Every new or modified function, hook and component must have a full JSDoc block:
 
 ```js
 /**
- * Why: <the reason or context this exists — what problem it solves or what
- * behaviour depends on it, NOT a restatement of what the code literally does>
- * @param {Type} paramName - What this parameter means and any constraints.
+ * Why: <the reason this exists: what problem it solves or what depends on it,
+ * NOT a restatement of what the code does>
+ * @param {Type} paramName - What it means and any constraints.
  * @returns {Type} What is returned and what it represents.
  * @throws {ErrorType} When and why this can throw.
  * @example
@@ -255,269 +167,116 @@ JSDoc comment directly above it, in this format:
  */
 ```
 
-`@throws` is only required where the function can actually throw or reject. `@example` should be
-a realistic call, not a placeholder.
+`@throws` is only needed where the function can throw or reject. `@example` must be a realistic
+call. When you touch existing code that lacks this, back-fill it. See `lib/api/catalog.js` for
+reference examples.
 
-**Realistic example**, based on `fetchThisWeeksNewProductsByCategory` in
-`lib/firestoreHelpers.js` (today it has only a one-line `// comment`, no JSDoc — this is what it
-should look like once touched):
+### Style: match what's already here
 
-```js
-/**
- * Why: Powers the home page's "New this week" category carousels. Reuses the
- * already-fetched live-product list instead of issuing a second Firestore
- * query per category, since fetchLiveProducts() already returns every
- * listed+active product for the storefront.
- * @param {string} category - Category name to match, case-insensitively
- *   (e.g. 'Gear', 'Parts', 'Accessories').
- * @param {number} [limit=6] - Maximum number of products to return.
- * @returns {Promise<Array<Object>>} Up to `limit` normalized product records
- *   created in the last 7 days, in the order fetchLiveProducts() returned
- *   them (createdAt descending).
- * @throws {FirebaseError} If the underlying Firestore reads in
- *   fetchLiveProducts() fail (e.g. permission-denied, unavailable).
- * @example
- * const newGearThisWeek = await fetchThisWeeksNewProductsByCategory('Gear', 6);
- */
-export async function fetchThisWeeksNewProductsByCategory(category, limit = 6) {
-```
-
-**Existing code:** most functions in `lib/firestoreHelpers.js` today have no JSDoc, or at most a
-partial one (`@param`/`@returns` without a `Why:` line or `@example`). This is expected — the
-rule is: new or modified code must comply; when you touch an existing function for any reason,
-back-fill its JSDoc to the full format at the same time.
-
-### Style — match what's already here
-
-Verified by reading `lib/firestoreHelpers.js`, `components/Header.js`, and `pages/admin/sales.js`:
-
-- Plain JavaScript, no TypeScript (no `.ts`/`.tsx` files, no `tsconfig.json`).
-- React function components with hooks; no class components.
-- Tailwind utility classes remain the layout and screen-styling baseline. MUI Core is
-  available for accessible, complex controls (for example drawers, dialogs, menus and
-  tables); import individual modules by path and apply the shared Fast Sport MUI theme.
-  Reuse `themes/tokens.js` for new brand colours, typography, radii, shadows and spacing
-  rather than introducing fresh literal design values. Do not add CSS Modules or
+- Plain JavaScript (no TypeScript). React function components with hooks.
+- Tailwind for layout. MUI for complex, accessible controls (dialogs, drawers, sliders), imported
+  per module by path, using the shared theme. Reuse `themes/tokens.js`; no CSS Modules or
   styled-components.
-- 2-space indentation.
-- Single quotes for strings.
-- Semicolons at the end of statements.
-
-Follow this exactly for new code — don't introduce double quotes, 4-space indents, or a
-different component style in one file.
+- 2-space indentation, single quotes, semicolons.
 
 ### Dependencies
 
-Don't add a new npm dependency without saying so explicitly in the PR/commit message. If it's a
-workaround for something that should be fixed properly later, log that in docs/TECH_DEBT.md too.
+Don't add an npm dependency without saying so in the commit message, and check its latest stable
+version online. Flag any major-version upgrade before doing it.
 
 ### User-facing errors
 
-Never render `err.message`, Firebase error codes, stack text or console URLs in the UI. Show a
-short plain sentence the user can act on ("We couldn't load your orders. Please try again.") and
-send the detail to `console.error('[area] what failed', err?.code || err)`. Use the shared helper
-`toUserMessage(err, fallback)` from `lib/userMessage.js` once it exists (tracked as ARCH-14 in
-docs/TECH_DEBT.md); until then, inline a friendly fallback. Never log user or profile objects.
+Never render `err.message`, error codes, stack text or URLs. Use
+`toUserMessage(err, fallback)`. It shows the backend's `detail` for 4xx problems (the contract
+says it's safe to show users) and a generic sentence for 5xx. Show per-field validation errors
+with `getFieldErrors(err)` from `lib/apiClient.js`. Never log user or profile objects.
 
 ### No duplicate code
 
-Before writing a helper, constant, status map, or component, grep for an existing one (lib/,
-components/, pages/api/) and reuse it. If the same logic exists in two places, extract ONE shared
-module (lib/ for logic and constants, components/ for UI, pages/api/_lib or lib/server for API
-helpers) and make both call sites use it — do this as part of any fix that touches duplicated
-code, and say what you consolidated in your report. Known duplication hotspots are tracked in
-docs/TECH_DEBT.md (ARCH-02 seller forms, ARCH-03 pricing, ARCH-04 status/category/role strings,
-ARCH-05 home carousels, ARCH-06 API helpers/email). UI component dedupe is coordinated with the
-Codex styling session — extract the logic, don't restyle.
+Before writing a helper, constant, status map or component, grep for an existing one and reuse
+it. When two places share logic, extract one module (`lib/` for logic, `components/` for UI) and
+make both use it. UI component dedupe is coordinated with the Codex styling session: extract the
+logic, don't restyle.
 
-## Firebase data rules for agents
+### Tests
 
-- All client-side Firestore/Storage access goes through `lib/firestoreHelpers.js`. Don't import
-  `firebase/firestore` directly in a page or component — the only current exceptions are
-  `pages/login.js` and `components/Header.js` (both import `firebase/auth`/`firebase.js`
-  directly for auth, not Firestore queries), and those are pre-existing, not a pattern to extend.
-- Every query must be bounded: use `limit()` and/or pagination. Several existing queries in
-  `lib/firestoreHelpers.js` are unbounded (see docs/TECH_DEBT.md PERF items) — don't copy that
-  pattern into new code, and prefer fixing it if you're already touching that function.
-- No N+1 reads: don't call `getDoc` per item inside a loop or `.map()`. Dedupe by document id
-  first (e.g. via a `Map`), then batch-fetch.
-- Batch multi-document writes with `writeBatch()` or a transaction (`runTransaction`) rather than
-  sequential `updateDoc`/`setDoc` calls.
-- Prefer `getCountFromServer()` for counts instead of downloading full documents just to count
-  them (see the admin badge polling in `components/Header.js` for the anti-pattern to avoid).
-- If you add a new composite query (a query with more than one `where`/`orderBy` combination that
-  Firestore can't serve from a single-field index), add the corresponding entry to
-  `firestore.indexes.json` in the same change.
-- If you add a new write path, update `firestore.rules` in the same change — a write that isn't
-  allowed by the rules will fail in the running app regardless of what the client code does.
-- **Never persist private collections to IndexedDB or localStorage:** `users`,
-  `sellerPrivateProfiles`, `orders`, `refundRequests` (subcollection of `orders`),
-  `adminNotifications`. These must stay in memory only, and any in-memory cache of them must be
-  cleared on logout.
-- **Only public data may be cached client-side (IndexedDB/localStorage/etc.):** `products`,
-  `catalogConfig`, `faqs`, `siteContent`.
-- **Staleness budget:** general product/catalog content may be a few **minutes** stale in a
-  client-side cache. **Price and quantity must be seconds-fresh** — re-fetch or re-validate them
-  close to the point of display/purchase; never serve a cached price/quantity that could be
-  minutes old. Checkout must always re-validate server-side regardless of what the client showed
-  (`pages/api/orders/create.js` is the authoritative point today).
+Add or update Vitest tests with every logic change (`tests/lib`, `tests/components`,
+`tests/pages`). Mock `next/router` and `lib/api/*` in page tests. Stub `fetch` for `lib/api` and
+`apiClient` tests. `npm test` and `npm run build` must pass before you commit.
+
+## Backend API rules for agents
+
+- **All backend calls go through `lib/apiClient.js` → `lib/api/<domain>.js`.** Pages and
+  components never call `fetch` against the API directly, and never import `firebase/*` in new
+  code.
+- Keep the export names and return shapes that pages already use when you port a
+  `firestoreHelpers` function; adapt the API shape in `lib/api/*` (see `toClientProduct`).
+- The backend is authoritative for money, stock, status, roles and approvals. The client only
+  displays values the API returns (for example `effectivePriceCents`) and never computes prices
+  or totals to send to the server.
+- Auth and email-link endpoints pass `retryOnUnauthorized: false` so a 401 never triggers a
+  refresh loop.
+- Never persist private API data (profile, seller profile, orders, refunds) to localStorage or
+  IndexedDB. Only the cart lives in localStorage.
+- Adding a field you need: ask the backend session (SendMessage to "backend") to add it to the
+  contract. Don't work around a missing field on the client.
 
 ## Security rules for agents
 
-- Money, stock, order status, roles, and approvals are **server-authoritative**: they must be
-  decided and written by an API route using `firebase-admin`, never trusted from the client.
-  Never trust a client-supplied `price`, `quantity`, `status`, or `originalProductId` — validate
-  or ignore them server-side.
-- Verify Firebase ID tokens in every API route that needs a signed-in user, and check role
-  server-side. Follow the pattern in `lib/adminAuth.js` (`requireAdminFromRequest`): read the
-  `Authorization: Bearer <token>` header, `admin.auth().verifyIdToken()`, then look up the role
-  in Firestore via the Admin SDK — don't trust a role claim from the client. (Note: today this
-  check only accepts the exact string `'admin'`, while `firestore.rules` also accepts `'Admin'`/
-  `'ADMIN'` — that inconsistency is tracked in docs/TECH_DEBT.md; don't silently "fix" the casing
-  in one place without checking the other.)
-- Never commit `.env.local`, a service-account JSON file, or any other secret. Never open or
-  print `.env.local`'s contents.
-- Never put a secret in a `NEXT_PUBLIC_*` variable — those are bundled into client JS and are
-  public.
-- PayFast ITN (`pages/api/payfast/notify.js`) must be fully validated (signature, source IP,
-  `merchant_id`, amount, and a server-side confirmation call) before this app can go live. Today,
-  validation is intentionally skipped in sandbox mode — don't treat that as the target state, and
-  don't add anything that makes it easier to skip validation outside sandbox.
-- Escape/sanitize user input before putting it into an email (HTML or plain text) — see
-  docs/TECH_DEBT.md for a known gap in the contact form.
-- Never log tokens, API keys, signatures, or user emails. (`useAuth.js` currently logs the full
-  Firebase user object on every auth state change — don't copy that pattern into new code.)
+- Never trust the client for money, stock, status or roles; the backend decides.
+- The session cookies are httpOnly; don't try to read them. Every state-changing request must
+  carry the `X-Requested-With: FastSport` header, which `apiClient` adds automatically.
+- Never put a secret in a `NEXT_PUBLIC_*` variable, and never commit `.env*` files or print their
+  contents.
+- Render API text as plain text. Content bodies (About, FAQ) interpret only `**bold**`; never use
+  `dangerouslySetInnerHTML`.
+- `returnTo` values for Google sign-in must be relative paths (`getGoogleSignInUrl` enforces
+  this).
+- Never log tokens, emails or user objects.
 
 ## Workflow for agents
 
-1. Read `docs/TECH_DEBT.md` before starting any task, if it exists in your checkout.
-2. If you find an issue unrelated to what you were asked to do, **log it in docs/TECH_DEBT.md
-   with the next free ID** (prefix by area: `PERF-`, `SEC-`, `BUG-`, `ARCH-`, `DX-`, `DOS-`
-   (denial of service / cost amplification), `LEGAL-`) instead of silently fixing it. Keep your
-   change scoped to what was asked.
-3. `docs/TECH_DEBT.md` conventions (owner's rules): each table is ordered by **severity, high to
-   low** — an item's ID does not imply order. `Status` is one of `Open` / `In progress` /
-   `Won't fix` / `Fixed — awaiting commit`. **Never reuse an ID** — the file's header lists the
-   "Next free IDs" per prefix. When you fix an item, set its Status to `Fixed — awaiting commit`;
-   only once that fix is actually **committed** do you delete the row from its table and append a
-   line to the `## Fixed log` section at the end of the file, in the form `ID — title — commit
-   hash`.
-4. Verify your change in the running app: `npm run dev`, then use the Playwright MCP
-   (`.mcp.json`) to drive the browser and confirm the behaviour. State in your summary what you
-   actually verified (which pages/flows, what you saw), not just that the code compiles.
-   **Test data:** never modify existing real records (products, orders, users, submissions) to
-   test a change. Create your own clearly named test record, verify against it, then delete it,
-   and report what you created and removed. If a test did change a real record, restore every
-   field you changed and confirm the restore.
-5. **Do not run `git commit`, `git add`, `git push`, `git stash`, or anything else that changes
-   git state.** The repo owner commits. Instead, write a suggested commit message.
-6. Commit message style — this repo does not use Conventional Commits prefixes. Recent history
-   (`git log --oneline -10`) looks like: `UI changes and footer added`, `GUI update`, `removal of
-   duplicates from seller dashboard`, `product status update changes`, `Check out logic updated`,
-   `Quantity fix`, `Update notify.js`. Match that: a short, plain-English summary of the change —
-   sometimes imperative ("Update notify.js"), sometimes a noun phrase or past tense ("Quantity
-   fix", "GUI update") — no ticket numbers, no `feat:`/`fix:` prefixes, no multi-paragraph bodies.
+1. Read `docs/TECH_DEBT.md` and `docs/expansion/AUDIT.md` before starting.
+2. Log anything unrelated that you find in `docs/TECH_DEBT.md` with the next free ID (`PERF-`,
+   `SEC-`, `BUG-`, `ARCH-`, `DX-`, `DOS-`, `LEGAL-`), rather than silently fixing it.
+   - Tables are ordered by severity. IDs are never reused.
+   - A fixed row is deleted and recorded in the `## Fixed log` with its commit hash.
+3. Verify in the running app with Playwright against the local backend, and say what you actually
+   verified. Create your own clearly named test data, and don't modify others' records.
+4. **Commits:**
+   - Commit on `dev`, in logical chunks, as the repo owner's git identity only.
+   - **Never add a `Co-Authored-By` line or any AI attribution.**
+   - Taylor pushes; tell him which commits are ready.
+   - Don't stash or rewrite history.
+5. Commit message style: a short plain-English summary, with no `feat:`/`fix:` prefixes and no
+   ticket numbers. Examples: `Catalog reads from FastSport backend: ...`, `Quantity fix`.
+6. Coordinate with the other sessions through messages. Each session edits only its own repo.
+   Relay the user's cross-repo requirements to the others.
+7. Subagents: this session may use up to 2 Sonnet subagents.
 
-## Domain glossary (verified from code)
+## Domain glossary (backend contract)
 
-**Firestore collections** (all confirmed present in `firestore.rules`):
-- `users` — one doc per account, includes `role` and `canSell`
-- `productSubmissions` — seller listing submissions awaiting/having been through approval
-- `products` — live/public product listings
-- `orders` — buyer orders; has a `refundRequests` **subcollection** (`orders/{orderId}/refundRequests/{id}`, not a top-level collection)
-- `sellerPublicProfiles` — public seller info (suburb, city, trust badge/score) — readable by anyone
-- `sellerPrivateProfiles` — private seller info (ID number, bank details) — owner/admin only
-- `catalogConfig` — three docs: `gearBrands`, `subcategories`, `bikeModels`
-- `faqs`, `siteContent` — public content, admin-editable. **`faqs` is defined in
-  `firestore.rules` and read by `pages/faq.js` via `fetchFaqs()`, but per a live read-only check
-  (2026-09-19) the collection is currently empty in the project** — don't assume the FAQ page has
-  content to show; verify before relying on it in a demo or test.
-- `adminNotifications` — admin-only
-
-Note: the `orders/{orderId}/refundRequests` subcollection referenced above is defined in
-`firestore.rules` and written by `submitRefundRequest`/`processRefundRequest`
-(`lib/firestoreHelpers.js`), but per the same live check it currently has **no documents** in any
-order — treat the refund flow as untested against real data, not confirmed working end-to-end.
-
-**Product statuses** (`products.status`, from `lib/firestoreHelpers.js`): `'listed'` (current
-live listings), `'active'` (legacy alias — `normalizeProductRecord` maps it to `'listed'` on
-read), `'pending'` (transiently used in a couple of write paths). `marketSold: true/false`
-(boolean) marks whether a listed product has actually sold, separate from `status`.
-
-**Submission statuses** (`productSubmissions.status`): `'pending'` (awaiting admin review) →
-`'approved'` (set by `approveSubmission`, `lib/firestoreHelpers.js:1463`) or `'rejected'` (set by
-`rejectSubmission`, `lib/firestoreHelpers.js:1546`). Approval also creates the corresponding
-`products` doc with `status: 'listed'` (same `approveSubmission` call) and stamps the new
-product's id back onto the submission (`productId: productRef.id`); this whole sequence is a
-non-atomic read-modify-write — see docs/TECH_DEBT.md.
-
-**Order statuses** (`orders.status`, from `pages/api/orders/create.js`, `pages/admin/sales.js`,
-`pages/api/admin/orders/update-status.js`, `lib/firestoreHelpers.js`): `'pending_payment'`
-(just created, awaiting PayFast), `'payment_failed'`, `'failed'`, `'cancelled'`, `'payment_cancelled'`
-(set by `pages/api/orders/cancel.js:64`, when a buyer cancels a pending order via its
-cancellation token — releases the stock reservation in the same transaction), `'paid'`,
-`'shipped'`, `'delivered'`, `'refund_pending'`, `'refunded'`. Admin order-status API
-(`update-status.js`) only allows transitions **into** `'paid'`, `'shipped'`, `'delivered'` and
-does not currently prevent moving a status backwards (e.g. `'delivered'` → `'paid'`) — treat that
-as a known gap, not intended behaviour, when writing new status-changing code.
-**`'payment_cancelled'` is not fully wired up in the status maps:** `pages/admin/sales.js`'s
-`HIDDEN_ORDER_STATUSES` only hides the string `'cancelled'`, not `'payment_cancelled'`, so a
-buyer-cancelled order can still show up on the admin fulfilment board; `pages/profile/orders.js`'s
-`STATUS_LABEL`/`STATUS_COLOUR` maps have no entry for it either, so it falls back to the raw
-status string with a default grey badge instead of a friendly label. Don't assume either UI
-handles this status correctly — flag it in docs/TECH_DEBT.md if you touch this area rather than
-silently patching just one of the two maps.
-
-**Refund request statuses** (`orders/{id}/refundRequests/{id}.status`): `'pending'` (just
-submitted by buyer), `'accepted'` / `'denied'` (set by `processRefundRequest`, which also moves
-the parent order to `'refunded'` or back to `'delivered'`).
-
-**Roles**: `users.role` — per a live read-only check of the Firestore project (2026-09-19), real
-data contains `'customer'`, `'admin'`, and `'seller'`, all lowercase (no `Admin`/`ADMIN` casings
-exist in current data). In code, only `'customer'` is confirmed as an explicit written value:
-`lib/firestoreHelpers.js:407` (`createUserProfile(user, role = 'customer', ...)`) is called with
-`'customer'` from `pages/login.js:128` on every new sign-up. **No code path in this repo was
-found that writes `role: 'admin'` or `role: 'seller'`** — admin accounts appear to be set by hand
-(console/Admin SDK, outside this repo), and "seller" is otherwise represented in code via the
-separate `users.canSell` boolean rather than a distinct role string (e.g. `pages/profile.js:833`
-only uses `'seller'` as a UI label for the seller-terms-acceptance flow, not as a role value being
-written). If `'seller'` really is a `role` value in live data, its write path wasn't found here —
-confirm with the repo owner before relying on it in role-gated logic.
-**Casing caveat:** `firestore.rules` (`isAdmin()`) accepts `'admin'`, `'Admin'`, or `'ADMIN'`;
-`lib/adminAuth.js` and `components/Header.js` (`profile?.role === 'admin'`) only accept the exact
-lowercase string `'admin'`. Don't assume these two checks agree — verify both if you touch
-role-gated logic. Separately, `users.canSell` (boolean) gates seller-only UI/flows and is
-currently self-settable by the user document owner per `firestore.rules`.
-
-**Categories**: canonical keys come from `lib/dirtBikeCategories.js` →
-`DIRT_BIKE_CATEGORIES = { Accessories: [...], Parts: [...], Gear: [...] }` — capitalized
-(`'Gear'`, `'Parts'`, `'Accessories'`). `components/Header.js`'s `topCategoryTabs` also uses this
-capitalization. However, other code paths (e.g. category filtering in `pages/index.js`) use
-lowercase (`'gear'`) and `pages/shop/catalog.js` lowercases category values before comparing.
-There is no shared constant enforcing one casing — when writing new category-matching code,
-compare case-insensitively (as `fetchThisWeeksNewProductsByCategory` already does) rather than
-assuming a casing.
-
-**Price fields** (`products`/submissions, from `lib/firestoreHelpers.js` around
-`normalizeProductRecord`/`updateProductPricingAsAdmin`): `basePrice` is the seller's listed price
-(falls back to a legacy `price` field if `basePrice` is absent); `price` is also written
-separately and is what `pages/api/orders/create.js` actually charges; `currentPrice` and
-`originalPrice` are the computed/display values when an admin "special" (percentage or flat
-discount) is active. **The special/discount is computed client-side only today** — the server
-charges `price`, not the discounted `currentPrice` — treat this as a known pricing-integrity gap
-(see docs/TECH_DEBT.md), not something to build further features on top of without flagging it.
-
-**Other product fields**: `marketSold` (boolean, sold flag), `inventoryReservations` (map keyed
-by order id, holding a temporary stock hold created at checkout — lives on the public `products`
-doc), `clickCount` (numeric, incremented on every product-detail view, including by anonymous
-users per `firestore.rules`; used to rank the "Most clicked"/"Popular" home carousel).
+- **Categories:** API keys are `gear`, `parts` and `accessories`. Labels, URLs and filters use
+  `Gear`, `Parts` and `Accessories`. `CATEGORY_LABELS` and `toCategoryKey` in
+  `lib/api/catalog.js` convert between them.
+- **Conditions:** `new_in_packaging`, `lightly_used`, `used_good`, `used`. Display labels come
+  from `conditionLabel` or `/catalog/config`.
+- **Product statuses:** `listed`, `pending_review`, `sold_out` and `removed`. Public endpoints
+  return only `listed` and `sold_out`.
+- **Prices:** `basePriceCents` is the listed price. `effectivePriceCents` is what the buyer pays
+  now, with any special applied (D-01). Show `basePrice` struck through when `isSpecialActive`
+  is true.
+- **Roles:** `role` plus `permissions[]` come from `/me` (see D-20). Selling depends on `canSell`,
+  which only the backend sets (D-03). Admins follow normal buyer and seller rules in the shop
+  (D-02).
+- **Terms:** `/me` reports `termsReacceptRequired` and `sellerTermsReacceptRequired`. Accept with
+  the versions in `lib/termsVersions.js`.
 
 ## Pointers
 
-- `docs/TECH_DEBT.md` — the issue register (Firestore cost/caching, security, correctness,
-  structure, tooling). Read it before starting work; log new findings there.
-- `docs/LEGAL_COMPLIANCE.md` — being written; check it if your task touches T&Cs, privacy,
-  consumer-protection, or payment-compliance behaviour.
-- `README.md` — exists but is **stale**: it references "MXTrade" branding in places while the
-  live product is "Fast Sport", and describes some integrations (e.g. PayFast) as a "placeholder"
-  or "future" work that has since been implemented. Don't trust it over reading the actual code.
+- `docs/expansion/PLAN.md` and `docs/expansion/AUDIT.md`: the plan and where we are.
+- `docs/TECH_DEBT.md`: the issue register. Many Firestore-era rows move to the backend or close
+  as pages are ported.
+- `docs/LEGAL_COMPLIANCE.md`: legal requirements and the PayFast go-live checklist.
+- `FastSport_BackEnd/docs/DECISIONS.md`, `DATABASE.md` and `openapi/openapi.json`: business
+  rules, schema and contract.
