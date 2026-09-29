@@ -14,9 +14,9 @@ Fast Sport is split into three repositories:
 This app holds no business logic of its own. It calls the backend API over cookie-based
 sessions.
 
-> **Status:** pre-launch. The move off Firebase is in progress on the `dev` branch; `master` is
-> the old Firebase version. See [docs/expansion/AUDIT.md](docs/expansion/AUDIT.md) for which
-> pages are migrated.
+> **Status:** pre-launch. On `dev` the storefront runs entirely on the FastSport backend (Firebase
+> removed); `master` is the old Firebase version. See
+> [docs/expansion/AUDIT.md](docs/expansion/AUDIT.md) for progress.
 
 ## Requirements
 
@@ -49,7 +49,6 @@ npm run dev                  # http://localhost:3000
 | `NEXT_PUBLIC_BRAND_LOGO` | Optional logo path override |
 | `NEXT_PUBLIC_WHATSAPP_NUMBER` | Optional WhatsApp contact number |
 
-The Firebase variables in `.env.example` are only used by pages that haven't been migrated yet.
 
 ## Docker
 

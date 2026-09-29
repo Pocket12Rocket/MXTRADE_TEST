@@ -7,7 +7,7 @@ import { useCart } from '../../lib/cartContext';
 import { toUserMessage } from '../../lib/userMessage';
 
 /**
- * Why: Product detail page (client-side fetch, no SSR/SEO). Never render a raw Firestore error —
+ * Why: Product detail page (client-side fetch, no SSR/SEO). Never render a raw API error —
  * show a short friendly sentence via the shared `toUserMessage()` helper (ARCH-14) instead.
  * @returns {JSX.Element} The product detail view, or a "not found" state.
  * @example

@@ -4,7 +4,7 @@ import { fetchFaqs } from '../lib/api/catalog';
 import { toUserMessage } from '../lib/userMessage';
 
 /**
- * Why: Public FAQ page. Never render a raw Firestore error (permission-denied, offline, etc.) —
+ * Why: Public FAQ page. Never render a raw API error (permission-denied, offline, etc.) —
  * show a short friendly sentence via the shared `toUserMessage()` helper (ARCH-14) instead.
  * @returns {JSX.Element} The FAQ list, a loading state, or a friendly error message.
  */

@@ -15,7 +15,7 @@ function renderBoldText(value) {
 }
 
 /**
- * Why: Public About page, rendering admin-edited CMS content. Never render a raw Firestore
+ * Why: Public About page, rendering admin-edited CMS content. Never render a raw API
  * error — show a short friendly sentence via the shared `toUserMessage()` helper (ARCH-14).
  * @returns {JSX.Element} The About/How-it-works article, or a friendly error message.
  */

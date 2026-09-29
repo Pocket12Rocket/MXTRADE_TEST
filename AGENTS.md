@@ -4,7 +4,7 @@ This is the single source of truth for any AI coding agent (Claude, Codex, ...) 
 contributor working in this repository. `CLAUDE.md` only points here. If you're an AI agent, read
 this whole document before making changes.
 
-## Current state: pre-launch, migrating off Firebase
+## Current state: pre-launch, running on the FastSport backend
 
 The app is **not live** and is being split into three repos, each owned by its own Claude
 session:
@@ -22,8 +22,9 @@ session:
 - **Branching:**
   - Migration work happens on **`dev`**.
   - `master` still runs the old Firebase app, and stays that way until `dev` reaches parity.
-  - On `dev`, pages whose backend endpoints don't exist yet still call Firestore through
-    `lib/firestoreHelpers.js`. They are expected to be broken until they are ported.
+  - On `dev`, **all Firebase code has been removed**: every page uses the backend API through
+    `lib/api/*`. Some pages (orders, refunds) are built against the backend's draft contract
+    (`FastSport_BackEnd/docs/CONTRACT_DRAFTS.md`) until those endpoints land in `openapi.json`.
 - **Admin code does not belong here.** Every admin feature lives in `FastSport_Admin`. Don't add
   admin screens, admin routes or role bypasses to this repo.
 - PayFast is sandbox-only and test data can be reset at any time. Don't treat anything you read
@@ -36,8 +37,9 @@ session:
 
 ## Priorities
 
-1. Finish moving every page from Firebase to the backend API (`lib/api/*`), fixing known bugs
-   during the port rather than copying them across.
+1. Complete the storefront against the backend API (`lib/api/*`), reconciling pages built on
+   draft contracts with `openapi.json` as each endpoint lands, then run the full end-to-end test
+   pass (Taylor: implement everything first, test afterwards).
 2. Performance (page load, time-to-content). Let the backend's HTTP caching (`Cache-Control` and
    `ETag`) do the caching; don't add client-side persistent caches of API data.
 3. Everything else, unless it's a launch blocker (docs/TECH_DEBT.md, docs/LEGAL_COMPLIANCE.md).
@@ -92,16 +94,20 @@ pages/                      Next.js Pages Router; every file is a route (client-
   login.js                  Login, register, Google redirect, forgot password, resend verification
   verify-email.js           Landing page for the email verification link
   reset-password.js         Landing page for the password reset link
-  profile.js                Profile, avatar (square crop), terms, seller onboarding (partly on Firebase)
-  profile/orders*, profile/orders/[orderId]/*   Orders and refund request (still on Firebase)
-  seller/*                  Seller dashboard, submit and submissions with 4:3 cropping (still on Firebase)
-  checkout.js, order/confirmation.js            Checkout and PayFast return (still on Firebase)
-  about.js, faq.js, contact.js                  Content pages (contact still uses the old API route)
-  api/                      LEGACY Firebase API routes; each is deleted as the backend takes it over
+  profile.js                Profile details, avatar (square crop), terms, seller application (D-03)
+  profile/orders.js         Signed-in buyer's orders (cursor "Load more")
+  profile/orders/[orderId]/index.js, return.js   Order detail and refund request (signed in)
+  order/[orderId].js, order/[orderId]/return.js  Guest order and refund via the email link (?token=)
+  order/confirmation.js     PayFast return and cancel landing
+  checkout.js               Backend quote, guest or signed-in order, PayFast form post
+  seller/dashboard.js, submit.js, submissions.js  Seller listings: submit, edit, resubmit, live edit
+  about.js, faq.js, contact.js                  Content pages and the contact form
 components/
   Header.js, Layout.js, MobileNavigationDrawer.js, CartDrawer.js, ProductCard.js,
   CarouselControl.js, CategoryTabs.js, TermsAndConditionsModal.js
   ImageCropDialog.js        react-easy-crop dialog used for every image upload
+  ListingFormFields.js, SellingPriceInfo.js     Shared seller listing form fields and buyer-price preview
+  OrderDetail.js, RefundRequestForm.js          Shared order view and refund form (signed-in and guest pages)
   TermsReacceptGate.js      Blocks the site until changed terms are re-accepted (/me flag)
 lib/
   apiClient.js              THE only place that calls the backend with fetch: cookies, CSRF
@@ -109,13 +115,17 @@ lib/
   api/auth.js               Auth endpoints and /me
   api/catalog.js            Catalog and content endpoints, plus toClientProduct() (the adapter
                             from the API shape to the page shape)
+  api/profile.js, seller.js Profile (PATCH /me, photo) and seller application
+  api/submissions.js        Seller submissions and products, multipart builder, toSellerListing()
+  api/orders.js             Checkout quote, orders, guest order tokens, PayFast form post, refunds
+  api/contact.js            Contact form
+  listingForm.js, useListingImages.js, useMarkupQuote.js   Shared listing form logic, photos, price preview
   AuthContext.js, useAuth.js  Shared session state from GET /me (user, profile, signOut, ...)
   userMessage.js            toUserMessage() and UserFacingError; the only way errors reach the UI
   cropImage.js, useImageCropQueue.js   Crop maths and encoding, and the multi-file crop queue
   termsVersions.js          Terms versions the modal displays (must match the backend)
   cartContext.js            Cart in localStorage, keyed per user id
-  firestoreHelpers.js, firebase*.js, publicCache.js, catalogVersions.js, server/, emails.js,
-  apiRateLimit.js           LEGACY Firebase code, deleted once nothing imports it
+  dirtBikeCategories.js     Header mega-menu category list (the forms use /catalog/config)
 tests/                      Vitest suites (lib/, components/, pages/) and setup.js
 docs/expansion/             Cross-repo plan and progress audit
 docs/TECH_DEBT.md           Issue register (read before starting work)
@@ -136,9 +146,10 @@ in AUDIT.md.
 | `npm test` | Vitest, run once |
 | `npm run test:watch` | Vitest in watch mode |
 
-**Environment:** copy `.env.example` to `.env.local`. For the migrated pages, the client needs
-only `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_BRAND_LOGO` and
-`NEXT_PUBLIC_WHATSAPP_NUMBER`. The Firebase variables remain only for the legacy pages. Never open,
+**Environment:** copy `.env.example` to `.env.local`. The client needs only
+`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_BRAND_LOGO` and
+`NEXT_PUBLIC_WHATSAPP_NUMBER`; every secret lives in the backend. Old Firebase variables in an
+existing `.env.local` are ignored and can be removed. Never open,
 print or paste `.env.local`. To point a dev run at the local API without touching it:
 `NEXT_PUBLIC_API_URL=http://localhost:4000/v1 npx next dev -p 3000`.
 

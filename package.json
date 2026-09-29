@@ -6,12 +6,6 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "migrate:brands": "node scripts/migrate-approved-brands.js",
-    "migrate:brands:apply": "node scripts/migrate-approved-brands.js --apply",
-    "migrate:seller-public-profiles": "node scripts/migrate-seller-public-profiles.js",
-    "migrate:seller-public-profiles:apply": "node scripts/migrate-seller-public-profiles.js --apply",
-    "migrate:active-status": "node scripts/migrate-active-to-listed.js",
-    "migrate:active-status:apply": "node scripts/migrate-active-to-listed.js --apply",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -20,14 +14,10 @@
     "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^9.4.0",
     "@mui/material": "^9.4.0",
-    "firebase": "^12.13.0",
-    "firebase-admin": "^13.10.0",
     "next": "^16.3.6",
-    "nodemailer": "^8.0.7",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-easy-crop": "^6.2.3",
-    "uuid": "^14.0.1"
+    "react-easy-crop": "^6.2.3"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",
