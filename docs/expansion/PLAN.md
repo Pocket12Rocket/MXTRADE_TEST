@@ -91,6 +91,14 @@ The backend owns the schema, and its source of truth will be `FastSport_BackEnd/
    - Decide whether to keep the GitHub Pages workflow.
 4. **Docs.** Update `AGENTS.md`, `CLAUDE.md` and `README.md` for the new architecture and commit rule, and retire the Firestore-specific entries in TECH_DEBT and FIRESTORE_TODO.
 
+## Step 5: Restructure to production standard (after the full test pass)
+Taylor decided on 2026-09-29 to bring the client in line with `FastSport_Admin`. **Start only after all features are implemented and the end-to-end test pass is done**, because it moves almost every file and would clash with the Codex styling session.
+- **Full TypeScript migration:** convert every `.js` file to `.ts`/`.tsx` with a strict `tsconfig`. Generate API types from the backend's `openapi.json` with `openapi-typescript` (an `npm run api:types` script, as in admin), and type `lib/api/*` against them so contract drift fails the build.
+- **Layout:** `src/pages` holds thin route files. `src/features/{auth,catalog,product,cart,checkout,orders,seller,profile,content}` holds each feature's pages, components, hooks and tests side by side, alongside `src/lib/api`, `src/components` (shared UI) and `src/theme`. Tests live next to the code they cover.
+- **Tooling:** ESLint (including the jsdoc and react-hooks rules), Prettier, `.editorconfig`, `.nvmrc`, a Node `engines` field, pinned dependency versions, and `npm run check` (typecheck, lint, format and test).
+- **Data layer:** replace the hand-written `useEffect` fetching, loading and caching with TanStack Query, as admin does.
+- **Coordination:** pause the Codex styling session during the move, then update AGENTS.md for the new layout.
+
 ## Verification
 - `npm test` (Vitest) and `npm run build` pass.
 - `docker build` succeeds.
