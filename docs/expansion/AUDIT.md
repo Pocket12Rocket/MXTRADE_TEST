@@ -95,6 +95,53 @@ Status as of end of day 2026-09-27. `main` is clean. It's pushed up to `50d53d1`
 - PayFast confirmation that hold-and-pay-later is allowed (D-06).
 
 ## Change log
+- **2026-09-29 (end of day). All three repos are pushed** (client `dev` at `4cead10`, admin `main` at `650944d`, backend `main` at `c35248c`).
+  - **Client:** every storefront feature is implemented on the backend, and **Firebase is fully removed** (`41a384e`).
+    - Built today (Sonnet subagents implemented, I reviewed):
+      - seller listings: submit, edit, resubmit, live edit (D-12), markup preview (D-04), 500 characters and 3–5 images (D-13)
+      - checkout (quote, guest checkout D-10, email verification gate D-11, PayFast form, retry without duplicate orders), with confirmation polling until the ITN lands (`4cead10`)
+      - the cart is cleared only once payment is confirmed
+      - my orders, order detail, the guest order page `/order/{id}?token=`
+      - refunds with private photos (the token is sent only to the API origin)
+      - contact, and the late-payment display (D-23 recommended)
+      - tech-debt register cleaned up (`364d643`)
+    - Reconciled with the final contracts for submissions, orders and refunds.
+    - 112 unit tests pass and the build passes. **No browser test yet** (Taylor: implement first, test later).
+    - **Next:**
+      - the full browser test pass (still undecided: now, or after admin for an end-to-end flow)
+      - then Step 5, the restructure (TypeScript, `src/features`, ESLint and Prettier, TanStack Query)
+  - **Backend:**
+    - Shipped today:
+      - submissions and moderation (`d2c8cf4`)
+      - image ids and `GET /me/products/{id}` (`1cc76e5`)
+      - contact form and admin command-line script (`e78275a`)
+      - orders, checkout and PayFast (`2d02ec7`)
+      - refunds, with private photos and retention (`be71e53`)
+      - payouts ledger (`05f7c71`)
+      - D-22, D-23 and D-24 (`403a69b`, `5e3467d`)
+      - notification summary (`8c20bdf`)
+      - multi-pod hardening, ITN retries and double-payment flags (`007e2c1`)
+      - admin double-payments (`c35248c`)
+    - Its end-of-day report hadn't arrived when this entry was written.
+  - **Admin:**
+    - Shipped today:
+      - generated types for moderation, orders, refunds and payouts
+      - delivery-fee setting (D-05)
+      - notification summary
+      - payouts screen with masked bank details and audited reveal (D-06, D-24)
+      - double-payments screen
+      - live e2e over every screen
+    - Tests: 139 unit and 165 mocked e2e pass; 4 of 4 live e2e pass (empty-state data only).
+    - **Next:**
+      - a live end-to-end run once there's local data
+      - ARCH-03 (shared snackbar and field-error hooks)
+  - **Waiting on Taylor:**
+    - How to get PayFast ITNs locally (a tunnel, or a dev-only simulate-payment endpoint), so paid orders exist for testing. The backend and admin both need this.
+    - Whether the admin session may push without asking.
+  - **Waiting on Tyron:**
+    - D-22 (refund bank details), D-23 (late-payment display), D-24 (payout bank details)
+    - a legal check of the D-08 24-hour refund window against the ECT Act's 7-day cooling-off period
+    - the Gmail key, an AVS provider, and PayFast's position on hold-and-pay-later
 - **2026-09-27 (end of day). Where each session stopped:**
   - **Client:** clean and fully pushed at `dev` (the audit commit is on top).
     - Done today:
