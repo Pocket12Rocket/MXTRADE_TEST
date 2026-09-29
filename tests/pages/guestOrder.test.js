@@ -15,7 +15,8 @@ vi.mock('../../lib/useAuth', () => ({
   default: () => authState,
 }));
 
-vi.mock('../../lib/api/orders', () => ({
+vi.mock('../../lib/api/orders', async (importOriginal) => ({
+  ...(await importOriginal()),
   getOrder: vi.fn(),
   getOrderToken: vi.fn(),
   storeOrderToken: vi.fn(),

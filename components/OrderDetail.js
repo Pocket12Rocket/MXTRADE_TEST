@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { formatRands } from '../lib/api/orders';
+import { formatRands, getPaymentStepCopy } from '../lib/api/orders';
 
 function formatDate(ts) {
   if (!ts) return null;
@@ -21,8 +21,7 @@ function formatDate(ts) {
 const TIMELINE_STEPS = [
   {
     key: 'purchased',
-    label: 'Payment Confirmed',
-    sublabel: 'Your payment was received and the order is being prepared.',
+    // label and sublabel come from getPaymentStepCopy(order.status), applied in the component.
     dateField: 'paidAt',
   },
   {
@@ -89,6 +88,9 @@ export default function OrderDetail({ order, refundHref, backHref, backLabel }) 
   const completedIdx = resolvedStepIndex(order.status);
   const refund = order.refund;
   const deadline = formatDate(order.refundDeadline);
+  const timelineSteps = TIMELINE_STEPS.map((step) =>
+    step.key === 'purchased' ? { ...step, ...getPaymentStepCopy(order.status) } : step
+  );
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
@@ -175,7 +177,7 @@ export default function OrderDetail({ order, refundHref, backHref, backLabel }) 
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="mb-6 text-base font-semibold text-slate-900">Order status</h2>
         <ol className="relative ml-3 space-y-8 border-l-2 border-slate-200">
-          {TIMELINE_STEPS.map((step, stepIdx) => {
+          {timelineSteps.map((step, stepIdx) => {
             const isCompleted = completedIdx >= stepIdx;
             const isActive = completedIdx === stepIdx;
             const dateStr = formatDate(order[step.dateField]);

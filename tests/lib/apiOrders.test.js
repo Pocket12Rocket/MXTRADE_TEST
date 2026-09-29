@@ -6,6 +6,7 @@ import {
   formatRands,
   getOrder,
   getOrderToken,
+  getPaymentStepCopy,
   getQuoteLineIssue,
   ORDER_STATUSES,
   orderStatusColour,
@@ -123,6 +124,15 @@ describe('orderStatusColour', () => {
     });
     expect(orderStatusColour('late_payment')).toBe('bg-amber-100 text-amber-700');
     expect(orderStatusColour('purchased')).toBe('bg-slate-100 text-slate-700');
+  });
+});
+
+describe('getPaymentStepCopy', () => {
+  it('describes a late payment as under review and everything else as confirmed', () => {
+    expect(getPaymentStepCopy('late_payment').label).toBe('Payment received, being reviewed');
+    expect(getPaymentStepCopy('late_payment').sublabel).toContain('Our team will contact you');
+    expect(getPaymentStepCopy('paid').label).toBe('Payment Confirmed');
+    expect(getPaymentStepCopy(undefined).label).toBe('Payment Confirmed');
   });
 });
 
