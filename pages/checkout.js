@@ -7,6 +7,7 @@ import {
   PROVINCES,
   createOrder,
   formatRands,
+  getQuoteLineIssue,
   quoteCheckout,
   startPayfast,
   storeOrderToken,
@@ -90,7 +91,7 @@ function stockProblemIds(fieldErrors, items) {
  */
 export default function CheckoutPage() {
   const { user, profile } = useAuth();
-  const { items, clearCart } = useCart();
+  const { items, clearCart, removeItem, updateQuantity } = useCart();
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [touched, setTouched] = useState({});
@@ -104,9 +105,13 @@ export default function CheckoutPage() {
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState('');
   const [quoteVersion, setQuoteVersion] = useState(0);
+  // Why: Once the order exists, a payment-start failure (PayFast 503, rate limit, network) must
+  // retry payment for that same order instead of creating a duplicate one.
+  const [pendingOrder, setPendingOrder] = useState(null);
+  const [serverSaysUnverified, setServerSaysUnverified] = useState(false);
 
   const isGuest = !user;
-  const needsEmailVerification = Boolean(user) && !user.emailVerified;
+  const needsEmailVerification = Boolean(user) && (!user.emailVerified || serverSaysUnverified);
   const cartKey = useMemo(() => JSON.stringify(items.map((item) => [item.id, item.quantity])), [items]);
 
   useEffect(() => {
@@ -137,7 +142,9 @@ export default function CheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cartKey, quoteVersion]);
 
-  const hasUnavailableItems = Boolean(quote) && quote.items.some((item) => !item.available || item.quantity > item.availableQuantity);
+  const hasUnavailableItems = Boolean(quote) && quote.items.some((item) => getQuoteLineIssue(item));
+  // Why: With an order already created the stock is held, so the quote no longer gates payment.
+  const isBlockedByQuote = !pendingOrder && (quoteLoading || !quote || hasUnavailableItems);
 
   useEffect(() => {
     if (!user) return;
@@ -200,9 +207,17 @@ export default function CheckoutPage() {
       setProblemIds(stockProblemIds(fieldErrors, items));
       setQuoteVersion((version) => version + 1);
     }
+    if (err?.code === 'RESERVATION_EXPIRED' || err?.code === 'ORDER_NOT_PAYABLE') {
+      setPendingOrder(null);
+    }
+    setServerSaysUnverified(err?.code === 'AUTH_EMAIL_NOT_VERIFIED');
     setTermsOutdated(err?.code === 'TERMS_VERSION_OUTDATED');
     setServerErrors(err?.status === 422 ? toFormErrors(fieldErrors) : {});
-    setSubmitError(toUserMessage(err, 'Something went wrong. Please try again.'));
+    // Why: on this page a 503 can only come from starting the PayFast payment, and the order is
+    // already saved, so say so rather than showing the generic "service unavailable" text.
+    setSubmitError(err?.code === 'SERVICE_UNAVAILABLE'
+      ? 'Payment is temporarily unavailable. Your order has been saved, so please try again in a few minutes.'
+      : toUserMessage(err, 'Something went wrong. Please try again.'));
     setIsSubmitting(false);
   }
 
@@ -211,34 +226,39 @@ export default function CheckoutPage() {
     touchAll();
     if (hasErrors) return;
     if (items.length === 0) return;
-    if (needsEmailVerification || hasUnavailableItems || quoteLoading || !quote) return;
+    if (needsEmailVerification || isBlockedByQuote) return;
 
     setIsSubmitting(true);
     setSubmitError('');
     setServerErrors({});
     setProblemIds([]);
     setTermsOutdated(false);
+    setServerSaysUnverified(false);
 
     try {
-      const shippingAddress = {
-        firstName: form.firstName.trim(),
-        lastName: form.lastName.trim(),
-        phone: form.phone.trim(),
-        streetAddress: form.streetAddress.trim(),
-        suburb: form.suburb.trim(),
-        city: form.city.trim(),
-        province: form.province,
-        postalCode: form.postalCode.trim(),
-      };
+      let target = pendingOrder;
+      if (!target) {
+        const shippingAddress = {
+          firstName: form.firstName.trim(),
+          lastName: form.lastName.trim(),
+          phone: form.phone.trim(),
+          streetAddress: form.streetAddress.trim(),
+          suburb: form.suburb.trim(),
+          city: form.city.trim(),
+          province: form.province,
+          postalCode: form.postalCode.trim(),
+        };
+        const { order, accessToken } = await createOrder({
+          items,
+          shippingAddress,
+          ...(isGuest ? { buyerEmail: form.email.trim(), acceptTerms: true } : {}),
+        });
+        storeOrderToken(order.id, accessToken);
+        target = { id: order.id, token: accessToken };
+        setPendingOrder(target);
+      }
 
-      const { order, accessToken } = await createOrder({
-        items,
-        shippingAddress,
-        ...(isGuest ? { buyerEmail: form.email.trim(), acceptTerms: true } : {}),
-      });
-      storeOrderToken(order.id, accessToken);
-
-      const payfast = await startPayfast(order.id, accessToken);
+      const payfast = await startPayfast(target.id, target.token);
       clearCart();
       submitPayfastForm(payfast);
     } catch (err) {
@@ -346,8 +366,8 @@ export default function CheckoutPage() {
               <ul className="mt-4 space-y-3">
                 {summaryLines.map((item) => {
                   const image = quote ? item.thumbnailUrl : item.primaryImage;
-                  const isUnavailable = Boolean(quote) && (!item.available || item.quantity > item.availableQuantity);
-                  const isFlagged = isUnavailable || problemIds.includes(item.id);
+                  const issue = quote ? getQuoteLineIssue(item) : null;
+                  const isFlagged = Boolean(issue) || problemIds.includes(item.id);
                   return (
                     <li key={item.id} className="flex items-center gap-3">
                       <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-xl bg-slate-100">
@@ -362,10 +382,20 @@ export default function CheckoutPage() {
                         {item.quantity > 1 && <p className="text-xs text-slate-500">Qty: {item.quantity}</p>}
                         {isFlagged ? (
                           <p className="text-xs text-red-500">
-                            {quote && item.availableQuantity > 0
-                              ? `Only ${item.availableQuantity} available. Update your cart.`
-                              : 'No longer available. Remove it from your cart.'}
+                            {issue === 'reduced'
+                              ? `Only ${item.availableQuantity} available.`
+                              : 'No longer available. It is not included in the total.'}
                           </p>
+                        ) : null}
+                        {issue === 'reduced' ? (
+                          <button type="button" onClick={() => updateQuantity(item.id, item.availableQuantity)} className="text-xs font-semibold text-slate-700 underline">
+                            Change quantity to {item.availableQuantity}
+                          </button>
+                        ) : null}
+                        {issue === 'unavailable' ? (
+                          <button type="button" onClick={() => removeItem(item.id)} className="text-xs font-semibold text-slate-700 underline">
+                            Remove from cart
+                          </button>
                         ) : null}
                       </div>
                       <p className="text-sm font-semibold text-slate-900">{quote ? formatRands(item.lineTotalCents) : ''}</p>
@@ -400,10 +430,12 @@ export default function CheckoutPage() {
 
             <button
               type="submit"
-              disabled={isSubmitting || quoteLoading || !quote || hasUnavailableItems || needsEmailVerification}
+              disabled={isSubmitting || isBlockedByQuote || needsEmailVerification}
               className="w-full rounded-full bg-[#00CED1] py-3.5 text-sm font-semibold uppercase tracking-[0.08em] text-white hover:bg-[#00C5CD] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {quoteLoading || !quote ? 'Calculating delivery…' : (isSubmitting ? 'Processing…' : 'Continue to payment')}
+              {isBlockedByQuote && (quoteLoading || !quote)
+                ? 'Calculating delivery…'
+                : (isSubmitting ? 'Processing…' : (pendingOrder ? 'Retry payment' : 'Continue to payment'))}
             </button>
 
             <Link href="/shop" className="block text-center text-xs text-slate-500 hover:text-slate-700 underline">

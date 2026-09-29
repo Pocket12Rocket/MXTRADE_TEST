@@ -20,6 +20,16 @@ describe('toUserMessage', () => {
     expect(toUserMessage(new ApiProblemError({ status: 429 }), 'fallback')).toMatch(/Too many requests/);
   });
 
+  it('maps AUTH_EMAIL_NOT_VERIFIED to a verify-your-email message', () => {
+    const error = new ApiProblemError({ status: 403, code: 'AUTH_EMAIL_NOT_VERIFIED' });
+    expect(toUserMessage(error, 'fallback')).toMatch(/verify your email/i);
+  });
+
+  it('never shows 503 detail text', () => {
+    const error = new ApiProblemError({ status: 503, code: 'SERVICE_UNAVAILABLE', detail: 'PayFast not configured' });
+    expect(toUserMessage(error, 'fallback')).toBe('Something went wrong on our side. Please try again in a moment.');
+  });
+
   it('never shows 5xx text', () => {
     const error = new ApiProblemError({ status: 500, detail: 'db exploded at line 4' });
     expect(toUserMessage(error, 'fallback')).toBe('Something went wrong on our side. Please try again in a moment.');

@@ -1,21 +1,11 @@
 import { useEffect, useState } from 'react';
 import useAuth from '../../lib/useAuth';
-import { listMyOrders } from '../../lib/api/orders';
+import { listMyOrders, orderStatusColour } from '../../lib/api/orders';
 import Link from 'next/link';
 import Image from 'next/image';
 import { toUserMessage } from '../../lib/userMessage';
 
 const ORDERS_PAGE_SIZE = 20;
-
-const STATUS_COLOUR = {
-  purchased: 'bg-emerald-100 text-emerald-700',
-  paid: 'bg-emerald-100 text-emerald-700',
-  shipped: 'bg-blue-100 text-blue-700',
-  delivered: 'bg-slate-100 text-slate-700',
-  late_payment: 'bg-amber-100 text-amber-700',
-  refund_pending: 'bg-amber-100 text-amber-700',
-  refunded: 'bg-rose-100 text-rose-700',
-};
 
 /**
  * Why: Buyer's "My orders" page, read from the backend (`GET /me/orders`) one cursor page at a
@@ -95,12 +85,11 @@ export default function OrdersPage() {
       ) : (
         <ul className="divide-y divide-slate-200">
           {orders.map((order, idx) => {
-            const statusKey = (order.status || '').toLowerCase();
             const badgeLabel = order.statusLabel || order.status;
             const firstItem = order.items?.[0];
             const productName = firstItem?.name || `Order #${order.id.slice(-8).toUpperCase()}`;
             const imageUrl = firstItem?.thumbnailUrl || '';
-            const badgeColour = STATUS_COLOUR[statusKey] || 'bg-slate-100 text-slate-700';
+            const badgeColour = orderStatusColour(order.status);
             return (
               <li key={`${order.id}-${idx}`} className="py-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
                 {/* Clickable product info */}
@@ -116,6 +105,7 @@ export default function OrdersPage() {
                   <div className="min-w-0">
                     <p className="font-semibold text-slate-900 truncate">{productName}</p>
                     <p className="text-slate-500 text-xs mt-0.5 font-mono truncate">#{order.id}</p>
+                    <p className="text-slate-500 text-xs mt-0.5">{order.itemCount} {order.itemCount === 1 ? 'item' : 'items'}</p>
                     <span className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] ${badgeColour}`}>
                       {badgeLabel}
                     </span>

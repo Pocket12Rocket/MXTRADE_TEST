@@ -6,6 +6,9 @@ import {
   formatRands,
   getOrder,
   getOrderToken,
+  getQuoteLineIssue,
+  ORDER_STATUSES,
+  orderStatusColour,
   quoteCheckout,
   requestRefund,
   startPayfast,
@@ -104,6 +107,25 @@ describe('quoteCheckout and createOrder', () => {
   });
 });
 
+describe('getQuoteLineIssue', () => {
+  it('flags unavailable lines, reduced quantities and fine lines', () => {
+    expect(getQuoteLineIssue({ available: false, availableQuantity: 0, quantity: 1 })).toBe('unavailable');
+    expect(getQuoteLineIssue({ available: true, availableQuantity: 0, quantity: 1 })).toBe('unavailable');
+    expect(getQuoteLineIssue({ available: true, availableQuantity: 1, quantity: 3 })).toBe('reduced');
+    expect(getQuoteLineIssue({ available: true, availableQuantity: 3, quantity: 3 })).toBeNull();
+  });
+});
+
+describe('orderStatusColour', () => {
+  it('has a distinct colour for every backend OrderStatus and a fallback for unknown ones', () => {
+    ORDER_STATUSES.forEach((status) => {
+      expect(orderStatusColour(status)).toMatch(/^bg-/);
+    });
+    expect(orderStatusColour('late_payment')).toBe('bg-amber-100 text-amber-700');
+    expect(orderStatusColour('purchased')).toBe('bg-slate-100 text-slate-700');
+  });
+});
+
 describe('helpers', () => {
   it('maps province labels to backend enum values', () => {
     expect(toProvinceValue('KwaZulu-Natal')).toBe('kwazulu_natal');
@@ -114,6 +136,18 @@ describe('helpers', () => {
   it('formats cents as rands', () => {
     expect(formatRands(129950)).toBe('R1299.50');
     expect(formatRands(undefined)).toBe('R0.00');
+  });
+});
+
+describe('startPayfast errors', () => {
+  it('surfaces a 503 SERVICE_UNAVAILABLE problem with its code', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      JSON.stringify({ status: 503, code: 'SERVICE_UNAVAILABLE', title: 'Service Unavailable' }),
+      { status: 503, headers: { 'content-type': 'application/problem+json' } }
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(startPayfast('o1', 'tok')).rejects.toMatchObject({ status: 503, code: 'SERVICE_UNAVAILABLE' });
   });
 });
 
