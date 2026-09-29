@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { useCart } from '../lib/cartContext';
 import useAuth from '../lib/useAuth';
-import { fetchProductById } from '../lib/firestoreHelpers';
+import { fetchProductById } from '../lib/api/catalog';
 import { UserFacingError, toUserMessage, reportError } from '../lib/userMessage';
 
 const PROVINCES = [
