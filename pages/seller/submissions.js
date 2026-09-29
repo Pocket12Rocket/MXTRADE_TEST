@@ -6,312 +6,120 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import useAuth from '../../lib/useAuth';
+import { fetchCatalogConfig } from '../../lib/api/catalog';
 import {
-  fetchBikeModelOptions,
-  fetchSellerSubmissions,
-  fetchSellerLiveProducts,
-  removeSellerSubmission,
-  removeSellerProduct,
-  fetchSubcategoryOptionsForCategories,
-  fetchGearBrandOptions,
-  updateSellerSubmission,
-  resubmitSellerProductForApproval,
-  updateSellerSubmissionImages,
-} from '../../lib/firestoreHelpers';
-import { BIKE_MODELS_BY_MANUFACTURER, DIRT_BIKE_CATEGORIES, GEAR_BRAND_OPTIONS, GEAR_CONDITION_OPTIONS, GEAR_ITEM_OPTIONS } from '../../lib/dirtBikeCategories';
+  deleteSubmission,
+  editLiveProduct,
+  fetchProductForEdit,
+  listMyProducts,
+  listMySubmissions,
+  removeMyProduct,
+  toSubmissionInput,
+  updateSubmission,
+} from '../../lib/api/submissions';
 import { toUserMessage } from '../../lib/userMessage';
 import ImageCropDialog from '../../components/ImageCropDialog';
-import { useImageCropQueue } from '../../lib/useImageCropQueue';
+import ListingFormFields from '../../components/ListingFormFields';
+import { useListingImages } from '../../lib/useListingImages';
 import { LISTING_IMAGE_ASPECT, LISTING_IMAGE_OUTPUT_WIDTH } from '../../lib/cropImage';
+import {
+  MAX_LISTING_IMAGES,
+  MIN_LISTING_IMAGES,
+  describeSubmissionError,
+  formFromListing,
+  validateListingForm,
+} from '../../lib/listingForm';
 
-const HIDDEN_SUBMISSION_KEYS = new Set([
-  'id',
-  'sellerId',
-  'sellerEmail',
-  'status',
-  'createdAt',
-  'primaryImage',
-  'images',
-  'approvedAt',
-  'approvedBy',
-  'rejectedAt',
-  'rejectedBy',
-  'productId',
-  'customFields',
-  'basePrice',
-  'originalPrice',
-  'sellerPrice',
-]);
+const PAGE_SIZE = 25;
 
-const ALPHA_SIZE_GEAR_ITEMS = ['Helmet', 'Jersey', 'Socks', 'Protection'];
-const SIZELESS_GEAR_ITEMS = ['Goggles'];
-const ALPHA_SIZE_OPTIONS = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '4XL', 'Youth S', 'Youth M', 'Youth L', 'Youth XL'];
-const PANTS_SIZE_OPTIONS = ['4', '6', '8', '10', '12', '14', '22', '24', '26', '28', '30', '32', '34', '36', '38', '40', '42'];
-const BOOTS_SIZE_OPTIONS = ['UK1', 'UK2', 'UK3', 'UK4', 'UK5', 'UK6', 'UK7', 'UK8', 'UK9', 'UK10', 'UK11', 'UK12', 'UK13', 'UK14', 'UK15', 'UK16', '10j', '11j', '12j', '13j', '14j'];
-const GLOVES_SIZE_OPTIONS = ['YOUTH S', 'YOUTH M', 'YOUTH L', 'YOUTH XL', 'XS', 'M', 'L', 'XL', 'XXL'];
-const OTHER_BRAND_VALUE = '__other__';
-const OTHER_SUBCATEGORY_VALUE = '__other_subcategory__';
-const MAX_LISTING_IMAGES = 5;
-const MAX_DESCRIPTION_LENGTH = 75;
+// Why: display copy for submission and product statuses in the listings table.
+const STATUS_LABELS = {
+  pending: 'awaiting approval',
+  rejected: 'rejected',
+  listed: 'listed',
+  sold_out: 'sold out',
+};
 
-function getCalculatedSellingPriceFromSellerPrice(price) {
-  const numericValue = Number(price);
-  if (!price || Number.isNaN(numericValue) || numericValue <= 0) {
-    return null;
-  }
+// Why: products in these states are not shown as live listings: a pending edit appears as its own
+// pending submission instead, and removed products are gone.
+const HIDDEN_PRODUCT_STATUSES = new Set(['pending_review', 'removed']);
 
-  let markup = 0.20;
-  if (numericValue > 999) markup = 0.11;
-  else if (numericValue >= 501) markup = 0.15;
-
-  return (numericValue + numericValue * markup).toFixed(2);
+/**
+ * Why: Shows a listing's price in the same "R 450.00" style the storefront uses.
+ * @param {number} rands - Amount in rands.
+ * @returns {string} The formatted amount.
+ * @example
+ * formatRandAmount(450); // 'R 450.00'
+ */
+function formatRandAmount(rands) {
+  return `R ${rands.toFixed(2)}`;
 }
 
-function getOriginalSellerPriceFromMarkedUpValue(value) {
-  const numericValue = Number(value);
-  if (!value || Number.isNaN(numericValue) || numericValue <= 0) {
-    return '';
-  }
-
-  if (numericValue <= 500) {
-    return (numericValue / 1.2).toFixed(2);
-  }
-
-  if (numericValue <= 999) {
-    return (numericValue / 1.15).toFixed(2);
-  }
-
-  return (numericValue / 1.11).toFixed(2);
+/**
+ * Why: The "Listing details" dialog shows a submission's fields as label/value rows; this builds
+ * them from the adapted listing so the dialog no longer dumps raw database fields.
+ * @param {object} listing - A listing from `toSellerListing()`.
+ * @returns {Array<[string, string]>} `[label, value]` rows, without empty values.
+ * @example
+ * getDetailRows(listing); // [['Category', 'Gear'], ['Your price', 'R 450.00'], ...]
+ */
+function getDetailRows(listing) {
+  const size = listing.comboSizes ? `Shirt ${listing.comboSizes.shirt}, Pants ${listing.comboSizes.pants}` : listing.size;
+  const rows = [
+    ['Category', listing.category],
+    ['Subcategory', listing.subcategory],
+    ['Condition', listing.conditionLabel],
+    ['Brand', listing.brand],
+    ['Size', size],
+    ['Fits manufacturer', listing.universalFit ? 'Universal fit' : listing.manufacturer],
+    ['Fits models', listing.models.join(', ')],
+    ['Quantity', String(listing.quantity)],
+    ['Description', listing.description],
+    ['Your price', formatRandAmount(listing.sellerPrice)],
+    ['Buyers pay', formatRandAmount(listing.price)],
+    ['Submitted', listing.createdAt ? new Date(listing.createdAt).toLocaleString() : ''],
+  ];
+  return rows.filter(([, value]) => value);
 }
 
-function SellingPriceInfo({ price }) {
-  const [show, setShow] = useState(false);
-  const sellingPrice = getCalculatedSellingPriceFromSellerPrice(price);
-
-  if (!sellingPrice) {
-    return null;
-  }
-
-  return (
-    <div className="mt-1 flex items-center gap-2 text-xs text-red-600">
-      <span>Selling price (incl. markup): R {sellingPrice}</span>
-      <span className="relative flex items-center">
-        <span
-          tabIndex={0}
-          className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 bg-slate-200 text-[10px] font-bold text-slate-600 cursor-pointer hover:bg-slate-300 focus:bg-slate-300 focus:outline-none"
-          onMouseEnter={() => setShow(true)}
-          onMouseLeave={() => setShow(false)}
-          onFocus={() => setShow(true)}
-          onBlur={() => setShow(false)}
-        >
-          ?
-        </span>
-        {show && (
-          <span className="absolute left-6 top-1 z-10 w-64 rounded-lg border border-slate-300 bg-white p-3 text-xs text-slate-700 shadow-lg">
-            The selling price includes the Fast Sport transaction fee. This is the final amount the buyer will pay, excluding shipping costs.<br /><br />
-            The price entered by you (the seller) is the amount you will receive from the sale.
-          </span>
-        )}
-      </span>
-    </div>
-  );
-}
-
-function mergeOptionList(defaultValues = [], approvedValues = []) {
-  const merged = [...(defaultValues || [])];
-  (approvedValues || []).forEach((item) => {
-    const normalized = String(item || '').trim();
-    if (!normalized) {
-      return;
-    }
-
-    const exists = merged.some((existing) => existing.toLowerCase() === normalized.toLowerCase());
-    if (!exists) {
-      merged.push(normalized);
-    }
-  });
-
-  return merged.sort((a, b) => a.localeCompare(b));
-}
-
-function mergeUniqueFiles(existingFiles, incomingFiles) {
-  const seen = new Set((existingFiles || []).map((file) => `${file.name}-${file.size}-${file.lastModified}`));
-  const merged = [...(existingFiles || [])];
-
-  (incomingFiles || []).forEach((file) => {
-    const key = `${file.name}-${file.size}-${file.lastModified}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      merged.push(file);
-    }
-  });
-
-  return merged;
-}
-
-function mergeBikeModelOptions(defaultOptions = {}, approvedOptions = {}) {
-  const merged = { ...defaultOptions };
-
-  Object.entries(approvedOptions || {}).forEach(([manufacturer, models]) => {
-    const key = String(manufacturer || '').trim();
-    if (!key || !Array.isArray(models)) {
-      return;
-    }
-
-    const existing = Array.isArray(merged[key]) ? merged[key] : [];
-    merged[key] = Array.from(new Set([
-      ...existing,
-      ...models.map((model) => String(model || '').trim()).filter(Boolean),
-    ])).sort((a, b) => a.localeCompare(b));
-  });
-
-  return merged;
-}
-
-function parseModelInput(value) {
-  return Array.from(new Set(
-    String(value || '')
-      .split(/[\n,;]+/)
-      .map((item) => item.trim())
-      .filter(Boolean)
-  ));
-}
-
-function formatFieldLabel(fieldName) {
-  return fieldName
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/_/g, ' ')
-    .replace(/^./, (letter) => letter.toUpperCase());
-}
-
-function formatDetailValue(fieldName, value) {
-  if (fieldName === 'updatedAt') {
-    const date = typeof value?.toDate === 'function'
-      ? value.toDate()
-      : typeof value?.seconds === 'number'
-        ? new Date(value.seconds * 1000)
-        : null;
-
-    if (date && !Number.isNaN(date.getTime())) {
-      return date.toLocaleString();
-    }
-  }
-
-  if (Array.isArray(value)) {
-    return value.join(', ');
-  }
-
-  return typeof value === 'object' ? JSON.stringify(value) : String(value);
-}
-
-function getSubmissionImages(submission) {
-  if (!submission) {
-    return [];
-  }
-
-  const imageList = [];
-
-  if (typeof submission.primaryImage === 'string' && submission.primaryImage.trim()) {
-    imageList.push(submission.primaryImage.trim());
-  }
-
-  if (Array.isArray(submission.images)) {
-    submission.images.forEach((item) => {
-      if (typeof item === 'string' && item.trim()) {
-        imageList.push(item.trim());
-      }
-    });
-  }
-
-  return Array.from(new Set(imageList));
-}
-
-function getCreatedAtMillis(createdAt) {
-  if (!createdAt) {
-    return 0;
-  }
-
-  if (typeof createdAt.toDate === 'function') {
-    return createdAt.toDate().getTime();
-  }
-
-  if (typeof createdAt.seconds === 'number') {
-    return createdAt.seconds * 1000;
-  }
-
-  return 0;
-}
-
+/**
+ * Why: Seller page listing the seller's submissions (pending, rejected) and live products with
+ * cursor pagination, plus editing, resubmitting, deleting and removing them through the backend.
+ * Editing a live product takes it off sale until it is re-approved (D-12).
+ * @returns {JSX.Element} The seller's listings, or a sign-in / not-a-seller prompt.
+ * @example
+ * // Rendered by Next.js at /seller/submissions
+ */
 export default function SellerSubmissions() {
   const router = useRouter();
   const { user, profile, loading } = useAuth();
+  const images = useListingImages();
+  const [config, setConfig] = useState(null);
   const [submissions, setSubmissions] = useState([]);
   const [products, setProducts] = useState([]);
+  const [submissionsCursor, setSubmissionsCursor] = useState(null);
+  const [productsCursor, setProductsCursor] = useState(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [deletingId, setDeletingId] = useState('');
+  const [preparingEditId, setPreparingEditId] = useState('');
   const [selectedSubmission, setSelectedSubmission] = useState(null);
-  const [editingSubmission, setEditingSubmission] = useState(null);
-  const [editingListingType, setEditingListingType] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+  const [editFieldErrors, setEditFieldErrors] = useState({});
+  const [editStatus, setEditStatus] = useState('');
+  const [editShowProfileLink, setEditShowProfileLink] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
-  const [isResubmitting, setIsResubmitting] = useState(false);
-  const [brandOptions, setBrandOptions] = useState(GEAR_BRAND_OPTIONS);
-  const [bikeModelOptionsByManufacturer, setBikeModelOptionsByManufacturer] = useState(BIKE_MODELS_BY_MANUFACTURER);
-  const [accessoriesSubcategoryOptions, setAccessoriesSubcategoryOptions] = useState(DIRT_BIKE_CATEGORIES.Accessories);
-  const [partsSubcategoryOptions, setPartsSubcategoryOptions] = useState(DIRT_BIKE_CATEGORIES.Parts);
-  const [editImageUrls, setEditImageUrls] = useState([]);
-  const [editNewFiles, setEditNewFiles] = useState([]);
-  const [editForm, setEditForm] = useState({
-    name: '',
-    price: '',
-    description: '',
-    specifications: '',
-    subcategory: '',
-    manufacturer: '',
-    model: [],
-    customModel: '',
-    otherManufacturer: '',
-    gearItem: '',
-    gearCondition: '',
-    gearBrand: '',
-    customGearBrand: '',
-    gearSize: '',
-    gearComboShirtSize: '',
-    gearComboPantsSize: '',
-    accessoriesSubcategory: '',
-    accessoriesCondition: '',
-    accessoriesBrand: '',
-    customAccessoriesBrand: '',
-    customAccessoriesSubcategory: '',
-    partsCondition: '',
-    partsBrand: '',
-    customPartsBrand: '',
-    customPartsSubcategory: '',
-  });
 
   useEffect(() => {
     let isMounted = true;
 
-    fetchGearBrandOptions()
-      .then((savedBrands) => {
-        if (!isMounted) {
-          return;
-        }
-
-        const mergedBrands = [...GEAR_BRAND_OPTIONS];
-        savedBrands.forEach((savedBrand) => {
-          const exists = mergedBrands.some((brand) => brand.toLowerCase() === savedBrand.toLowerCase());
-          if (!exists) {
-            mergedBrands.push(savedBrand);
-          }
-        });
-
-        const sortedBrands = mergedBrands.sort((a, b) => a.localeCompare(b));
-        setBrandOptions(sortedBrands);
+    fetchCatalogConfig()
+      .then((result) => {
+        if (isMounted) setConfig(result);
       })
-      .catch(() => {
-        if (isMounted) {
-          setBrandOptions(GEAR_BRAND_OPTIONS);
-        }
+      .catch((err) => {
+        if (isMounted) setError(toUserMessage(err, "We couldn't load the listing options right now. Please try again."));
       });
 
     return () => {
@@ -319,136 +127,103 @@ export default function SellerSubmissions() {
     };
   }, []);
 
-  // Why: PERF-08 — fetchSubcategoryOptionsForCategories reads catalogConfig/subcategories once
-  // for both categories instead of the previous two separate fetchSubcategoryOptions() calls,
-  // which each read the same document independently.
+  /**
+   * Why: Loads the first page of the seller's submissions and products (used on mount and after
+   * every change, so the table always shows what the backend holds).
+   * @returns {Promise<{items: object[]}>} The freshly loaded submissions (for refreshing an open dialog).
+   * @example
+   * const { items } = await loadFirstPages();
+   */
+  const loadFirstPages = async () => {
+    const [submissionPage, productPage] = await Promise.all([
+      listMySubmissions({ limit: PAGE_SIZE }),
+      listMyProducts({ limit: PAGE_SIZE }),
+    ]);
+    setSubmissions(submissionPage.items);
+    setSubmissionsCursor(submissionPage.nextCursor);
+    setProducts(productPage.items);
+    setProductsCursor(productPage.nextCursor);
+    return submissionPage;
+  };
+
   useEffect(() => {
-    let isMounted = true;
-
-    fetchSubcategoryOptionsForCategories(['Accessories', 'Parts'])
-      .then((subcategoriesByCategory) => {
-        if (!isMounted) {
-          return;
-        }
-
-        setAccessoriesSubcategoryOptions(mergeOptionList(DIRT_BIKE_CATEGORIES.Accessories, subcategoriesByCategory.Accessories || []));
-        setPartsSubcategoryOptions(mergeOptionList(DIRT_BIKE_CATEGORIES.Parts, subcategoriesByCategory.Parts || []));
-      })
-      .catch(() => {
-        if (!isMounted) {
-          return;
-        }
-        setAccessoriesSubcategoryOptions(DIRT_BIKE_CATEGORIES.Accessories);
-        setPartsSubcategoryOptions(DIRT_BIKE_CATEGORIES.Parts);
+    if (!loading && user && profile?.canSell) {
+      loadFirstPages().catch((err) => {
+        setError(toUserMessage(err, "We couldn't load your listings right now. Please try again."));
       });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    fetchBikeModelOptions()
-      .then((approvedOptions) => {
-        if (!isMounted) {
-          return;
-        }
-
-        setBikeModelOptionsByManufacturer(mergeBikeModelOptions(BIKE_MODELS_BY_MANUFACTURER, approvedOptions));
-      })
-      .catch(() => {
-        if (isMounted) {
-          setBikeModelOptionsByManufacturer(BIKE_MODELS_BY_MANUFACTURER);
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!loading && user) {
-      fetchSellerSubmissions(user.id)
-        .then(setSubmissions)
-        .catch((err) => {
-          setError(toUserMessage(err, "We couldn't load your submissions right now. Please try again."));
-        });
-
-      fetchSellerLiveProducts(user.id)
-        .then(setProducts)
-        .catch((err) => {
-          setError(toUserMessage(err, "We couldn't load your listings right now. Please try again."));
-        });
     }
-  }, [loading, user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, user, profile?.canSell]);
+
+  /**
+   * Why: Cursor pagination: appends the next page of whichever lists still have more.
+   * @returns {Promise<void>}
+   * @example
+   * <button onClick={handleLoadMore}>Load more</button>
+   */
+  const handleLoadMore = async () => {
+    setIsLoadingMore(true);
+    setError('');
+
+    try {
+      const [submissionPage, productPage] = await Promise.all([
+        submissionsCursor ? listMySubmissions({ cursor: submissionsCursor, limit: PAGE_SIZE }) : null,
+        productsCursor ? listMyProducts({ cursor: productsCursor, limit: PAGE_SIZE }) : null,
+      ]);
+      if (submissionPage) {
+        setSubmissions((prev) => [...prev, ...submissionPage.items]);
+        setSubmissionsCursor(submissionPage.nextCursor);
+      }
+      if (productPage) {
+        setProducts((prev) => [...prev, ...productPage.items]);
+        setProductsCursor(productPage.nextCursor);
+      }
+    } catch (err) {
+      setError(toUserMessage(err, "We couldn't load more listings right now. Please try again."));
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   const listings = useMemo(() => {
-    const pendingAndRejectedRows = submissions
+    const submissionRows = submissions
       .filter((submission) => submission.status === 'pending' || submission.status === 'rejected')
       .map((submission) => ({
         id: submission.id,
         productName: submission.name || 'Untitled product',
-        productStatus: submission.status === 'pending' ? 'awaiting approval' : 'rejected',
-        createdAtMillis: getCreatedAtMillis(submission.createdAt),
+        productStatus: STATUS_LABELS[submission.status],
+        createdAtMillis: submission.createdAtMillis,
         listingType: 'submission',
         viewType: 'modal',
-        canEdit: submission.status === 'pending',
-        submission,
+        canEdit: true,
+        item: submission,
       }));
 
-    const liveProductRows = products
-      .filter((product) => !['pending', 'pending_review'].includes(String(product.status || '').toLowerCase()))
-      .map((product) => {
-      const normalizedProductStatus = product.status
-        || (product.marketSold ? 'purchased' : 'listed');
-      const canEditListedProduct = normalizedProductStatus === 'listed' || normalizedProductStatus === 'active';
-      const displayProductStatus = normalizedProductStatus === 'pending' ? 'awaiting approval' : normalizedProductStatus;
+    const productRows = products
+      .filter((product) => !HIDDEN_PRODUCT_STATUSES.has(product.status))
+      .map((product) => ({
+        id: product.id,
+        productName: product.name || 'Untitled product',
+        productStatus: STATUS_LABELS[product.status] || product.status,
+        createdAtMillis: product.createdAtMillis,
+        listingType: 'product',
+        viewType: product.status === 'listed' ? 'shop' : 'disabled',
+        canEdit: product.status === 'listed',
+        item: product,
+      }));
 
-      return ({
-      id: product.id,
-      productName: product.name || 'Untitled product',
-      productStatus: displayProductStatus,
-      createdAtMillis: getCreatedAtMillis(product.createdAt),
-      listingType: 'product',
-      viewType: normalizedProductStatus === 'listed' ? 'shop' : 'disabled',
-      canEdit: canEditListedProduct,
-      product,
-    });
-    });
-
-    return [...liveProductRows, ...pendingAndRejectedRows].sort((a, b) => b.createdAtMillis - a.createdAtMillis);
+    return [...productRows, ...submissionRows].sort((a, b) => b.createdAtMillis - a.createdAtMillis);
   }, [products, submissions]);
 
-  const selectedDetailEntries = selectedSubmission
-    ? Object.entries(selectedSubmission).filter(([key, value]) => {
-        const normalizedKey = String(key).replace(/[\s_-]/g, '').toLowerCase();
-        if (HIDDEN_SUBMISSION_KEYS.has(key) || ['customfields', 'sellerprice', 'baseprice', 'originalprice'].includes(normalizedKey)) {
-          return false;
-        }
-
-        if (value === null || value === undefined) {
-          return false;
-        }
-
-        if (typeof value === 'string' && value.trim() === '') {
-          return false;
-        }
-
-        if (Array.isArray(value) && value.length === 0) {
-          return false;
-        }
-
-        return true;
-      })
-    : [];
-
-  const selectedDetailImages = getSubmissionImages(selectedSubmission);
-
+  /**
+   * Why: Deletes a pending or rejected submission, or removes a live product from the shop.
+   * @param {object} listing - A row from `listings`.
+   * @returns {Promise<void>}
+   * @example
+   * <button onClick={() => handleDeleteListing(listing)}>Delete</button>
+   */
   const handleDeleteListing = async (listing) => {
-    const shouldDelete = window.confirm('Delete this listing?');
+    const shouldDelete = window.confirm(listing.listingType === 'product' ? 'Remove this listing from the shop?' : 'Delete this listing?');
     if (!shouldDelete) {
       return;
     }
@@ -458,10 +233,10 @@ export default function SellerSubmissions() {
 
     try {
       if (listing.listingType === 'submission') {
-        await removeSellerSubmission(listing.id);
+        await deleteSubmission(listing.id);
         setSubmissions((prev) => prev.filter((item) => item.id !== listing.id));
       } else {
-        await removeSellerProduct(listing.id);
+        await removeMyProduct(listing.id);
         setProducts((prev) => prev.filter((item) => item.id !== listing.id));
       }
 
@@ -475,6 +250,13 @@ export default function SellerSubmissions() {
     }
   };
 
+  /**
+   * Why: Live products open their storefront page; submissions open the details dialog.
+   * @param {object} listing - A row from `listings`.
+   * @returns {void}
+   * @example
+   * <button onClick={() => handleViewDetails(listing)}>View details</button>
+   */
   const handleViewDetails = (listing) => {
     if (listing.viewType === 'shop') {
       router.push(`/product/${listing.id}`);
@@ -482,463 +264,121 @@ export default function SellerSubmissions() {
     }
 
     if (listing.viewType === 'modal') {
-      setSelectedSubmission(listing.submission);
+      setSelectedSubmission(listing.item);
     }
   };
 
-  const handleOpenEdit = (listing) => {
-    const sourceListing = listing.listingType === 'submission' ? listing.submission : listing.product;
-    if (!listing.canEdit || !sourceListing) {
+  /**
+   * Why: Opens the edit dialog prefilled from the listing. A live product's list row lacks its
+   * description, sizes, fitment and image ids, so those are fetched first.
+   * @param {object} listing - A row from `listings`.
+   * @returns {Promise<void>}
+   * @example
+   * <button onClick={() => handleOpenEdit(listing)}>Edit</button>
+   */
+  const handleOpenEdit = async (listing) => {
+    if (!listing.canEdit || !config) {
       return;
     }
 
-    const submission = sourceListing;
-    const sellerOriginalPrice = submission.customFields?.sellerPrice ?? getOriginalSellerPriceFromMarkedUpValue(submission.price) ?? submission.price ?? '';
+    setError('');
+    let source = listing.item;
 
-    setEditingSubmission(submission);
-    setEditingListingType(listing.listingType);
-    setEditImageUrls(getSubmissionImages(submission));
-    setEditNewFiles([]);
+    if (listing.listingType === 'product') {
+      setPreparingEditId(listing.id);
+      try {
+        source = await fetchProductForEdit(listing.item);
+      } catch (err) {
+        setError(toUserMessage(err, "We couldn't open that listing for editing right now. Please try again."));
+        return;
+      } finally {
+        setPreparingEditId('');
+      }
+    }
 
-    const submissionGearBrand = submission.gearBrand || '';
-    const submissionAccessoriesBrand = submission.accessoriesBrand || '';
-    const hasSubmissionGearBrand = submissionGearBrand
-      ? brandOptions.some((brand) => brand.toLowerCase() === submissionGearBrand.toLowerCase())
-      : false;
-    const hasSubmissionAccessoriesBrand = submissionAccessoriesBrand
-      ? brandOptions.some((brand) => brand.toLowerCase() === submissionAccessoriesBrand.toLowerCase())
-      : false;
-    
-    const submissionPartsBrand = submission.customFields?.partsBrand || submission.customFields?.customPartsBrandOptional || '';
-    const hasSubmissionPartsBrand = submissionPartsBrand
-      ? brandOptions.some((brand) => brand.toLowerCase() === submissionPartsBrand.toLowerCase())
-      : false;
-
-    const submissionModels = Array.isArray(submission.model)
-      ? submission.model.map((item) => String(item || '').trim()).filter(Boolean)
-      : (typeof submission.model === 'string' && submission.model.trim() ? [submission.model.trim()] : []);
-
-    const submissionSubcategory = String(submission.subcategory || '').trim();
-    const isAccessoriesOtherSubcategory = submission.category === 'Accessories' && submissionSubcategory
-      && !accessoriesSubcategoryOptions.some((option) => option.toLowerCase() === submissionSubcategory.toLowerCase());
-    const isPartsOtherSubcategory = submission.category === 'Parts' && submissionSubcategory
-      && !partsSubcategoryOptions.some((option) => option.toLowerCase() === submissionSubcategory.toLowerCase());
-
-    setEditForm({
-      name: submission.name || '',
-      price: sellerOriginalPrice != null ? String(sellerOriginalPrice) : '',
-      description: submission.description || '',
-      specifications: Array.isArray(submission.specifications)
-        ? submission.specifications.join('\n')
-        : submission.specifications || '',
-      subcategory: isPartsOtherSubcategory ? OTHER_SUBCATEGORY_VALUE : (submission.subcategory || ''),
-      manufacturer: submission.manufacturer || '',
-      model: submissionModels,
-      customModel: submissionModels.join(', '),
-      otherManufacturer: submission.otherManufacturer || '',
-      gearItem: submission.gearItem || '',
-      gearCondition: submission.gearCondition || '',
-      gearBrand: submissionGearBrand
-        ? hasSubmissionGearBrand
-          ? submissionGearBrand
-          : OTHER_BRAND_VALUE
-        : '',
-      customGearBrand: submissionGearBrand && !hasSubmissionGearBrand ? submissionGearBrand : '',
-      gearSize: submission.gearSize || '',
-      gearComboShirtSize: submission.gearComboShirtSize || '',
-      gearComboPantsSize: submission.gearComboPantsSize || '',
-      accessoriesSubcategory: isAccessoriesOtherSubcategory
-        ? OTHER_SUBCATEGORY_VALUE
-        : (submission.accessoriesSubcategory || submission.subcategory || ''),
-      accessoriesCondition: submission.accessoriesCondition || '',
-      accessoriesBrand: submissionAccessoriesBrand
-        ? hasSubmissionAccessoriesBrand
-          ? submissionAccessoriesBrand
-          : OTHER_BRAND_VALUE
-        : '',
-      customAccessoriesBrand: submissionAccessoriesBrand && !hasSubmissionAccessoriesBrand ? submissionAccessoriesBrand : '',
-      customAccessoriesSubcategory: isAccessoriesOtherSubcategory ? submissionSubcategory : '',
-      partsCondition: submission.customFields?.partsCondition || '',
-      partsBrand: submissionPartsBrand
-        ? hasSubmissionPartsBrand
-          ? submissionPartsBrand
-          : OTHER_BRAND_VALUE
-        : '',
-      customPartsBrand: submissionPartsBrand && !hasSubmissionPartsBrand ? submissionPartsBrand : '',
-      customPartsSubcategory: isPartsOtherSubcategory ? submissionSubcategory : '',
-    });
+    // Why: only images the backend gave an id can be kept in an edit; any others must be re-uploaded.
+    const keepableImages = source.imageItems.filter((image) => image.id);
+    setEditing({ listing: source, kind: listing.listingType, needsReupload: keepableImages.length < source.imageItems.length });
+    setEditForm(formFromListing(source, config));
+    setEditFieldErrors({});
+    setEditStatus('');
+    setEditShowProfileLink(false);
+    images.reset(keepableImages);
   };
 
+  /**
+   * Why: Closes the edit dialog and drops its in-progress state.
+   * @returns {void}
+   * @example
+   * <button onClick={handleCloseEdit}>Cancel</button>
+   */
   const handleCloseEdit = () => {
-    setEditingSubmission(null);
-    setEditingListingType(null);
-    setEditImageUrls([]);
-    setEditNewFiles([]);
-    setIsSavingEdit(false);
-    setIsResubmitting(false);
+    setEditing(null);
+    setEditForm(null);
+    setEditFieldErrors({});
+    setEditStatus('');
+    images.reset();
   };
 
   /**
-   * Why: Adds one cropped photo to the edit, capped so kept + new photos never exceed 5.
-   * @param {File} croppedFile - The cropped image from `ImageCropDialog`.
+   * Why: Field components report changes as patches so one handler serves every field.
+   * @param {object} patch - Form fields to overwrite.
    * @returns {void}
+   * @example
+   * handleEditFormChange({ price: '450' });
    */
-  const handleEditCroppedFile = (croppedFile) => {
-    const incomingFiles = [croppedFile];
-
-    setEditNewFiles((prev) => {
-      const mergedFiles = mergeUniqueFiles(prev, incomingFiles);
-      const maxAllowedNewFiles = Math.max(0, MAX_LISTING_IMAGES - editImageUrls.length);
-
-      if (mergedFiles.length > maxAllowedNewFiles) {
-        setError(`You can add up to ${maxAllowedNewFiles} more image${maxAllowedNewFiles === 1 ? '' : 's'} for this listing.`);
-        return mergedFiles.slice(0, maxAllowedNewFiles);
-      }
-
-      setError('');
-      return mergedFiles;
-    });
+  const handleEditFormChange = (patch) => {
+    setEditForm((prev) => ({ ...prev, ...patch }));
   };
-
-  const editCropQueue = useImageCropQueue(handleEditCroppedFile);
 
   /**
-   * Why: New photos on an edit go through the same 4:3 cropper as new listings.
-   * @param {Event} event - The file input change event.
-   * @returns {void}
+   * Why: Saves an edit to a pending submission, resubmits a rejected one (`PUT`), or submits an
+   * edit of a live product (`POST /me/products/{id}/edit`, which takes it off sale until it is
+   * re-approved, D-12). Uploads the kept image ids plus the newly cropped files.
+   * @param {Event} event - The form submit event.
+   * @returns {Promise<void>}
+   * @example
+   * <form onSubmit={handleSaveEdit}>
    */
-  const handleEditNewFilesChange = (event) => {
-    editCropQueue.enqueue(Array.from(event.target.files || []));
-    // Allow selecting the same file again in a later pick.
-    event.target.value = '';
-  };
-
-  const getImageValidationError = () => {
-    const totalImages = editImageUrls.length + editNewFiles.length;
-    const isGearOrAccessories = editingSubmission?.category === 'Gear' || editingSubmission?.category === 'Accessories';
-    const minRequired = isGearOrAccessories ? 3 : 1;
-
-    if (totalImages < minRequired) {
-      return isGearOrAccessories
-        ? 'Please keep at least 3 images for this listing.'
-        : 'Please keep at least 1 image for this listing.';
-    }
-
-    if (totalImages > 5) {
-      return 'Please keep no more than 5 images per listing.';
-    }
-
-    return '';
-  };
-
-  const buildSubmissionUpdatesWithImages = async (baseUpdates) => {
-    const imageError = getImageValidationError();
-    if (imageError) {
-      setError(imageError);
-      return null;
-    }
-
-    const existingImageUrls = getSubmissionImages(editingSubmission);
-    const imageUpdates = await updateSellerSubmissionImages({
-      userId: user?.uid || '',
-      submissionId: editingSubmission.id,
-      existingImageUrls,
-      retainedImageUrls: editImageUrls,
-      newFiles: editNewFiles,
-    });
-
-    return { ...baseUpdates, ...imageUpdates };
-  };
-
-  const editNewFilePreviews = useMemo(() => {
-    if (typeof window === 'undefined') {
-      return [];
-    }
-
-    return editNewFiles.map((file, index) => ({
-      id: `${file.name}-${file.size}-${file.lastModified}-${index}`,
-      name: file.name,
-      previewUrl: URL.createObjectURL(file),
-    }));
-  }, [editNewFiles]);
-
-  const availableEditModelsForManufacturer = useMemo(() => {
-    const manufacturerKey = String(editForm.manufacturer || '').trim();
-    if (!manufacturerKey) {
-      return [];
-    }
-
-    return Array.isArray(bikeModelOptionsByManufacturer[manufacturerKey])
-      ? bikeModelOptionsByManufacturer[manufacturerKey]
-      : [];
-  }, [bikeModelOptionsByManufacturer, editForm.manufacturer]);
-
-  const requiresEditModelSelection = editForm.manufacturer && editForm.manufacturer !== 'Universal' && editForm.manufacturer !== 'Other';
-  const hasPresetEditModels = availableEditModelsForManufacturer.length > 0;
-
-  useEffect(() => {
-    return () => {
-      editNewFilePreviews.forEach((item) => {
-        URL.revokeObjectURL(item.previewUrl);
-      });
-    };
-  }, [editNewFilePreviews]);
-
-  const getValidatedEditUpdates = () => {
-    if (!editForm.price || Number(editForm.price) <= 0) {
-      setError('Please enter a valid price greater than 0.');
-      return null;
-    }
-
-    const submissionCategory = editingSubmission?.category || '';
-    const normalizedDescription = editForm.description.trim();
-    const sellerPrice = Number(editForm.price);
-    const sellerPriceMarkup = sellerPrice > 999 ? 0.11 : (sellerPrice >= 501 ? 0.15 : 0.20);
-    const buyerFacingPrice = Number((sellerPrice + sellerPrice * sellerPriceMarkup).toFixed(2));
-    const sellerPriceUpdate = {
-      price: buyerFacingPrice,
-      customFields: {
-        ...(editingSubmission?.customFields || {}),
-        sellerPrice: sellerPrice.toFixed(2),
-      },
-    };
-
-    if (normalizedDescription.length > MAX_DESCRIPTION_LENGTH) {
-      setError(`Description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer.`);
-      return null;
-    }
-
-    if (submissionCategory === 'Gear') {
-      const resolvedGearBrand = editForm.gearBrand === OTHER_BRAND_VALUE ? editForm.customGearBrand.trim() : editForm.gearBrand.trim();
-      const needsSingleSize = editForm.gearItem !== 'Gear Combo' && !SIZELESS_GEAR_ITEMS.includes(editForm.gearItem);
-      const missingSingleSize = needsSingleSize && !editForm.gearSize.trim();
-      const missingComboSizes = editForm.gearItem === 'Gear Combo' && (!editForm.gearComboShirtSize.trim() || !editForm.gearComboPantsSize.trim());
-
-      if (!editForm.gearItem || !editForm.gearCondition || !resolvedGearBrand || missingSingleSize || missingComboSizes || !normalizedDescription) {
-        setError('Please complete all required gear fields before saving.');
-        return null;
-      }
-
-      const resolvedGearSize = editForm.gearItem === 'Gear Combo'
-        ? `Shirt: ${editForm.gearComboShirtSize.trim()}, Pants: ${editForm.gearComboPantsSize.trim()}`
-        : SIZELESS_GEAR_ITEMS.includes(editForm.gearItem)
-          ? ''
-        : editForm.gearSize.trim();
-
-      const specificationLines = [`Condition: ${editForm.gearCondition.trim()}`, `Brand: ${resolvedGearBrand}`];
-      if (!SIZELESS_GEAR_ITEMS.includes(editForm.gearItem)) {
-        specificationLines.push(`Size: ${resolvedGearSize}`);
-      }
-
-      return {
-        name: `${resolvedGearBrand} ${editForm.gearItem.trim()}`,
-        subcategory: editForm.gearItem.trim(),
-        description: normalizedDescription,
-        specifications: specificationLines,
-        gearItem: editForm.gearItem.trim(),
-        gearCondition: editForm.gearCondition.trim(),
-        gearBrand: resolvedGearBrand,
-        customGearBrand: editForm.gearBrand === OTHER_BRAND_VALUE ? resolvedGearBrand : '',
-        gearSize: resolvedGearSize,
-        gearComboShirtSize: editForm.gearItem === 'Gear Combo' ? editForm.gearComboShirtSize.trim() : '',
-        gearComboPantsSize: editForm.gearItem === 'Gear Combo' ? editForm.gearComboPantsSize.trim() : '',
-        ...sellerPriceUpdate,
-      };
-    }
-
-    if (submissionCategory === 'Accessories') {
-      const resolvedAccessoriesSubcategory = editForm.accessoriesSubcategory === OTHER_SUBCATEGORY_VALUE
-        ? editForm.customAccessoriesSubcategory.trim()
-        : editForm.accessoriesSubcategory.trim();
-      const resolvedAccessoriesBrand = editForm.accessoriesBrand === OTHER_BRAND_VALUE ? editForm.customAccessoriesBrand.trim() : editForm.accessoriesBrand.trim();
-
-      if (!resolvedAccessoriesSubcategory || !editForm.accessoriesCondition || !normalizedDescription) {
-        setError('Please complete all required accessories fields before saving.');
-        return null;
-      }
-
-      const accessoriesName = resolvedAccessoriesBrand ? `${resolvedAccessoriesBrand} ${resolvedAccessoriesSubcategory}` : resolvedAccessoriesSubcategory;
-      const specLines = [`Condition: ${editForm.accessoriesCondition.trim()}`];
-      if (resolvedAccessoriesBrand) specLines.push(`Brand: ${resolvedAccessoriesBrand}`);
-
-      return {
-        name: accessoriesName,
-        subcategory: resolvedAccessoriesSubcategory,
-        description: normalizedDescription,
-        specifications: specLines,
-        accessoriesSubcategory: resolvedAccessoriesSubcategory,
-        accessoriesCondition: editForm.accessoriesCondition.trim(),
-        accessoriesBrand: resolvedAccessoriesBrand,
-        customAccessoriesBrand: editForm.accessoriesBrand === OTHER_BRAND_VALUE ? resolvedAccessoriesBrand : '',
-        customSubcategory: editForm.accessoriesSubcategory === OTHER_SUBCATEGORY_VALUE ? resolvedAccessoriesSubcategory : '',
-        ...sellerPriceUpdate,
-      };
-    }
-
-    const resolvedPartsSubcategory = editForm.subcategory === OTHER_SUBCATEGORY_VALUE
-      ? editForm.customPartsSubcategory.trim()
-      : editForm.subcategory.trim();
-
-    if (!editForm.name.trim()) {
-      setError('Product name is required.');
-      return null;
-    }
-
-    if (!resolvedPartsSubcategory || !normalizedDescription) {
-      setError('Please complete all required parts fields before saving.');
-      return null;
-    }
-
-    const normalizedManufacturer = (editForm.manufacturer || '').trim();
-    const normalizedOtherManufacturer = (editForm.otherManufacturer || '').trim();
-    const resolvedPartsBrand = normalizedManufacturer === 'Other'
-      ? normalizedOtherManufacturer
-      : normalizedManufacturer;
-
-    if (!normalizedManufacturer) {
-      setError('Please select a bike manufacturer.');
-      return null;
-    }
-
-    if (normalizedManufacturer === 'Other' && !normalizedOtherManufacturer) {
-      setError('Please enter the manufacturer/brand name when selecting Other.');
-      return null;
-    }
-
-    const normalizedModels = Array.isArray(editForm.model)
-      ? editForm.model.map((item) => item.trim()).filter(Boolean)
-      : [];
-
-    const availableEditModels = Array.isArray(bikeModelOptionsByManufacturer[normalizedManufacturer])
-      ? bikeModelOptionsByManufacturer[normalizedManufacturer]
-      : [];
-    const hasPresetEditModelsForManufacturer = availableEditModels.length > 0;
-    const requiresEditModel = normalizedManufacturer && normalizedManufacturer !== 'Universal' && normalizedManufacturer !== 'Other';
-    const normalizedCustomModels = parseModelInput(editForm.customModel);
-    const resolvedModels = Array.from(new Set([
-      ...normalizedModels,
-      ...normalizedCustomModels,
-    ]));
-
-    if (requiresEditModel && resolvedModels.length === 0) {
-      setError('Please select and/or enter at least one bike model.');
-      return null;
-    }
-
-    const existingSpecs = editForm.specifications
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .filter((line) => !/^brand\s*:/i.test(line));
-
-    const specificationsWithBrand = [...existingSpecs, `Brand: ${resolvedPartsBrand}`];
-
-    return {
-      name: editForm.name.trim(),
-      subcategory: resolvedPartsSubcategory,
-      description: normalizedDescription,
-      specifications: specificationsWithBrand,
-      manufacturer: normalizedManufacturer,
-      model: normalizedManufacturer === 'Universal' || normalizedManufacturer === 'Other' ? [] : resolvedModels,
-      otherManufacturer: normalizedManufacturer === 'Other' ? normalizedOtherManufacturer : '',
-      brand: resolvedPartsBrand,
-      customPartsBrand: normalizedManufacturer === 'Other' ? normalizedOtherManufacturer : '',
-      customSubcategory: editForm.subcategory === OTHER_SUBCATEGORY_VALUE ? resolvedPartsSubcategory : '',
-      ...sellerPriceUpdate,
-    };
-  };
-
   const handleSaveEdit = async (event) => {
     event.preventDefault();
 
-    if (!editingSubmission) {
+    if (!editing || !editForm) {
       return;
     }
 
-    const updates = getValidatedEditUpdates();
-    if (!updates) {
+    const errors = validateListingForm(editForm, config, images.total);
+    setEditFieldErrors(errors);
+    setEditShowProfileLink(false);
+    if (Object.keys(errors).length > 0) {
+      setEditStatus('Please fix the highlighted fields.');
       return;
     }
 
     setIsSavingEdit(true);
-    setError('');
+    setEditStatus('');
 
     try {
-      const updatesWithImages = await buildSubmissionUpdatesWithImages(updates);
-      if (!updatesWithImages) {
-        setIsSavingEdit(false);
-        return;
-      }
-
-      if (editingListingType === 'product') {
-        await resubmitSellerProductForApproval({ product: editingSubmission, updates: updatesWithImages });
-        const [refreshedProducts, refreshedSubmissions] = await Promise.all([
-          fetchSellerLiveProducts(user.id),
-          fetchSellerSubmissions(user.id),
-        ]);
-        setProducts(refreshedProducts);
-        setSubmissions(refreshedSubmissions);
+      const payload = {
+        input: toSubmissionInput(editForm, { keepImageIds: images.keepImageIds }),
+        files: images.files,
+      };
+      if (editing.kind === 'product') {
+        await editLiveProduct(editing.listing.id, payload);
       } else {
-        await updateSellerSubmission(editingSubmission.id, updatesWithImages);
-        const refreshedSubmissions = await fetchSellerSubmissions(user.id);
-        setSubmissions(refreshedSubmissions);
-        const refreshedSubmission = refreshedSubmissions.find((item) => item.id === editingSubmission.id);
-        if (refreshedSubmission) {
-          setSelectedSubmission((prev) => (prev?.id === editingSubmission.id ? refreshedSubmission : prev));
-        }
+        await updateSubmission(editing.listing.id, payload);
       }
 
+      const refreshed = await loadFirstPages();
+      setSelectedSubmission((prev) => (prev ? refreshed.items.find((item) => item.id === prev.id) || null : prev));
       handleCloseEdit();
     } catch (err) {
-      setError(toUserMessage(err, "We couldn't save your changes right now. Please try again."));
+      const failure = describeSubmissionError(err, "We couldn't save your changes right now. Please try again.");
+      setEditStatus(failure.message);
+      setEditFieldErrors(failure.fieldErrors);
+      setEditShowProfileLink(failure.showProfileLink);
     } finally {
       setIsSavingEdit(false);
-    }
-  };
-
-  const handleResubmit = async () => {
-    if (!editingSubmission || editingListingType !== 'submission' || editingSubmission.status !== 'rejected') {
-      return;
-    }
-
-    const baseUpdates = getValidatedEditUpdates();
-    if (!baseUpdates) {
-      return;
-    }
-
-    const updates = {
-      ...baseUpdates,
-      status: 'pending',
-      rejectedAt: null,
-      rejectedBy: null,
-      rejectionReason: '',
-    };
-
-    setIsResubmitting(true);
-    setError('');
-
-    try {
-      const updatesWithImages = await buildSubmissionUpdatesWithImages(updates);
-      if (!updatesWithImages) {
-        setIsResubmitting(false);
-        return;
-      }
-
-      await updateSellerSubmission(editingSubmission.id, updatesWithImages);
-
-      setSubmissions((prev) =>
-        prev.map((item) => (item.id === editingSubmission.id ? { ...item, ...updatesWithImages } : item))
-      );
-
-      if (selectedSubmission?.id === editingSubmission.id) {
-        setSelectedSubmission((prev) => (prev ? { ...prev, ...updatesWithImages } : prev));
-      }
-
-      handleCloseEdit();
-    } catch (err) {
-      setError(toUserMessage(err, "We couldn't resubmit this listing right now. Please try again."));
-    } finally {
-      setIsResubmitting(false);
     }
   };
 
@@ -968,16 +408,23 @@ export default function SellerSubmissions() {
     );
   }
 
+  const isProductEdit = editing?.kind === 'product';
+  const isRejectedResubmit = editing?.kind === 'submission' && editing.listing.status === 'rejected';
+  const editStatusMessage = editStatus || images.notice;
+  let saveLabel = 'Save changes';
+  if (isProductEdit) saveLabel = 'Submit edit for approval';
+  if (isRejectedResubmit) saveLabel = 'Resubmit';
+
   return (
     <div className="mx-auto max-w-[1500px] space-y-6">
       <ImageCropDialog
-        file={editCropQueue.currentFile}
+        file={images.cropQueue.currentFile}
         aspect={LISTING_IMAGE_ASPECT}
         maxWidth={LISTING_IMAGE_OUTPUT_WIDTH}
         title="Crop listing photo"
-        progressLabel={editCropQueue.progressLabel}
-        onConfirm={editCropQueue.confirm}
-        onSkip={editCropQueue.skip}
+        progressLabel={images.cropQueue.progressLabel}
+        onConfirm={images.cropQueue.confirm}
+        onSkip={images.cropQueue.skip}
       />
       <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6">
         <div>
@@ -1053,8 +500,8 @@ export default function SellerSubmissions() {
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2">
                           <button type="button" onClick={() => handleViewDetails(listing)} disabled={listing.viewType === 'disabled'} className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] ${listing.viewType === 'disabled' ? 'cursor-not-allowed bg-slate-200 text-slate-500' : 'border border-slate-300 text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]'}`}>View details</button>
-                          <button type="button" onClick={() => handleOpenEdit(listing)} disabled={!listing.canEdit} className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] ${!listing.canEdit ? 'cursor-not-allowed bg-slate-200 text-slate-500' : 'border border-slate-300 text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]'}`}>Edit</button>
-                          <button type="button" onClick={() => handleDeleteListing(listing)} disabled={deletingId === listing.id} className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-white hover:bg-rose-700 disabled:opacity-60">{deletingId === listing.id ? 'Deleting...' : 'Delete'}</button>
+                          <button type="button" onClick={() => handleOpenEdit(listing)} disabled={!listing.canEdit || preparingEditId === listing.id} className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] ${!listing.canEdit ? 'cursor-not-allowed bg-slate-200 text-slate-500' : 'border border-slate-300 text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]'}`}>{preparingEditId === listing.id ? 'Opening...' : 'Edit'}</button>
+                          <button type="button" onClick={() => handleDeleteListing(listing)} disabled={deletingId === listing.id} className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-white hover:bg-rose-700 disabled:opacity-60">{deletingId === listing.id ? 'Deleting...' : (listing.listingType === 'product' ? 'Remove' : 'Delete')}</button>
                         </div>
                       </td>
                     </tr>
@@ -1063,6 +510,17 @@ export default function SellerSubmissions() {
               </table>
             </div>
           )}
+
+          {submissionsCursor || productsCursor ? (
+            <button
+              type="button"
+              onClick={handleLoadMore}
+              disabled={isLoadingMore}
+              className="mt-4 rounded-full border border-slate-300 px-5 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD] disabled:opacity-60"
+            >
+              {isLoadingMore ? 'Loading...' : 'Load more'}
+            </button>
+          ) : null}
           </div>
         </AccordionDetails>
       </Accordion>
@@ -1093,39 +551,33 @@ export default function SellerSubmissions() {
 
             <div className="mt-6">
               <h3 className="text-lg font-semibold text-slate-900">Submitted fields</h3>
-              {selectedDetailEntries.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-600">No field data available.</p>
-              ) : (
-                <div className="mt-3 overflow-x-auto rounded-2xl border border-slate-200">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-100">
-                      <tr>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Field</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-700">Value</th>
+              <div className="mt-3 overflow-x-auto rounded-2xl border border-slate-200">
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-100">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold text-slate-700">Field</th>
+                      <th className="px-4 py-3 text-left font-semibold text-slate-700">Value</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {getDetailRows(selectedSubmission).map(([label, value]) => (
+                      <tr key={label}>
+                        <td className="px-4 py-3 align-top text-slate-700">{label}</td>
+                        <td className="px-4 py-3 text-slate-900">{value}</td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
-                      {selectedDetailEntries.map(([key, value]) => (
-                        <tr key={key}>
-                          <td className="px-4 py-3 align-top text-slate-700">{formatFieldLabel(key)}</td>
-                          <td className="px-4 py-3 text-slate-900">
-                            {formatDetailValue(key, value)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             <div className="mt-6">
               <h3 className="text-lg font-semibold text-slate-900">Images supplied</h3>
-              {selectedDetailImages.length === 0 ? (
+              {selectedSubmission.images.length === 0 ? (
                 <p className="mt-2 text-sm text-slate-600">No images supplied.</p>
               ) : (
                 <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {selectedDetailImages.map((imageSrc) => (
+                  {selectedSubmission.images.map((imageSrc) => (
                     <div key={imageSrc} className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
                       <img src={imageSrc} alt={selectedSubmission.name} className="h-48 w-full object-cover" />
                     </div>
@@ -1137,13 +589,13 @@ export default function SellerSubmissions() {
         </div>
       ) : null}
 
-      {editingSubmission ? (
+      {editing && editForm ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
           <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-xl sm:p-8">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#00C5CD]">Edit submission</p>
-                <h2 className="mt-2 text-2xl font-semibold text-slate-900">{editingSubmission.name}</h2>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#00C5CD]">{isProductEdit ? 'Edit live listing' : 'Edit submission'}</p>
+                <h2 className="mt-2 text-2xl font-semibold text-slate-900">{editing.listing.name}</h2>
               </div>
               <button
                 type="button"
@@ -1154,476 +606,34 @@ export default function SellerSubmissions() {
               </button>
             </div>
 
+            {isProductEdit ? (
+              <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <p className="text-sm text-amber-900">Editing a live listing takes it off sale until an admin approves your changes. Until then buyers cannot see or buy it.</p>
+              </div>
+            ) : null}
+
             <form onSubmit={handleSaveEdit} className="mt-6 space-y-4">
-              {editingSubmission.category === 'Gear' ? (
-                <>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-700">What gear item do you wish to sell?</span>
-                      <select
-                        value={editForm.gearItem}
-                        onChange={(event) => setEditForm((prev) => ({ ...prev, gearItem: event.target.value }))}
-                        required
-                        className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                      >
-                        {GEAR_ITEM_OPTIONS.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-700">Please describe the condition of the gear</span>
-                      <select
-                        value={editForm.gearCondition}
-                        onChange={(event) => setEditForm((prev) => ({ ...prev, gearCondition: event.target.value }))}
-                        required
-                        className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                      >
-                        {GEAR_CONDITION_OPTIONS.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-700">What brand is the gear item?</span>
-                      <select
-                        value={editForm.gearBrand}
-                        onChange={(event) => setEditForm((prev) => ({ ...prev, gearBrand: event.target.value }))}
-                        required
-                        className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                      >
-                        {brandOptions.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                        <option value={OTHER_BRAND_VALUE}>Other (Add New Brand)</option>
-                      </select>
-                    </label>
-
-                    {editForm.gearBrand === OTHER_BRAND_VALUE ? (
-                      <label className="block">
-                        <span className="text-sm font-medium text-slate-700">Enter brand name</span>
-                        <input
-                          type="text"
-                          value={editForm.customGearBrand}
-                          onChange={(event) => setEditForm((prev) => ({ ...prev, customGearBrand: event.target.value }))}
-                          required
-                          maxLength={60}
-                          className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                        />
-                      </label>
-                    ) : null}
-                  </div>
-
-                  {ALPHA_SIZE_GEAR_ITEMS.includes(editForm.gearItem) ? (
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-700">Please provide the size of the gear</span>
-                      <select
-                        value={editForm.gearSize}
-                        onChange={(event) => setEditForm((prev) => ({ ...prev, gearSize: event.target.value }))}
-                        required
-                        className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                      >
-                        {ALPHA_SIZE_OPTIONS.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-
-                  {editForm.gearItem === 'Pants' ? (
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-700">Please provide the size of the gear</span>
-                      <select
-                        value={editForm.gearSize}
-                        onChange={(event) => setEditForm((prev) => ({ ...prev, gearSize: event.target.value }))}
-                        required
-                        className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                      >
-                        {PANTS_SIZE_OPTIONS.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-
-                  {editForm.gearItem === 'Boots' ? (
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-700">Please provide the size of the boots</span>
-                      <select
-                        value={editForm.gearSize}
-                        onChange={(event) => setEditForm((prev) => ({ ...prev, gearSize: event.target.value }))}
-                        required
-                        className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                      >
-                        {BOOTS_SIZE_OPTIONS.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-
-                  {editForm.gearItem === 'Gloves' ? (
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-700">Please provide the size of the gloves</span>
-                      <select
-                        value={editForm.gearSize}
-                        onChange={(event) => setEditForm((prev) => ({ ...prev, gearSize: event.target.value }))}
-                        required
-                        className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                      >
-                        {GLOVES_SIZE_OPTIONS.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-
-                  {editForm.gearItem === 'Gear Combo' ? (
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label className="block">
-                        <span className="text-sm font-medium text-slate-700">Shirt size</span>
-                        <select
-                          value={editForm.gearComboShirtSize}
-                          onChange={(event) => setEditForm((prev) => ({ ...prev, gearComboShirtSize: event.target.value }))}
-                          required
-                          className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                        >
-                          {ALPHA_SIZE_OPTIONS.map((item) => (
-                            <option key={item} value={item}>
-                              {item}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="block">
-                        <span className="text-sm font-medium text-slate-700">Pants size</span>
-                        <select
-                          value={editForm.gearComboPantsSize}
-                          onChange={(event) => setEditForm((prev) => ({ ...prev, gearComboPantsSize: event.target.value }))}
-                          required
-                          className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                        >
-                          {PANTS_SIZE_OPTIONS.map((item) => (
-                            <option key={item} value={item}>
-                              {item}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                  ) : null}
-
-                  {editForm.gearItem !== 'Gear Combo' && !ALPHA_SIZE_GEAR_ITEMS.includes(editForm.gearItem) && !SIZELESS_GEAR_ITEMS.includes(editForm.gearItem) && editForm.gearItem !== 'Pants' && editForm.gearItem !== 'Boots' && editForm.gearItem !== 'Gloves' ? (
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-700">Please provide the size of the gear</span>
-                      <input
-                        value={editForm.gearSize}
-                        onChange={(event) => setEditForm((prev) => ({ ...prev, gearSize: event.target.value }))}
-                        required
-                        className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                      />
-                    </label>
-                  ) : null}
-
-                  <label className="block">
-                    <span className="text-sm font-medium text-slate-700">Description</span>
-                    <textarea
-                      rows="4"
-                      value={editForm.description}
-                      onChange={(event) => setEditForm((prev) => ({ ...prev, description: event.target.value }))}
-                      maxLength={MAX_DESCRIPTION_LENGTH}
-                      required
-                      className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                    />
-                  </label>
-
-                  <label className="block">
-                    <span className="text-sm font-medium text-slate-700">Price</span>
-                    <input
-                      type="number"
-                      value={editForm.price}
-                      onChange={(event) => setEditForm((prev) => ({ ...prev, price: event.target.value }))}
-                      required
-                      className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                    />
-                    <SellingPriceInfo price={editForm.price} />
-                  </label>
-                </>
-              ) : editingSubmission.category === 'Accessories' ? (
-                <>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-700">What type of accessory is this?</span>
-                      <select
-                        value={editForm.accessoriesSubcategory}
-                        onChange={(event) => setEditForm((prev) => ({
-                          ...prev,
-                          accessoriesSubcategory: event.target.value,
-                          customAccessoriesSubcategory: event.target.value === OTHER_SUBCATEGORY_VALUE ? prev.customAccessoriesSubcategory : '',
-                        }))}
-                        required
-                        className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                      >
-                        {accessoriesSubcategoryOptions.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                        <option value={OTHER_SUBCATEGORY_VALUE}>Other</option>
-                      </select>
-                    </label>
-
-                    {editForm.accessoriesSubcategory === OTHER_SUBCATEGORY_VALUE ? (
-                      <label className="block">
-                        <span className="text-sm font-medium text-slate-700">Enter accessory type</span>
-                        <input
-                          type="text"
-                          value={editForm.customAccessoriesSubcategory || ''}
-                          onChange={(event) => setEditForm((prev) => ({ ...prev, customAccessoriesSubcategory: event.target.value }))}
-                          required
-                          maxLength={60}
-                          className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                        />
-                      </label>
-                    ) : null}
-
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-700">Please describe the condition of the item</span>
-                      <select
-                        value={editForm.accessoriesCondition}
-                        onChange={(event) => setEditForm((prev) => ({ ...prev, accessoriesCondition: event.target.value }))}
-                        required
-                        className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                      >
-                        {GEAR_CONDITION_OPTIONS.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-700">Brand <span className="text-xs text-slate-500">(optional)</span></span>
-                      <select
-                        value={editForm.accessoriesBrand}
-                        onChange={(event) => setEditForm((prev) => ({ ...prev, accessoriesBrand: event.target.value }))}
-                        className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                      >
-                        <option value="">-- Select or leave blank --</option>
-                        {brandOptions.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                        <option value={OTHER_BRAND_VALUE}>Other (Add New Brand)</option>
-                      </select>
-                    </label>
-
-                    {editForm.accessoriesBrand === OTHER_BRAND_VALUE ? (
-                      <label className="block">
-                        <span className="text-sm font-medium text-slate-700">Enter brand name</span>
-                        <input
-                          type="text"
-                          value={editForm.customAccessoriesBrand}
-                          onChange={(event) => setEditForm((prev) => ({ ...prev, customAccessoriesBrand: event.target.value }))}
-                          maxLength={60}
-                          className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                        />
-                      </label>
-                    ) : null}
-                  </div>
-
-                  <label className="block">
-                    <span className="text-sm font-medium text-slate-700">Description</span>
-                    <textarea
-                      rows="4"
-                      value={editForm.description}
-                      onChange={(event) => setEditForm((prev) => ({ ...prev, description: event.target.value }))}
-                      maxLength={MAX_DESCRIPTION_LENGTH}
-                      required
-                      className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                    />
-                  </label>
-
-                  <label className="block">
-                    <span className="text-sm font-medium text-slate-700">Price</span>
-                    <input
-                      type="number"
-                      value={editForm.price}
-                      onChange={(event) => setEditForm((prev) => ({ ...prev, price: event.target.value }))}
-                      required
-                      className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                    />
-                    <SellingPriceInfo price={editForm.price} />
-                  </label>
-                </>
-              ) : (
-                <>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-700">Product name</span>
-                      <input
-                        value={editForm.name}
-                        onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
-                        required
-                        className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-700">Price</span>
-                      <input
-                        type="number"
-                        value={editForm.price}
-                        onChange={e => setEditForm(prev => ({ ...prev, price: e.target.value }))}
-                        required
-                        className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                      />
-                      <SellingPriceInfo price={editForm.price} />
-                    </label>
-                  </div>
-
-                  <label className="block">
-                    <span className="text-sm font-medium text-slate-700">Dirt Bike Category</span>
-                    <select
-                      value={editForm.subcategory}
-                      onChange={e => setEditForm(prev => ({
-                        ...prev,
-                        subcategory: e.target.value,
-                        customPartsSubcategory: e.target.value === OTHER_SUBCATEGORY_VALUE ? prev.customPartsSubcategory : '',
-                      }))}
-                      required
-                      className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                    >
-                      <option value="">Select a category</option>
-                      {partsSubcategoryOptions.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                      <option value={OTHER_SUBCATEGORY_VALUE}>Other</option>
-                    </select>
-                  </label>
-
-                  {editForm.subcategory === OTHER_SUBCATEGORY_VALUE ? (
-                    <label className="block">
-                      <span className="text-sm font-medium text-slate-700">Enter parts category</span>
-                      <input
-                        type="text"
-                        value={editForm.customPartsSubcategory || ''}
-                        onChange={e => setEditForm(prev => ({ ...prev, customPartsSubcategory: e.target.value }))}
-                        required
-                        maxLength={60}
-                        className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                      />
-                    </label>
-                  ) : null}
-
-                  <label className="block">
-                    <span className="text-sm font-medium text-slate-700">Fits Bike Manufacturer</span>
-                    <select
-                      value={editForm.manufacturer || ''}
-                      onChange={e => setEditForm(prev => ({ ...prev, manufacturer: e.target.value, model: [], customModel: '', otherManufacturer: '' }))}
-                      required
-                      className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                    >
-                      <option value="">Select manufacturer</option>
-                      {[
-                        'Honda','Yamaha','KTM','Kawasaki','Suzuki','Husqvarna','GasGas','Beta','Sherco','TM Racing','Stark Future','Fantic','Sur-Ron','Kayo','Osset','Triumph','Universal','Other'
-                      ].map(m => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                    </select>
-                    {editForm.manufacturer === 'Other' && (
-                      <input
-                        className="mt-2 w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                        placeholder="Enter manufacturer name"
-                        value={editForm.otherManufacturer || ''}
-                        onChange={e => setEditForm(prev => ({ ...prev, otherManufacturer: e.target.value }))}
-                        required
-                      />
-                    )}
-                  </label>
-
-                  <label className="block">
-                    <span className="text-sm font-medium text-slate-700">Fits Bike Model(s)</span>
-                    {requiresEditModelSelection && hasPresetEditModels ? (
-                      <div className="mt-2 max-h-60 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          {availableEditModelsForManufacturer.map((mod) => {
-                            const selectedModels = Array.isArray(editForm.model) ? editForm.model : [];
-                            const isChecked = selectedModels.includes(mod);
-                            return (
-                              <label key={mod} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={(event) => {
-                                    setEditForm((prev) => {
-                                      const currentModels = Array.isArray(prev.model) ? prev.model : [];
-                                      if (event.target.checked) {
-                                        return { ...prev, model: Array.from(new Set([...currentModels, mod])) };
-                                      }
-                                      return { ...prev, model: currentModels.filter((item) => item !== mod) };
-                                    });
-                                  }}
-                                  className="h-4 w-4 rounded border-slate-300"
-                                />
-                                <span>{mod}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {requiresEditModelSelection ? (
-                      <div className="mt-3 space-y-2">
-                        <p className="text-xs text-slate-500">Can't find your model here? Add it below!</p>
-                        <input
-                          value={editForm.customModel || ''}
-                          onChange={(event) => setEditForm((prev) => ({ ...prev, customModel: event.target.value }))}
-                          placeholder="Type additional model names (comma separated)"
-                          className="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
-                        />
-                      </div>
-                    ) : null}
-                  </label>
-                </>
-              )}
+              <ListingFormFields form={editForm} onChange={handleEditFormChange} config={config} errors={editFieldErrors} />
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-slate-700">Listing photos</h3>
-                  <p className="text-xs text-slate-600">{editImageUrls.length + editNewFiles.length}/5 selected</p>
+                  <p className="text-xs text-slate-600">{images.total}/{MAX_LISTING_IMAGES} selected</p>
                 </div>
+                <p className="mt-2 text-xs text-slate-600">Keep or add between {MIN_LISTING_IMAGES} and {MAX_LISTING_IMAGES} photos.</p>
+                {editing.needsReupload ? (
+                  <p className="mt-2 text-xs text-slate-600">The existing photos cannot be kept for this listing, so please add your photos again.</p>
+                ) : null}
+                {editFieldErrors.images ? <p className="mt-1 text-xs text-red-600">{editFieldErrors.images}</p> : null}
 
-                {editImageUrls.length > 0 ? (
+                {images.kept.length > 0 ? (
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    {editImageUrls.map((imageSrc) => (
-                      <div key={imageSrc} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                        <img src={imageSrc} alt="Listing" className="h-40 w-full object-cover" />
+                    {images.kept.map((image, index) => (
+                      <div key={image.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                        <img src={image.thumbnailUrl || image.url} alt="Listing" className="h-40 w-full object-cover" />
                         <button
                           type="button"
-                          onClick={() => setEditImageUrls((prev) => prev.filter((item) => item !== imageSrc))}
+                          onClick={() => images.removeKept(index)}
                           className="w-full border-t border-slate-200 px-3 py-2 text-xs font-semibold uppercase tracking-[0.06em] text-rose-700 hover:bg-rose-50"
                         >
                           Remove photo
@@ -1641,21 +651,21 @@ export default function SellerSubmissions() {
                     type="file"
                     accept="image/*"
                     multiple
-                    onChange={handleEditNewFilesChange}
+                    onChange={images.handleFilesChange}
                     className="mt-2 w-full rounded-3xl border border-slate-200 bg-white px-4 py-3"
                   />
                 </label>
 
-                {editNewFilePreviews.length > 0 ? (
+                {images.previews.length > 0 ? (
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    {editNewFilePreviews.map((item, index) => (
+                    {images.previews.map((item, index) => (
                       <div key={item.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
                         <img src={item.previewUrl} alt={item.name} className="h-32 w-full object-cover" />
                         <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-3 py-2">
                           <p className="truncate text-xs text-slate-600" title={item.name}>{item.name}</p>
                           <button
                             type="button"
-                            onClick={() => setEditNewFiles((prev) => prev.filter((_, fileIndex) => fileIndex !== index))}
+                            onClick={() => images.removeFile(index)}
                             className="text-xs font-semibold uppercase tracking-[0.06em] text-rose-700"
                           >
                             Remove
@@ -1667,28 +677,30 @@ export default function SellerSubmissions() {
                 ) : null}
               </div>
 
+              {editStatusMessage ? (
+                <p className="text-sm text-red-600">
+                  {editStatusMessage}
+                  {editShowProfileLink ? (
+                    <>
+                      {' '}
+                      <Link href="/profile" className="font-semibold underline">Go to your profile</Link>
+                    </>
+                  ) : null}
+                </p>
+              ) : null}
+
               <div className="flex flex-wrap gap-3 pt-2">
                 <button
                   type="submit"
-                  disabled={isSavingEdit || isResubmitting}
+                  disabled={isSavingEdit}
                   className="rounded-full bg-slate-900 px-5 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-white hover:bg-slate-800 disabled:opacity-60"
                 >
-                  {isSavingEdit ? 'Saving...' : 'Save changes'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleResubmit}
-                  disabled={isSavingEdit || isResubmitting}
-                  className={`rounded-full bg-[#00CED1] px-5 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-white hover:bg-[#00C5CD] disabled:opacity-60 ${
-                    editingListingType === 'submission' && editingSubmission?.status === 'rejected' ? '' : 'hidden'
-                  }`}
-                >
-                  {isResubmitting ? 'Resubmitting...' : 'Resubmit'}
+                  {isSavingEdit ? 'Saving...' : saveLabel}
                 </button>
                 <button
                   type="button"
                   onClick={handleCloseEdit}
-                  disabled={isSavingEdit || isResubmitting}
+                  disabled={isSavingEdit}
                   className="rounded-full border border-slate-300 px-5 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]"
                 >
                   Cancel

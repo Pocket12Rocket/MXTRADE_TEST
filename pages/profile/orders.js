@@ -1,33 +1,26 @@
 import { useEffect, useState } from 'react';
 import useAuth from '../../lib/useAuth';
-import { fetchUserOrders } from '../../lib/firestoreHelpers';
+import { listMyOrders } from '../../lib/api/orders';
 import Link from 'next/link';
 import Image from 'next/image';
 import { toUserMessage } from '../../lib/userMessage';
 
-const STATUS_LABEL = {
-  purchased: 'Purchased',
-  paid: 'Purchased',
-  shipped: 'Shipped',
-  delivered: 'Delivered',
-  refund_pending: 'Refund Pending',
-  refunded: 'Refunded',
-};
+const ORDERS_PAGE_SIZE = 20;
 
 const STATUS_COLOUR = {
   purchased: 'bg-emerald-100 text-emerald-700',
   paid: 'bg-emerald-100 text-emerald-700',
   shipped: 'bg-blue-100 text-blue-700',
   delivered: 'bg-slate-100 text-slate-700',
+  late_payment: 'bg-amber-100 text-amber-700',
   refund_pending: 'bg-amber-100 text-amber-700',
   refunded: 'bg-rose-100 text-rose-700',
 };
 
 /**
- * Why: Buyer's "My orders" page. PERF-04 — orders are now fetched 50 at a time via a
- * server-side `status in [...]` filter instead of downloading the buyer's full order history on
- * every visit; a "Load more" control fetches subsequent pages with a Firestore `startAfter`
- * cursor.
+ * Why: Buyer's "My orders" page, read from the backend (`GET /me/orders`) one cursor page at a
+ * time; a "Load more" control fetches the next page with `nextCursor`. Status text comes from the
+ * API's `statusLabel`; only the badge colour is decided here.
  * @returns {JSX.Element} The order list, a sign-in prompt, or a loading state.
  */
 export default function OrdersPage() {
@@ -41,11 +34,11 @@ export default function OrdersPage() {
 
   useEffect(() => {
     if (!loading && user) {
-      fetchUserOrders(user.email)
-        .then(({ orders: orderRows, lastDoc, hasMore }) => {
-          setOrders(orderRows);
-          setOrdersCursor(lastDoc);
-          setHasMoreOrders(Boolean(hasMore));
+      listMyOrders({ limit: ORDERS_PAGE_SIZE })
+        .then(({ items, nextCursor }) => {
+          setOrders(items);
+          setOrdersCursor(nextCursor);
+          setHasMoreOrders(Boolean(nextCursor));
         })
         .catch((err) => {
           setError(toUserMessage(err, "We couldn't load your orders right now. Please try again."));
@@ -57,9 +50,10 @@ export default function OrdersPage() {
   }, [user, loading]);
 
   /**
-   * Why: PERF-04 — fetches the next page of the buyer's orders using the cursor returned by the
-   * previous fetchUserOrders() call.
+   * Why: Fetches the next page of the buyer's orders using the `nextCursor` of the previous page.
    * @returns {Promise<void>} Resolves once the next page has been appended to state.
+   * @example
+   * <button onClick={handleLoadMoreOrders}>Load more orders</button>
    */
   const handleLoadMoreOrders = async () => {
     if (!ordersCursor || isLoadingMoreOrders || !user) {
@@ -68,10 +62,10 @@ export default function OrdersPage() {
 
     setIsLoadingMoreOrders(true);
     try {
-      const { orders: moreOrders, lastDoc, hasMore } = await fetchUserOrders(user.email, { cursor: ordersCursor });
-      setOrders((currentOrders) => [...currentOrders, ...moreOrders]);
-      setOrdersCursor(lastDoc);
-      setHasMoreOrders(Boolean(hasMore));
+      const { items, nextCursor } = await listMyOrders({ cursor: ordersCursor, limit: ORDERS_PAGE_SIZE });
+      setOrders((currentOrders) => [...currentOrders, ...items]);
+      setOrdersCursor(nextCursor);
+      setHasMoreOrders(Boolean(nextCursor));
     } catch (err) {
       setError(toUserMessage(err, "We couldn't load more orders right now. Please try again."));
     } finally {
@@ -102,7 +96,10 @@ export default function OrdersPage() {
         <ul className="divide-y divide-slate-200">
           {orders.map((order, idx) => {
             const statusKey = (order.status || '').toLowerCase();
-            const badgeLabel = STATUS_LABEL[statusKey] || order.status;
+            const badgeLabel = order.statusLabel || order.status;
+            const firstItem = order.items?.[0];
+            const productName = firstItem?.name || `Order #${order.id.slice(-8).toUpperCase()}`;
+            const imageUrl = firstItem?.thumbnailUrl || '';
             const badgeColour = STATUS_COLOUR[statusKey] || 'bg-slate-100 text-slate-700';
             return (
               <li key={`${order.id}-${idx}`} className="py-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
@@ -111,13 +108,13 @@ export default function OrdersPage() {
                   href={`/profile/orders/${order.id}`}
                   className="flex flex-1 items-center gap-4 rounded-2xl hover:bg-slate-50 transition p-2 -m-2"
                 >
-                  {order.imageUrl && (
+                  {imageUrl && (
                     <div className="w-16 h-16 flex-shrink-0 rounded-xl overflow-hidden border border-slate-100 bg-slate-50">
-                      <Image src={order.imageUrl} alt={order.productName} width={64} height={64} className="object-cover w-full h-full" />
+                      <Image src={imageUrl} alt={productName} width={64} height={64} className="object-cover w-full h-full" />
                     </div>
                   )}
                   <div className="min-w-0">
-                    <p className="font-semibold text-slate-900 truncate">{order.productName}</p>
+                    <p className="font-semibold text-slate-900 truncate">{productName}</p>
                     <p className="text-slate-500 text-xs mt-0.5 font-mono truncate">#{order.id}</p>
                     <span className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] ${badgeColour}`}>
                       {badgeLabel}
@@ -131,8 +128,8 @@ export default function OrdersPage() {
                 {/* Return action */}
                 <div className="flex-shrink-0 flex justify-end sm:justify-start">
                   <button
-                    className={`rounded-full px-5 py-2 text-sm font-semibold text-white ${order.status === 'delivered' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-                    disabled={order.status !== 'delivered'}
+                    className={`rounded-full px-5 py-2 text-sm font-semibold text-white ${order.canRequestRefund ? 'bg-rose-600 hover:bg-rose-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
+                    disabled={!order.canRequestRefund}
                     onClick={() => window.location.href = `/profile/orders/${order.id}/return`}
                   >
                     Return

@@ -35,6 +35,17 @@ describe('apiRequest', () => {
     expect(patchInit.body).toBe(JSON.stringify({ firstName: 'Sam' }));
   });
 
+  it('merges extra headers into the request', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({}), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiRequest('/orders/1', { headers: { 'X-Order-Token': 'tok' } });
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers['X-Order-Token']).toBe('tok');
+    expect(init.headers.Accept).toContain('application/json');
+  });
+
   it('does not set Content-Type for multipart bodies', async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);

@@ -1,22 +1,19 @@
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/router';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useCart } from '../lib/cartContext';
 import useAuth from '../lib/useAuth';
-import { fetchProductById } from '../lib/api/catalog';
-import { UserFacingError, toUserMessage, reportError } from '../lib/userMessage';
-
-const PROVINCES = [
-  'Eastern Cape',
-  'Free State',
-  'Gauteng',
-  'KwaZulu-Natal',
-  'Limpopo',
-  'Mpumalanga',
-  'Northern Cape',
-  'North West',
-  'Western Cape',
-];
+import { getFieldErrors } from '../lib/apiClient';
+import {
+  PROVINCES,
+  createOrder,
+  formatRands,
+  quoteCheckout,
+  startPayfast,
+  storeOrderToken,
+  submitPayfastForm,
+  toProvinceValue,
+} from '../lib/api/orders';
+import { toUserMessage, reportError } from '../lib/userMessage';
 
 const EMPTY_FORM = {
   firstName: '',
@@ -29,6 +26,10 @@ const EMPTY_FORM = {
   province: '',
   postalCode: '',
 };
+
+// Why: The backend reports field errors as `shippingAddress.city` / `buyerEmail`; the form's
+// fields are named `city` / `email`. One place maps between them.
+const SERVER_FIELD_ALIASES = { buyerEmail: 'email', acceptTerms: 'terms' };
 
 function fieldError(name, value) {
   if (name === 'email') {
@@ -43,82 +44,100 @@ function fieldError(name, value) {
 }
 
 /**
- * Why: Cart → order creation → PayFast redirect. Never render a raw Firestore/API error — the
- * `/api/orders/create` and `/api/payfast/checkout` routes only ever return short, curated error
- * strings, and any other failure (network, etc.) is mapped via `toUserMessage()` (ARCH-14).
+ * Why: Turns the backend's `errors[].path` values into form-field keys, so 422 messages show
+ * under the right input.
+ * @param {Object<string, string>} fieldErrors - Result of `getFieldErrors(err)`.
+ * @returns {Object<string, string>} Messages keyed by form field name.
+ * @example
+ * toFormErrors({ 'shippingAddress.city': 'Required', buyerEmail: 'Invalid' }); // { city: 'Required', email: 'Invalid' }
+ */
+function toFormErrors(fieldErrors) {
+  return Object.fromEntries(
+    Object.entries(fieldErrors).map(([path, message]) => {
+      const key = path.replace(/^shippingAddress\./, '');
+      return [SERVER_FIELD_ALIASES[key] || key, message];
+    })
+  );
+}
+
+/**
+ * Why: Finds which cart lines a 409 `INSUFFICIENT_STOCK` refers to (`errors[].path` is
+ * `items.N`, the index in the items array that was sent).
+ * @param {Object<string, string>} fieldErrors - Result of `getFieldErrors(err)`.
+ * @param {Array<{id: string}>} items - The cart items that were sent, in order.
+ * @returns {string[]} Product ids of the flagged lines.
+ * @example
+ * stockProblemIds({ 'items.1': 'Only 1 left' }, cartItems); // ['product-b']
+ */
+function stockProblemIds(fieldErrors, items) {
+  return Object.keys(fieldErrors)
+    .map((path) => /^items\.(\d+)/.exec(path))
+    .filter(Boolean)
+    .map((match) => items[Number(match[1])]?.id)
+    .filter(Boolean);
+}
+
+/**
+ * Why: Cart, server quote, order creation, then PayFast redirect. Prices, availability, the
+ * delivery fee and the total all come from the backend quote (D-05); the client never computes
+ * money. Guests can check out (D-10) with an email and accepted terms; signed-in buyers must have
+ * a verified email (D-11). Every failure goes through `toUserMessage()`, with per-field
+ * messages from `getFieldErrors()`.
  * @returns {JSX.Element} The checkout form, or an empty-cart state.
+ * @example
+ * // Rendered by Next.js at /checkout
+ * <CheckoutPage />
  */
 export default function CheckoutPage() {
-  const router = useRouter();
   const { user, profile } = useAuth();
-  const { items, totalPrice, clearCart } = useCart();
-  const DELIVERY_FEE_PER_SELLER = 150;
+  const { items, clearCart } = useCart();
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [touched, setTouched] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
-  const [resolvedItems, setResolvedItems] = useState(items);
-  const [isResolvingSellerInfo, setIsResolvingSellerInfo] = useState(false);
+  const [serverErrors, setServerErrors] = useState({});
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsOutdated, setTermsOutdated] = useState(false);
+  const [problemIds, setProblemIds] = useState([]);
+  const [quote, setQuote] = useState(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState('');
+  const [quoteVersion, setQuoteVersion] = useState(0);
+
+  const isGuest = !user;
+  const needsEmailVerification = Boolean(user) && !user.emailVerified;
+  const cartKey = useMemo(() => JSON.stringify(items.map((item) => [item.id, item.quantity])), [items]);
 
   useEffect(() => {
-    let isMounted = true;
-
-    async function resolveCartItems() {
-      const itemsMissingSeller = items.filter((item) => !(item.sellerId || '').trim());
-      if (itemsMissingSeller.length === 0) {
-        if (isMounted) {
-          setResolvedItems(items);
-          setIsResolvingSellerInfo(false);
-        }
-        return;
-      }
-
-      if (isMounted) {
-        setIsResolvingSellerInfo(true);
-      }
-
-      const resolved = await Promise.all(items.map(async (item) => {
-        if ((item.sellerId || '').trim()) {
-          return item;
-        }
-
-        try {
-          const product = await fetchProductById(item.id);
-          return {
-            ...item,
-            sellerId: product?.sellerId || '',
-            sellerEmail: product?.sellerEmail || '',
-          };
-        } catch (err) {
-          reportError('checkout-resolve-seller', err);
-          return item;
-        }
-      }));
-
-      if (isMounted) {
-        setResolvedItems(resolved);
-        setIsResolvingSellerInfo(false);
-      }
+    if (items.length === 0) {
+      setQuote(null);
+      return undefined;
     }
 
-    resolveCartItems();
+    let isMounted = true;
+    setQuoteLoading(true);
+    setQuoteError('');
+    quoteCheckout(items)
+      .then((result) => {
+        if (isMounted) setQuote(result);
+      })
+      .catch((err) => {
+        reportError('checkout-quote', err);
+        if (isMounted) setQuoteError(toUserMessage(err, "We couldn't price your cart. Please try again."));
+      })
+      .finally(() => {
+        if (isMounted) setQuoteLoading(false);
+      });
 
     return () => {
       isMounted = false;
     };
-  }, [items]);
+    // `items` is tracked through `cartKey` (ids and quantities) so cart-object churn doesn't re-quote.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartKey, quoteVersion]);
 
-  const sellerKeys = Array.from(
-    new Set(
-      resolvedItems
-        .map((item) => (item.sellerId || item.sellerEmail || '').trim())
-        .filter(Boolean)
-    )
-  );
-  const deliverySellerCount = sellerKeys.length;
-  const deliveryFeeTotal = items.length === 0 ? 0 : (deliverySellerCount > 0 ? deliverySellerCount * DELIVERY_FEE_PER_SELLER : DELIVERY_FEE_PER_SELLER);
-  const totalWithDelivery = totalPrice + deliveryFeeTotal;
+  const hasUnavailableItems = Boolean(quote) && quote.items.some((item) => !item.available || item.quantity > item.availableQuantity);
 
   useEffect(() => {
     if (!user) return;
@@ -138,19 +157,22 @@ export default function CheckoutPage() {
       streetAddress: profile?.streetAddress || '',
       suburb: profile?.suburb || '',
       city: profile?.city || '',
-      province: profile?.province || '',
+      province: toProvinceValue(profile?.province),
       postalCode: profile?.postCode || profile?.postalCode || '',
     }));
   }, [user, profile]);
 
-  const errors = Object.fromEntries(
+  const clientErrors = Object.fromEntries(
     Object.entries(form).map(([key, val]) => [key, fieldError(key, val)])
   );
-  const hasErrors = Object.values(errors).some(Boolean);
+  const termsError = isGuest && !termsAccepted ? 'You must accept the terms and conditions' : null;
+  const hasErrors = Object.values(clientErrors).some(Boolean) || Boolean(termsError);
+  const errors = { ...clientErrors, ...serverErrors };
 
   function handleChange(event) {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+    setServerErrors((prev) => (prev[name] ? { ...prev, [name]: '' } : prev));
   }
 
   function handleBlur(event) {
@@ -158,7 +180,30 @@ export default function CheckoutPage() {
   }
 
   function touchAll() {
-    setTouched(Object.fromEntries(Object.keys(EMPTY_FORM).map((key) => [key, true])));
+    setTouched({ ...Object.fromEntries(Object.keys(EMPTY_FORM).map((key) => [key, true])), terms: true });
+  }
+
+  /**
+   * Why: Maps a failed order or payment call to what the buyer sees: stock conflicts flag the
+   * affected lines and refresh the quote, 422s show under their fields, and everything else is
+   * the backend's user-safe message via `toUserMessage()`.
+   * @param {*} err - The caught error.
+   * @returns {void}
+   * @example
+   * handleOrderError(err);
+   */
+  function handleOrderError(err) {
+    reportError('checkout-submit', err);
+    const fieldErrors = getFieldErrors(err);
+
+    if (err?.code === 'INSUFFICIENT_STOCK' || err?.code === 'PRODUCT_UNAVAILABLE') {
+      setProblemIds(stockProblemIds(fieldErrors, items));
+      setQuoteVersion((version) => version + 1);
+    }
+    setTermsOutdated(err?.code === 'TERMS_VERSION_OUTDATED');
+    setServerErrors(err?.status === 422 ? toFormErrors(fieldErrors) : {});
+    setSubmitError(toUserMessage(err, 'Something went wrong. Please try again.'));
+    setIsSubmitting(false);
   }
 
   async function handleSubmit(event) {
@@ -166,13 +211,15 @@ export default function CheckoutPage() {
     touchAll();
     if (hasErrors) return;
     if (items.length === 0) return;
-    if (isResolvingSellerInfo) return;
+    if (needsEmailVerification || hasUnavailableItems || quoteLoading || !quote) return;
 
     setIsSubmitting(true);
     setSubmitError('');
+    setServerErrors({});
+    setProblemIds([]);
+    setTermsOutdated(false);
 
     try {
-      const buyerEmail = form.email.trim() || String(user?.email || '').trim();
       const shippingAddress = {
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
@@ -184,51 +231,18 @@ export default function CheckoutPage() {
         postalCode: form.postalCode.trim(),
       };
 
-      let orderId = '';
-
-      const idToken = user ? await user.getIdToken() : '';
-      const orderRes = await fetch('/api/orders/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-        },
-        body: JSON.stringify({
-          buyerEmail,
-          items: resolvedItems.map((item) => ({ id: item.id, quantity: item.quantity })),
-          shippingAddress,
-        }),
+      const { order, accessToken } = await createOrder({
+        items,
+        shippingAddress,
+        ...(isGuest ? { buyerEmail: form.email.trim(), acceptTerms: true } : {}),
       });
+      storeOrderToken(order.id, accessToken);
 
-      const orderData = await orderRes.json();
-      if (!orderRes.ok || !orderData.success || !orderData.orderId) {
-        // Why: /api/orders/create only ever returns a short, curated error string (ARCH-14) —
-        // safe to surface directly, so it's wrapped as UserFacingError to survive toUserMessage().
-        throw new UserFacingError(orderData.error || 'Could not create order.');
-      }
-      orderId = orderData.orderId;
-
-      // Call Payfast checkout API
-      const pfRes = await fetch('/api/payfast/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId,
-        }),
-      });
-      const pfData = await pfRes.json();
-      if (pfData.success && pfData.redirectUrl) {
-        clearCart();
-        window.location.href = pfData.redirectUrl;
-        return;
-      } else {
-        setSubmitError(pfData.error || 'Could not initiate Payfast payment.');
-        setIsSubmitting(false);
-        return;
-      }
+      const payfast = await startPayfast(order.id, accessToken);
+      clearCart();
+      submitPayfastForm(payfast);
     } catch (err) {
-      setSubmitError(toUserMessage(err, 'Something went wrong. Please try again.'));
-      setIsSubmitting(false);
+      handleOrderError(err);
     }
   }
 
@@ -243,10 +257,18 @@ export default function CheckoutPage() {
     );
   }
 
+  const summaryLines = quote ? quote.items : items;
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
       <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Checkout</p>
       <h1 className="mt-2 text-3xl font-semibold text-slate-900">Shipping details</h1>
+
+      {needsEmailVerification ? (
+        <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Please verify your email address before you check out. Check your inbox for the verification link, or resend it from your <Link href="/profile" className="underline">profile</Link>.
+        </p>
+      ) : null}
 
       <form onSubmit={handleSubmit} noValidate>
         <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_380px]">
@@ -287,7 +309,7 @@ export default function CheckoutPage() {
                 >
                   <option value="">Select province</option>
                   {PROVINCES.map((p) => (
-                    <option key={p} value={p}>{p}</option>
+                    <option key={p.value} value={p.value}>{p.label}</option>
                   ))}
                 </select>
                 {touched.province && errors.province && (
@@ -297,6 +319,24 @@ export default function CheckoutPage() {
 
               <Field label="Postal code" name="postalCode" value={form.postalCode} error={touched.postalCode && errors.postalCode} onChange={handleChange} onBlur={handleBlur} placeholder="0001" maxLength={4} required />
             </div>
+
+            {isGuest ? (
+              <div className="flex flex-col gap-1">
+                <label className="flex items-start gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    name="terms"
+                    checked={termsAccepted}
+                    onChange={(event) => setTermsAccepted(event.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>I have read and agree to the FastSport terms and conditions <span className="text-red-500">*</span></span>
+                </label>
+                {touched.terms && (termsError || serverErrors.terms) ? (
+                  <p className="text-xs text-red-500">{termsError || serverErrors.terms}</p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           {/* ── Order summary ── */}
@@ -304,50 +344,66 @@ export default function CheckoutPage() {
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <h2 className="text-base font-semibold text-slate-900">Order summary</h2>
               <ul className="mt-4 space-y-3">
-                {items.map((item) => (
-                  <li key={item.id} className="flex items-center gap-3">
-                    <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-xl bg-slate-100">
-                      {item.primaryImage ? (
-                        <img src={item.primaryImage} alt={item.name} className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-[9px] font-semibold uppercase text-slate-400">No img</div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-900">{item.name}</p>
-                      {item.quantity > 1 && <p className="text-xs text-slate-500">Qty: {item.quantity}</p>}
-                    </div>
-                    <p className="text-sm font-semibold text-slate-900">R{(item.price * item.quantity).toFixed(2)}</p>
-                  </li>
-                ))}
+                {summaryLines.map((item) => {
+                  const image = quote ? item.thumbnailUrl : item.primaryImage;
+                  const isUnavailable = Boolean(quote) && (!item.available || item.quantity > item.availableQuantity);
+                  const isFlagged = isUnavailable || problemIds.includes(item.id);
+                  return (
+                    <li key={item.id} className="flex items-center gap-3">
+                      <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-xl bg-slate-100">
+                        {image ? (
+                          <img src={image} alt={item.name} className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-[9px] font-semibold uppercase text-slate-400">No img</div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{item.name}</p>
+                        {item.quantity > 1 && <p className="text-xs text-slate-500">Qty: {item.quantity}</p>}
+                        {isFlagged ? (
+                          <p className="text-xs text-red-500">
+                            {quote && item.availableQuantity > 0
+                              ? `Only ${item.availableQuantity} available. Update your cart.`
+                              : 'No longer available. Remove it from your cart.'}
+                          </p>
+                        ) : null}
+                      </div>
+                      <p className="text-sm font-semibold text-slate-900">{quote ? formatRands(item.lineTotalCents) : ''}</p>
+                    </li>
+                  );
+                })}
               </ul>
+              {quoteError ? <p className="mt-3 text-xs text-red-500">{quoteError}</p> : null}
               <div className="mt-4 border-t border-slate-200 pt-4 space-y-2">
                 <div className="flex justify-between text-base">
                   <span>Subtotal</span>
-                  <span>R{totalPrice.toFixed(2)}</span>
+                  <span>{quote ? formatRands(quote.subtotalCents) : '…'}</span>
                 </div>
                 <div className="flex justify-between text-base">
-                    <span>Delivery ({deliverySellerCount || 1} seller{(deliverySellerCount || 1) === 1 ? '' : 's'})</span>
-                    <span>{isResolvingSellerInfo ? 'Calculating...' : `R${deliveryFeeTotal.toFixed(2)}`}</span>
+                    <span>Delivery{quote ? ` (${quote.sellerCount} seller${quote.sellerCount === 1 ? '' : 's'})` : ''}</span>
+                    <span>{quote ? formatRands(quote.deliveryFeeCents) : 'Calculating...'}</span>
                 </div>
                 <div className="flex justify-between text-base font-semibold text-slate-900 border-t border-slate-200 pt-2">
                   <span>Total</span>
-                  <span>R{totalWithDelivery.toFixed(2)}</span>
+                  <span>{quote ? formatRands(quote.totalCents) : '…'}</span>
                 </div>
               </div>
-                <p className="mt-2 text-xs text-slate-500">Nationwide delivery is charged at R150 per seller in the cart. Multiple items from the same seller share one delivery fee.</p>
+                <p className="mt-2 text-xs text-slate-500">Nationwide delivery is charged per seller in the cart. Multiple items from the same seller share one delivery fee.</p>
             </div>
 
             {submitError && (
-              <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{submitError}</p>
+              <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
+                {submitError}
+                {termsOutdated ? <> <Link href="/profile" className="underline">Review the updated terms</Link>.</> : null}
+              </p>
             )}
 
             <button
               type="submit"
-              disabled={isSubmitting || isResolvingSellerInfo}
+              disabled={isSubmitting || quoteLoading || !quote || hasUnavailableItems || needsEmailVerification}
               className="w-full rounded-full bg-[#00CED1] py-3.5 text-sm font-semibold uppercase tracking-[0.08em] text-white hover:bg-[#00C5CD] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isResolvingSellerInfo ? 'Calculating delivery…' : (isSubmitting ? 'Processing…' : 'Continue to payment')}
+              {quoteLoading || !quote ? 'Calculating delivery…' : (isSubmitting ? 'Processing…' : 'Continue to payment')}
             </button>
 
             <Link href="/shop" className="block text-center text-xs text-slate-500 hover:text-slate-700 underline">

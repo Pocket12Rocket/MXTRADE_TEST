@@ -1,26 +1,30 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import useAuth from '../../lib/useAuth';
-import { fetchSellerSubmissions } from '../../lib/firestoreHelpers';
+import { listMySubmissions } from '../../lib/api/submissions';
 import { toUserMessage } from '../../lib/userMessage';
 
+// Why: one page is enough for the dashboard count; "N+" is shown if the seller has more pending.
+const PENDING_COUNT_LIMIT = 100;
+
 /**
- * Why: Seller landing page. Never render a raw Firestore error — show a short friendly sentence
- * via the shared `toUserMessage()` helper (ARCH-14) instead.
+ * Why: Seller landing page. Shows how many of the seller's submissions are waiting for review
+ * (from `GET /me/submissions?status=pending`). Errors are shown as a short friendly sentence via
+ * the shared `toUserMessage()` helper (ARCH-14).
  * @returns {JSX.Element} The seller dashboard, a sign-in prompt, or a seller-onboarding prompt.
  */
 export default function SellerDashboard() {
   const { user, profile, loading } = useAuth();
-  const [submissions, setSubmissions] = useState([]);
+  const [pending, setPending] = useState({ count: 0, hasMore: false });
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!loading && user) {
-      fetchSellerSubmissions(user.id)
-        .then(setSubmissions)
+    if (!loading && user && profile?.canSell) {
+      listMySubmissions({ status: 'pending', limit: PENDING_COUNT_LIMIT })
+        .then(({ items, nextCursor }) => setPending({ count: items.length, hasMore: Boolean(nextCursor) }))
         .catch((err) => setError(toUserMessage(err, "We couldn't load your submissions right now. Please try again.")));
     }
-  }, [loading, user]);
+  }, [loading, user, profile?.canSell]);
 
   if (loading) {
     return <p>Loading seller dashboard...</p>;
@@ -72,7 +76,7 @@ export default function SellerDashboard() {
             <span className="text-2xl font-normal text-slate-400 transition-transform group-open:rotate-180">⌄</span>
           </summary>
           <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <p className="text-slate-600">You currently have {submissions.length} submission{submissions.length === 1 ? '' : 's'} in your queue.</p>
+            <p className="text-slate-600">You currently have {pending.count}{pending.hasMore ? '+' : ''} submission{pending.count === 1 && !pending.hasMore ? '' : 's'} in your queue.</p>
             <Link href="/seller/submissions" className="mt-4 inline-flex rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">
               View submissions
             </Link>

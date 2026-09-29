@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import { UserFacingError, toUserMessage } from '../lib/userMessage';
+import { sendContactMessage } from '../lib/api/contact';
+import { toUserMessage } from '../lib/userMessage';
 
 /**
- * Why: Public contact form. `/api/contact` only ever returns a short, curated string (see
- * pages/api/contact.js), so it's safe to show as-is; any other failure (network, unexpected
- * response) is mapped to a friendly sentence via the shared `toUserMessage()` helper (ARCH-14)
- * instead of rendering a raw fetch/browser error.
+ * Why: Public contact form, sent through the backend (`POST /contact`). Failures, including the
+ * 429 rate limit, are mapped to a friendly sentence via the shared `toUserMessage()` helper
+ * instead of rendering a raw error.
  * @returns {JSX.Element} The contact form.
+ * @example
+ * // Rendered at /contact
+ * <ContactPage />
  */
 export default function ContactPage() {
   const [name, setName] = useState('');
@@ -30,22 +33,7 @@ export default function ContactPage() {
     setIsError(false);
 
     try {
-      const response = await fetch('/api/contact', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          email: email.trim(),
-          message: message.trim(),
-        }),
-      });
-
-      const payload = await response.json();
-      if (!response.ok) {
-        // Why: /api/contact only ever returns a short, curated error string — safe to surface
-        // directly, so it's wrapped as UserFacingError to survive toUserMessage() below.
-        throw new UserFacingError(payload?.error || 'Could not send your message right now.');
-      }
+      await sendContactMessage({ name: name.trim(), email: email.trim(), message: message.trim() });
 
       setStatus('Thank you. Your message was sent to the admin team.');
       setName('');

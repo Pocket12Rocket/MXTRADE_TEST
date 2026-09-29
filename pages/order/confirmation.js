@@ -1,28 +1,43 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
+import { cancelOrder, getOrder, getOrderToken } from '../../lib/api/orders';
+import { reportError, toUserMessage } from '../../lib/userMessage';
 
+/**
+ * Why: Where PayFast returns the buyer. On a cancelled payment it releases the stock hold with the
+ * stored order token; otherwise it loads the order from the backend so the page shows the real
+ * status (payment is confirmed by PayFast's server-to-server notification, so the order may still
+ * be `pending_payment` for a moment). Errors go through `toUserMessage()`.
+ * @returns {JSX.Element} The confirmation or cancelled state.
+ * @example
+ * // Rendered at /order/confirmation?orderId=<uuid>&payment=cancelled
+ * <OrderConfirmationPage />
+ */
 export default function OrderConfirmationPage() {
   const router = useRouter();
   const { query } = router;
   const orderId = typeof query.orderId === 'string' ? query.orderId : '';
   const isCancelled = query.payment === 'cancelled';
-  const cancelToken = typeof query.cancelToken === 'string' ? query.cancelToken : '';
-  const [cancelled, setCancelled] = useState(false);
+  const [order, setOrder] = useState(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!router.isReady || !isCancelled || !orderId || !cancelToken) {
+    if (!router.isReady || !orderId) {
       return;
     }
 
-    fetch('/api/orders/cancel', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orderId, cancelToken }),
-    })
-      .then(() => setCancelled(true))
-      .catch(() => setCancelled(true));
-  }, [router.isReady, isCancelled, orderId, cancelToken]);
+    const token = getOrderToken(orderId);
+    const request = isCancelled ? cancelOrder(orderId, token) : getOrder(orderId, token).then(setOrder);
+    request.catch((err) => {
+      // A cancel that hits an order that is no longer pending payment is harmless to the buyer.
+      if (isCancelled && err?.code === 'ORDER_NOT_PAYABLE') {
+        return;
+      }
+      reportError('order-confirmation', err);
+      setError(toUserMessage(err, "We couldn't load your order details. Please try again."));
+    });
+  }, [router.isReady, isCancelled, orderId]);
 
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 px-4 text-center">
@@ -34,6 +49,8 @@ export default function OrderConfirmationPage() {
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">{isCancelled ? 'Payment cancelled' : 'Order placed!'}</h1>
         {isCancelled ? <p className="mt-3 text-sm text-slate-600">Your stock reservation has been released. You can return to checkout whenever you are ready.</p> : null}
+        {!isCancelled && order ? <p className="mt-3 text-sm text-slate-600">Status: {order.statusLabel}</p> : null}
+        {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
         {orderId ? (
           <p className="mt-3 text-xs text-slate-400">Order reference: <span className="font-mono">{orderId}</span></p>
         ) : null}
