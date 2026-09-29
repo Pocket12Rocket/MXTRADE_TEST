@@ -91,7 +91,7 @@ function stockProblemIds(fieldErrors, items) {
  */
 export default function CheckoutPage() {
   const { user, profile } = useAuth();
-  const { items, clearCart, removeItem, updateQuantity } = useCart();
+  const { items, removeItem, updateQuantity } = useCart();
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [touched, setTouched] = useState({});
@@ -259,7 +259,8 @@ export default function CheckoutPage() {
       }
 
       const payfast = await startPayfast(target.id, target.token);
-      clearCart();
+      // Why: the cart is emptied on the confirmation page once the order is actually paid, so a
+      // cancelled or failed payment returns the buyer to a cart that still has their items.
       submitPayfastForm(payfast);
     } catch (err) {
       handleOrderError(err);
