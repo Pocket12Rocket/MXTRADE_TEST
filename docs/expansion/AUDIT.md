@@ -122,7 +122,14 @@ Status as of end of day 2026-09-27. `main` is clean. It's pushed up to `50d53d1`
       - notification summary (`8c20bdf`)
       - multi-pod hardening, ITN retries and double-payment flags (`007e2c1`)
       - admin double-payments (`c35248c`)
-    - Its end-of-day report hadn't arrived when this entry was written.
+    - Also shipped: removal refused during a checkout hold (`c244aa9`), transaction retry on deadlock (`e92f55f`), and one-pod-at-a-time housekeeping jobs (`2d3c75d`).
+    - Stopped cleanly at `c35248c`, everything pushed. Local DB migrated through `1791900000000_duplicate-payment-resolution`. Typecheck, lint, Prettier and 73 tests pass.
+    - **Next:**
+      - the deferred integration tests (submissions, orders including the concurrency race, refunds, payouts, notifications)
+      - an idempotency key for `POST /orders` (L8)
+      - demo data for live admin testing
+      - PayFast sandbox verification, when Taylor is ready
+    - **Running:** the API dev server on :4000 is a background task of the backend session and stops when that session ends. Postgres 18 on :5433 is a Windows service and stays running.
   - **Admin:**
     - Shipped today:
       - generated types for moderation, orders, refunds and payouts
@@ -136,7 +143,9 @@ Status as of end of day 2026-09-27. `main` is clean. It's pushed up to `50d53d1`
       - a live end-to-end run once there's local data
       - ARCH-03 (shared snackbar and field-error hooks)
   - **Waiting on Taylor:**
-    - How to get PayFast ITNs locally (a tunnel, or a dev-only simulate-payment endpoint), so paid orders exist for testing. The backend and admin both need this.
+    - Payments aren't being tested yet (Taylor told the backend), so there's no PayFast tunnel for now. The backend will add demo data for live admin testing.
+    - Local mail transport: SMTP with an app password, or keep the log transport?
+    - Before production: the uploads need a shared volume or S3 when running more than one pod (backend ARCH-03).
     - Whether the admin session may push without asking.
   - **Waiting on Tyron:**
     - D-22 (refund bank details), D-23 (late-payment display), D-24 (payout bank details)
