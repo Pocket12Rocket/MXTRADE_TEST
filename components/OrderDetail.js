@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { formatRands, getPaymentStepCopy } from '../lib/api/orders';
+import PrivateImage from './PrivateImage';
+import { formatRands, getOrderToken, getPaymentStepCopy, getRefundStatusLabel } from '../lib/api/orders';
 
 function formatDate(ts) {
   if (!ts) return null;
@@ -38,14 +39,6 @@ const TIMELINE_STEPS = [
   },
 ];
 
-// Why: Text for the buyer-facing refund block, keyed by the API's `refund.status`.
-const REFUND_STATUS_LABEL = {
-  pending: 'Under review',
-  accepted: 'Accepted, awaiting your EFT refund',
-  denied: 'Denied',
-  paid: 'Refunded',
-};
-
 /**
  * Why: Maps the order onto the 3-step timeline. Refund statuses only occur after delivery, so
  * they show the full timeline; statuses before payment show none.
@@ -73,8 +66,8 @@ function CheckIcon() {
 /**
  * Why: One order-detail view shared by the signed-in buyer page and the guest (emailed link)
  * page, so the items, totals, timeline and refund block are never duplicated. The refund action
- * only shows when the API says `canRequestRefund`; refund photos are private URLs, so they use
- * plain `<img>`, never `next/image`.
+ * only shows when the API says `canRequestRefund`; refund photos are private URLs, so they use `PrivateImage`
+(a plain `<img>`, or a token fetch for guests), never `next/image`.
  * @param {object} props - Component props.
  * @param {object} props.order - Order from `GET /orders/{id}`.
  * @param {string} props.refundHref - Where the "Request refund" link goes (differs for guests).
@@ -229,16 +222,16 @@ export default function OrderDetail({ order, refundHref, backHref, backLabel }) 
       {refund && (
         <div className="space-y-3 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-base font-semibold text-slate-900">Refund request</h2>
-          <p className="text-sm font-semibold text-slate-700">{REFUND_STATUS_LABEL[refund.status] || refund.status}</p>
+          <p className="text-sm font-semibold text-slate-700">{getRefundStatusLabel(refund.status)}</p>
           {refund.reason && <p className="text-sm text-slate-600">Your reason: {refund.reason}</p>}
           {refund.adminResponse && <p className="text-sm text-slate-600">Our response: {refund.adminResponse}</p>}
           {refund.eftReference && <p className="text-xs text-slate-500">EFT reference: {refund.eftReference}</p>}
           {formatDate(refund.createdAt) && <p className="text-xs text-slate-500">Requested {formatDate(refund.createdAt)}</p>}
           {Array.isArray(refund.images) && refund.images.length > 0 && (
             <div className="grid gap-3 sm:grid-cols-3">
-              {/* Private URLs: plain <img>, never next/image. */}
+              {/* Private URLs: PrivateImage (plain <img>, or a token fetch for guests), never next/image. */}
               {refund.images.map((image, i) => (
-                <img key={image.id} src={image.url} alt={`Refund photo ${i + 1}`} className="h-32 w-full rounded-xl object-cover" />
+                <PrivateImage key={image.id} url={image.url} token={getOrderToken(order.id)} alt={`Refund photo ${i + 1}`} className="h-32 w-full rounded-xl object-cover" />
               ))}
             </div>
           )}

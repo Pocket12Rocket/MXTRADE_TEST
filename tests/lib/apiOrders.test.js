@@ -3,10 +3,12 @@ import {
   buildRefundFormData,
   cancelOrder,
   createOrder,
+  fetchPrivateImageBlob,
   formatRands,
   getOrder,
   getOrderToken,
   getPaymentStepCopy,
+  getRefundStatusLabel,
   getQuoteLineIssue,
   ORDER_STATUSES,
   orderStatusColour,
@@ -182,6 +184,48 @@ describe('refund request', () => {
     expect(init.body).toBeInstanceOf(FormData);
     expect(init.headers['Content-Type']).toBeUndefined();
     expect(init.headers['X-Order-Token']).toBe('secret');
+  });
+});
+
+describe('refund status labels', () => {
+  it('maps every RefundStatus to a friendly label and passes unknown values through', () => {
+    expect(getRefundStatusLabel('pending')).toBe('Under review');
+    expect(getRefundStatusLabel('accepted')).toBe('Accepted, awaiting your EFT refund');
+    expect(getRefundStatusLabel('denied')).toBe('Denied');
+    expect(getRefundStatusLabel('paid')).toBe('Refunded');
+    expect(getRefundStatusLabel('mystery')).toBe('mystery');
+  });
+});
+
+describe('fetchPrivateImageBlob', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('sends credentials and the order token header and returns the blob', async () => {
+    const image = new Blob(['img'], { type: 'image/webp' });
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, blob: async () => image }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    // Why: API_BASE_URL is empty in tests, so the API origin is the page's own origin.
+    const imageUrl = `${window.location.origin}/files/private/k`;
+    const blob = await fetchPrivateImageBlob(imageUrl, 'secret');
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(imageUrl);
+    expect(init.credentials).toBe('include');
+    expect(init.headers['X-Order-Token']).toBe('secret');
+    expect(blob).toBe(image);
+  });
+
+  it('throws on a non-2xx response', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('no', { status: 403 })));
+    await expect(fetchPrivateImageBlob('/files/private/x', 'bad')).rejects.toThrow('403');
+  });
+
+  it('never sends the token to another origin', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(fetchPrivateImageBlob('https://evil.example/steal.webp', 'secret')).rejects.toThrow(/non-API/);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

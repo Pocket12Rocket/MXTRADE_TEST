@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import useAuth from '../lib/useAuth';
-import { REFUND_MAX_IMAGES, REFUND_MIN_IMAGES, getOrderToken, requestRefund } from '../lib/api/orders';
+import {
+  REFUND_IMAGE_TYPES,
+  REFUND_MAX_IMAGES,
+  REFUND_MAX_IMAGE_BYTES,
+  REFUND_MIN_IMAGES,
+  getOrderToken,
+  requestRefund,
+} from '../lib/api/orders';
+import { getFieldErrors } from '../lib/apiClient';
 import { toUserMessage } from '../lib/userMessage';
 
 /**
@@ -80,13 +88,23 @@ export default function RefundRequestForm({ orderId, signedInDoneHref, guestDone
       setError(`You can upload up to ${REFUND_MAX_IMAGES} photos. Please remove some.`);
       return;
     }
+    if (images.some((file) => !REFUND_IMAGE_TYPES.includes(file.type))) {
+      setError('Photos must be JPEG, PNG or WebP images.');
+      return;
+    }
+    if (images.some((file) => file.size > REFUND_MAX_IMAGE_BYTES)) {
+      setError('Each photo must be 10 MB or smaller.');
+      return;
+    }
     setSubmitting(true);
     try {
       await requestRefund(orderId, { reason: reason.trim(), files: images }, getOrderToken(orderId));
       setSuccess(true);
       setTimeout(() => router.push(user ? signedInDoneHref : guestDoneHref), 2000);
     } catch (err) {
-      setError(toUserMessage(err, "We couldn't submit your refund request. Please try again."));
+      // 422 paths: `data.reason`, `images`, `images.N`; the first field message is the most specific.
+      const [fieldMessage] = Object.values(getFieldErrors(err));
+      setError(fieldMessage || toUserMessage(err, "We couldn't submit your refund request. Please try again."));
     } finally {
       setSubmitting(false);
     }
@@ -128,10 +146,10 @@ export default function RefundRequestForm({ orderId, signedInDoneHref, guestDone
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Upload images (required, 1 to 5)</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Upload images (required, 1 to 5, JPEG/PNG/WebP, 10 MB each)</label>
           <input
             type="file"
-            accept="image/*"
+            accept={REFUND_IMAGE_TYPES.join(',')}
             multiple
             onChange={handleImageChange}
             className="block w-full text-sm"
