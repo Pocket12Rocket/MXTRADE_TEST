@@ -5,6 +5,7 @@ import {
   deleteSubmission,
   editLiveProduct,
   fetchMarkupQuote,
+  fetchProductForEdit,
   listMyProducts,
   listMySubmissions,
   removeMyProduct,
@@ -331,6 +332,37 @@ describe('toSellerListing', () => {
     });
 
     expect(listing).toMatchObject({ kind: 'product', manufacturer: 'KTM', models: ['450 SX-F'], universalFit: false, price: 300, sellerPrice: 250, productId: 'p1' });
+  });
+});
+
+describe('fetchProductForEdit', () => {
+  it('makes one GET to /me/products/{id} and keeps image ids for keepImageIds', async () => {
+    const fetchMock = stubJson({
+      id: 'p1',
+      name: 'Lever',
+      category: 'parts',
+      categoryLabel: 'Parts',
+      description: 'Lever',
+      condition: 'used',
+      status: 'listed',
+      quantity: 2,
+      sellerPriceCents: 25000,
+      effectivePriceCents: 30000,
+      pendingEditId: 'e1',
+      fitment: { manufacturer: 'KTM', models: ['450 SX-F'], universal: false },
+      images: [
+        { id: 'i1', url: 'http://localhost:4000/files/l1.webp', thumbnailUrl: null, width: 800, height: 600 },
+        { id: 'i2', url: 'http://localhost:4000/files/l2.webp', thumbnailUrl: 'http://localhost:4000/files/l2-t.webp', width: 800, height: 600 },
+      ],
+    });
+
+    const listing = await fetchProductForEdit('p1');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/me\/products\/p1$/);
+    expect(fetchMock.mock.calls[0][1].method).toBe('GET');
+    expect(listing).toMatchObject({ kind: 'product', quantity: 2, sellerPrice: 250, price: 300, pendingEditId: 'e1', manufacturer: 'KTM', description: 'Lever' });
+    expect(listing.imageItems.map((image) => image.id)).toEqual(['i1', 'i2']);
   });
 });
 

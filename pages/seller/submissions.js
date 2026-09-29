@@ -287,7 +287,7 @@ export default function SellerSubmissions() {
     if (listing.listingType === 'product') {
       setPreparingEditId(listing.id);
       try {
-        source = await fetchProductForEdit(listing.item);
+        source = await fetchProductForEdit(listing.item.id);
       } catch (err) {
         setError(toUserMessage(err, "We couldn't open that listing for editing right now. Please try again."));
         return;
@@ -296,14 +296,12 @@ export default function SellerSubmissions() {
       }
     }
 
-    // Why: only images the backend gave an id can be kept in an edit; any others must be re-uploaded.
-    const keepableImages = source.imageItems.filter((image) => image.id);
-    setEditing({ listing: source, kind: listing.listingType, needsReupload: keepableImages.length < source.imageItems.length });
+    setEditing({ listing: source, kind: listing.listingType });
     setEditForm(formFromListing(source, config));
     setEditFieldErrors({});
     setEditStatus('');
     setEditShowProfileLink(false);
-    images.reset(keepableImages);
+    images.reset(source.imageItems);
   };
 
   /**
@@ -621,9 +619,6 @@ export default function SellerSubmissions() {
                   <p className="text-xs text-slate-600">{images.total}/{MAX_LISTING_IMAGES} selected</p>
                 </div>
                 <p className="mt-2 text-xs text-slate-600">Keep or add between {MIN_LISTING_IMAGES} and {MAX_LISTING_IMAGES} photos.</p>
-                {editing.needsReupload ? (
-                  <p className="mt-2 text-xs text-slate-600">The existing photos cannot be kept for this listing, so please add your photos again.</p>
-                ) : null}
                 {editFieldErrors.images ? <p className="mt-1 text-xs text-red-600">{editFieldErrors.images}</p> : null}
 
                 {images.kept.length > 0 ? (
