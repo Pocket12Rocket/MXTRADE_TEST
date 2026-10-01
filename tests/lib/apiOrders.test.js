@@ -100,7 +100,7 @@ describe('orderStatusColour', () => {
 describe('getPaymentStepCopy', () => {
   it('describes a late payment as under review and everything else as confirmed', () => {
     expect(getPaymentStepCopy('late_payment').label).toBe('Payment under review');
-    expect(getPaymentStepCopy('late_payment').sublabel).toContain('Our team will contact you');
+    expect(getPaymentStepCopy('late_payment').sublabel).toContain('Items still in stock are held for you');
     expect(getPaymentStepCopy('paid').label).toBe('Payment Confirmed');
     expect(getPaymentStepCopy(undefined).label).toBe('Payment Confirmed');
   });

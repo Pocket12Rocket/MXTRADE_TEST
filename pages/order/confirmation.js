@@ -57,9 +57,8 @@ export default function OrderConfirmationPage() {
   const error = cancelError || pollError;
   const status = checkout?.status;
   const orders = checkout?.orders || [];
-  // Why: A paid checkout can hold a mix of confirmed and late orders; only when every order is late
-  // is the whole payment "under review", otherwise each order's own status label tells the story.
-  const isLate = orders.length > 0 && orders.every((order) => order.status === 'late_payment');
+  // Why: A late payment puts the whole checkout under review, so one late order is enough to say so.
+  const isLate = orders.some((order) => order.status === 'late_payment');
   const { clearCart } = useCart();
 
   // Why: A guest's token opens every order in the checkout, so once the orders are known it is

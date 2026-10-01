@@ -64,12 +64,21 @@ describe('OrderConfirmationPage', () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
-  it('shows a mixed paid checkout as placed, each order with its own status, and empties the cart', async () => {
+  it('shows the checkout as under review when any order is late, and empties the cart', async () => {
     render(<OrderConfirmationPage />);
 
     expect(await screen.findByText(/Bob: Payment under review/)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Order placed!' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Payment under review' })).toBeInTheDocument();
     expect(clearCart).toHaveBeenCalled();
+  });
+
+  it('shows a fully paid checkout as placed', async () => {
+    getCheckout.mockResolvedValue({ ...checkout, orders: [checkout.orders[0]] });
+
+    render(<OrderConfirmationPage />);
+
+    expect(await screen.findByText(/Ann: Paid/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Order placed!' })).toBeInTheDocument();
   });
 
   it('cancels the checkout with the stored token on a cancelled return', async () => {
