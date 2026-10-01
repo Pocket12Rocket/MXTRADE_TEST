@@ -1,9 +1,8 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
-// Why: Vitest runs unit tests for lib/ and component tests (React Testing Library in jsdom).
-// This repo keeps JSX in .js files (Next.js convention), so the JSX transform is widened to .js.
-// Playwright (via MCP) remains the end-to-end check against the running app.
+// Why: Vitest runs unit and component tests (React Testing Library in jsdom); JSX lives in .js
+// files, so the JSX transform is widened to .js.
 export default defineConfig({
   plugins: [react({ include: /\.(js|jsx)$/ })],
   oxc: {

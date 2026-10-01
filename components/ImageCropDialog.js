@@ -6,10 +6,8 @@ import { cropImageToFile } from '../lib/cropImage';
 import { toUserMessage } from '../lib/userMessage';
 
 /**
- * Why: Lets a user frame each photo at the exact ratio the storefront displays (4:3 listing
- * cards/carousels, 1:1 avatars) before upload, instead of `object-cover` silently cutting off
- * the important part. Uses react-easy-crop for drag + pinch/scroll zoom (touch-friendly) inside
- * an MUI Dialog for focus trapping and Escape handling.
+ * Why: Lets a user frame each photo at the ratio the storefront displays (4:3 listings, 1:1
+ * avatars) before upload, so nothing important is cut off.
  * @param {Object} props - Dialog props.
  * @param {File|null} props.file - Image to crop; the dialog is open while this is set.
  * @param {number} props.aspect - Crop width / height ratio (see `lib/cropImage.js` constants).

@@ -8,9 +8,7 @@ import { toUserMessage } from '../../../../lib/userMessage';
 
 /**
  * Why: Buyer's order detail from the backend (`GET /orders/{id}`). Signed-in buyers use their
- * session; a guest's stored order token is sent when present. The refund action only shows when
- * the API says `canRequestRefund`, and refund status, photos and the 24-hour deadline (D-08)
- * are shown from the API's `refund` and `refundDeadline`. Refund photos are private, so they
+ * session; a guest's stored order token is sent when present. Refund photos are private, so they
  * use plain `<img>`, never `next/image`.
  * @returns {JSX.Element} The order detail, or a loading/error state.
  * @example

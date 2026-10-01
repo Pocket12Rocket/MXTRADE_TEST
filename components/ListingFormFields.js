@@ -161,8 +161,7 @@ function CommonFields({ form, onChange, errors, showPrice = true, showQuantity =
 
 /**
  * Why: The category-specific listing fields (gear, accessories, parts) shared by the seller
- * "submit" page and the edit dialog on "my submissions", so a field change is made once. Options
- * come from `GET /catalog/config`; nothing here calculates prices (D-04).
+ * "submit" page and the edit dialog on "my submissions", so a field change is made once.
  * @param {object} props - Component props.
  * @param {object} props.form - Form state from `lib/listingForm.js`.
  * @param {(patch: object) => void} props.onChange - Merges a patch of form fields into the state.

@@ -4,8 +4,7 @@ import { fetchFaqs } from '../lib/api/catalog';
 import { toUserMessage } from '../lib/userMessage';
 
 /**
- * Why: Public FAQ page. Never render a raw API error (permission-denied, offline, etc.) —
- * show a short friendly sentence via the shared `toUserMessage()` helper (ARCH-14) instead.
+ * Why: Public FAQ page; errors show a friendly sentence via `toUserMessage()`.
  * @returns {JSX.Element} The FAQ list, a loading state, or a friendly error message.
  */
 export default function FAQ() {

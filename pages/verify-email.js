@@ -11,10 +11,8 @@ const RESEND_GENERIC_MESSAGE = "If an account needs verifying, we've sent a new 
 const INVALID_LINK_MESSAGE = 'This link is invalid or has expired.';
 
 /**
- * Why: Confirms a new account's email address from the link sent at signup. The token is
- * single-use on the backend, so this page must call `verifyEmail()` exactly once even under
- * React Strict Mode's double-invoked effects, and must offer a recovery path (resend) when the
- * link is missing or already used/expired instead of leaving the user stuck.
+ * Why: Confirms a new account's email address from the link sent at signup. It calls
+ * `verifyEmail()` exactly once (the token is single-use) and offers a resend when the link fails.
  * @returns {JSX.Element} The verifying/success/failure screen for `/verify-email?token=...`.
  * @example
  * // Rendered by Next.js for a visit to /verify-email?token=abc123

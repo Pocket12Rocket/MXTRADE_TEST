@@ -49,8 +49,8 @@ const TIMELINE_STEPS = [
 ];
 
 /**
- * Why: The final timeline step says who completed the sale (D-26): the buyer confirming delivery,
- * or the automatic completion 48 hours after delivery.
+ * Why: The final timeline step says who completed the sale: the buyer confirming delivery, or the
+ * automatic completion 48 hours after delivery.
  * @param {string|null} [completedBy] - `Order.completedBy`: 'buyer', 'auto' or null.
  * @returns {string} Note for the Complete step.
  * @example
@@ -89,9 +89,8 @@ function CheckIcon() {
 
 /**
  * Why: One order-detail view shared by the signed-in buyer page and the guest (emailed link)
- * page, so the items, totals, timeline and refund block are never duplicated. The actions only
- * show when the API says so: "Confirm delivery" (`canConfirmDelivery`), "Request refund" for
- * problems (`canRequestRefund`) and "Report not arrived" (`canReportNotArrived`, D-26); refund photos are private URLs, so they use `PrivateImage`
+ * page. Actions show only when the API allows them (`canConfirmDelivery`, `canRequestRefund`,
+ * `canReportNotArrived`); refund photos are private URLs, so they use `PrivateImage`
 (a plain `<img>`, or a token fetch for guests), never `next/image`.
  * @param {object} props - Component props.
  * @param {object} props.order - Order from `GET /orders/{id}`; replaced locally by the response of

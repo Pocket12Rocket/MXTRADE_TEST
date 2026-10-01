@@ -6,10 +6,8 @@ import { BUYER_TERMS_VERSION } from '../lib/termsVersions';
 import { toUserMessage } from '../lib/userMessage';
 
 /**
- * Why: The backend sets `termsReacceptRequired` on `/me` when a signed-in user has not accepted
- * the current buyer terms: new Google sign-ups (who never saw the registration modal) and
- * everyone after a terms change (D-16). This gate shows the terms on every page until they
- * accept, or lets them sign out instead; it renders nothing otherwise.
+ * Why: Blocks the app with the buyer terms while `/me` says `termsReacceptRequired`, until the
+ * user accepts or signs out; it renders nothing otherwise.
  * @returns {JSX.Element|null} The blocking terms modal, or `null`.
  * @example
  * // In Layout, once, above the page content:

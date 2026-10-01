@@ -7,10 +7,8 @@ import { getOrder, getOrderToken, storeOrderToken } from '../../lib/api/orders';
 import { toUserMessage } from '../../lib/userMessage';
 
 /**
- * Why: The page the backend's confirmation email links to (`/order/{orderId}?token={accessToken}`)
- * so a guest can view their order without an account. The token is stored for this tab and
- * stripped from the URL straight away so it doesn't linger in history. Signed-in buyers with no
- * token are served by their session; with neither, the guest is told to use the emailed link.
+ * Why: The page the confirmation email links to (`/order/{orderId}?token={accessToken}`) so a
+ * guest can view their order. The token is stored for the tab and stripped from the URL.
  * @returns {JSX.Element} The order detail, or a loading, error or "open from email" state.
  * @example
  * // Rendered at /order/<orderId>?token=<accessToken>

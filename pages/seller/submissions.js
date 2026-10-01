@@ -85,7 +85,7 @@ function getDetailRows(listing) {
 /**
  * Why: Seller page listing the seller's submissions (pending, rejected) and live products with
  * cursor pagination, plus editing, resubmitting, deleting and removing them through the backend.
- * Editing a live product takes it off sale until it is re-approved (D-12).
+ * Editing a live product takes it off sale until it is re-approved.
  * @returns {JSX.Element} The seller's listings, or a sign-in / not-a-seller prompt.
  * @example
  * // Rendered by Next.js at /seller/submissions
@@ -331,8 +331,8 @@ export default function SellerSubmissions() {
 
   /**
    * Why: Saves an edit to a pending submission, resubmits a rejected one (`PUT`), or submits an
-   * edit of a live product (`POST /me/products/{id}/edit`, which takes it off sale until it is
-   * re-approved, D-12). Uploads the kept image ids plus the newly cropped files.
+   * edit of a live product (`POST /me/products/{id}/edit`), uploading the kept image ids plus the
+   * newly cropped files.
    * @param {Event} event - The form submit event.
    * @returns {Promise<void>}
    * @example

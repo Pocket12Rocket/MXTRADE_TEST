@@ -2,11 +2,8 @@ import { useState } from 'react';
 import usePrivateImageUrl from '../lib/usePrivateImageUrl';
 
 /**
- * Why: Shows a private image (refund photos) for both kinds of buyer. Signed-in buyers use the
- * plain URL (the session cookie is sent with the request); guests pass their order token and the
- * image is fetched with the `X-Order-Token` header. Deliberately a plain `<img>`, never
- * `next/image`, because the image optimiser can't send credentials. A failed load shows a
- * neutral placeholder.
+ * Why: Shows a private image (refund photos) for signed-in buyers and guests. It is a plain
+ * `<img>`, never `next/image`, because the image optimiser can't send credentials.
  * @param {object} props - Component props.
  * @param {string} props.url - The private image URL.
  * @param {string} [props.token] - Guest order token; omit or leave empty when signed in.

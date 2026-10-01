@@ -50,8 +50,7 @@ export default function Home() {
         setPartsProducts(parts);
         setAccessoriesProducts(accessories);
       } catch (err) {
-        // Why: leave lists empty rather than showing an error — each carousel already renders a
-        // "no products" state below — but still log the failure for debugging (ARCH-14).
+        // Why: leave lists empty (each carousel renders a "no products" state) but log the failure.
         reportError('home-carousels', err);
       } finally {
         if (isMounted) {

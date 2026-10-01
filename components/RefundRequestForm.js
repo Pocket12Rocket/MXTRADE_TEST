@@ -37,9 +37,8 @@ const BANK_FIELDS = [
 ];
 
 /**
- * Why: Validates the form before upload with the same rules as the backend (D-22 bank details,
- * per-type photos and reason), returning errors keyed by the backend's 422 paths so client and
- * server messages render in the same places.
+ * Why: Validates the form before upload with the backend's rules, returning errors keyed by the
+ * backend's 422 paths so client and server messages render in the same places.
  * @param {{type: string, reason: string, bankAccount: object, images: File[]}} values - Form values.
  * @returns {Object<string, string>} Message per field path; empty when the form is valid.
  * @example
@@ -69,14 +68,8 @@ export function validateRefund({ type, reason, bankAccount, images }) {
 
 /**
  * Why: Refund request form (`POST /orders/{id}/refund-request`) shared by the signed-in and guest
- * return pages. The buyer picks a problem type (no default: damaged, not as described or other);
- * `never_arrived` has its own "Report not arrived" entry, so the return pages open the form with
- * `?type=never_arrived` and that type is preselected (D-26). Photos are required (1-5, D-08) except
- * for `never_arrived`, and sent uncropped as chosen. The buyer also gives the bank account for the
- * refund EFT (D-22). 422 field errors show under their fields (`data.type`, `data.reason`,
- * `data.bankAccount.*`, `images`); the backend's 409 `REFUND_WINDOW_CLOSED`,
- * `NOT_ARRIVED_TOO_EARLY` and `ORDER_NOT_REFUNDABLE` messages are shown through `toUserMessage()`.
- * Guests are authorised by their stored order token, which is sent with the request.
+ * return pages. It opens with `?type=never_arrived` preselected when coming from "Report not
+ * arrived"; guests are authorised by their stored order token.
  * @param {object} props - Component props.
  * @param {string} props.orderId - Order UUID.
  * @param {string} props.signedInDoneHref - Where a signed-in buyer goes after success.

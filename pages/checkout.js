@@ -77,11 +77,9 @@ function stockProblemIds(fieldErrors, items) {
 }
 
 /**
- * Why: Cart, server quote, checkout creation, then one PayFast redirect for the whole checkout
- * (one order per seller, D-25). Prices, availability, each seller's fees and the grand total all
- * come from the backend quote (D-05); the client never computes money. Guests can check out (D-10) with an email and accepted terms; signed-in buyers must have
- * a verified email (D-11). Every failure goes through `toUserMessage()`, with per-field
- * messages from `getFieldErrors()`.
+ * Why: Cart, server quote, checkout creation, then one PayFast redirect for the whole checkout.
+ * Prices and totals come from the backend quote; failures go through `toUserMessage()`, with
+ * per-field messages from `getFieldErrors()`.
  * @returns {JSX.Element} The checkout form, or an empty-cart state.
  * @example
  * // Rendered by Next.js at /checkout

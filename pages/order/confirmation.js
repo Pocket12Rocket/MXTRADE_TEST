@@ -11,12 +11,9 @@ import { useCart } from '../../lib/cartContext';
 const FAILED_STATUSES = ['payment_failed', 'cancelled'];
 
 /**
- * Why: Where PayFast returns the buyer after paying for a checkout (one payment, one order per
- * seller, D-25). On a cancelled payment it releases the stock hold of the whole checkout with the
- * stored token. Otherwise it polls the checkout (`useOrderStatusPoll`) because PayFast confirms
- * payment through a server-to-server notification that often arrives a few seconds after the buyer
- * lands here, so the checkout may briefly still be `pending_payment`. Once paid it lists each
- * seller's order with a link to it. Errors go through `toUserMessage()`.
+ * Why: Where PayFast returns the buyer after paying for a checkout. It releases the stock hold on
+ * a cancelled payment, otherwise polls the checkout (`useOrderStatusPoll`) until payment is
+ * confirmed, then lists each seller's order.
  * @returns {JSX.Element} The confirming, confirmed, failed, late-payment or cancelled state.
  * @example
  * // Rendered at /order/confirmation?checkoutId=<uuid>&payment=cancelled

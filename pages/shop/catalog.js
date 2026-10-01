@@ -7,15 +7,11 @@ import { toUserMessage } from '../../lib/userMessage';
 // Why: Page size for both the initial fetch and "Load more", matching the backend's default.
 const PAGE_SIZE = 24;
 
-// Why: Debounces every filter-driven fetch (not just free-text search) by ~300ms. This covers
-// the required search debounce, and also collapses the fetch that would otherwise fire while the
-// URL-driven filters (category/subcategory) settle right after mount, and smooths rapid changes
-// like dragging the price slider — all without adding a second, separate debounce path.
+// Why: Debounces every filter-driven fetch by ~300ms, covering search typing, URL filters
+// settling on mount and price slider drags.
 const SEARCH_DEBOUNCE_MS = 300;
 
-// Why: The full catalog is no longer downloaded client-side (filtering/sorting moved server-side
-// in this change), so there is no product list left to derive a real maximum price from for the
-// slider. Use a fixed ceiling instead; raise this constant if genuinely priced items exceed it.
+// Why: A fixed price slider maximum, since there is no full product list to derive one from.
 const PRICE_CEILING_RANDS = 100000;
 
 // Why: The sort <select> keeps its existing hyphenated option values (Codex-owned markup); the
@@ -46,11 +42,9 @@ function normalizeCategoryValue(value) {
 }
 
 /**
- * Why: Main browse/search/filter catalog page. Filtering, search and sorting all happen
- * server-side via `fetchProducts()`/`fetchCatalogConfig()` (lib/api/catalog.js) instead of
- * downloading the whole catalog and filtering it in the browser (the old `fetchLiveProducts()`
- * path). Never render a raw API error — show a short friendly sentence via the shared
- * `toUserMessage()` helper (ARCH-14) instead.
+ * Why: Main browse/search/filter catalog page. Filtering, search and sorting happen server-side
+ * via `fetchProducts()`/`fetchCatalogConfig()`; errors show a friendly sentence via
+ * `toUserMessage()`.
  * @returns {JSX.Element} The shop catalog with filters, sorting, pagination and product grid.
  */
 export default function Shop() {
@@ -156,10 +150,8 @@ export default function Shop() {
     };
   }
 
-  // Why: Resets to page 1 and refetches every time a filter changes (debounced — see
-  // SEARCH_DEBOUNCE_MS). `buildFilters`/`defaultSort` intentionally aren't in the deps array:
-  // they're derived from the same state values already listed, and including the functions
-  // themselves would refire this effect on every render.
+  // Why: Resets to page 1 and refetches when a filter changes (debounced); `buildFilters` and
+  // `defaultSort` are left out of the deps because they derive from the listed state.
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       const requestId = ++requestIdRef.current;

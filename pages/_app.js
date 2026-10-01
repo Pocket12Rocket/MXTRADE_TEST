@@ -7,10 +7,8 @@ import { CartProvider } from '../lib/cartContext';
 import { fastSportMuiTheme } from '../themes/muiTheme';
 
 /**
- * Why: App shell — mounts the shared `AuthProvider` (one `onAuthStateChanged` listener,
- * one `users/{uid}` read per session) outside `CartProvider` so the cart can consume
- * auth state from context instead of running its own listener (see
- * `lib/cartContext.js` and docs/TECH_DEBT.md ARCH-12).
+ * Why: App shell that mounts the shared `AuthProvider` outside `CartProvider` so the cart can
+ * read auth state from context.
  * @param {Object} props
  * @param {React.ComponentType} props.Component - The active page component.
  * @param {Object} props.pageProps - Props for the active page.

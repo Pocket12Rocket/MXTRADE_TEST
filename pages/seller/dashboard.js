@@ -9,8 +9,7 @@ const PENDING_COUNT_LIMIT = 100;
 
 /**
  * Why: Seller landing page. Shows how many of the seller's submissions are waiting for review
- * (from `GET /me/submissions?status=pending`). Errors are shown as a short friendly sentence via
- * the shared `toUserMessage()` helper (ARCH-14).
+ * (from `GET /me/submissions?status=pending`). Errors show a friendly sentence via `toUserMessage()`.
  * @returns {JSX.Element} The seller dashboard, a sign-in prompt, or a seller-onboarding prompt.
  */
 export default function SellerDashboard() {

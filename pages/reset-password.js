@@ -30,10 +30,8 @@ function validatePassword(password, confirmPassword) {
 }
 
 /**
- * Why: Lets a user set a new password from the link emailed by `forgotPassword()`. The backend
- * signs out every device on a successful reset, so the confirmation screen has to say that
- * explicitly rather than silently redirecting, and a used/expired token must dead-end into the
- * same recovery path (request a new link) rather than a raw error.
+ * Why: Lets a user set a new password from the link emailed by `forgotPassword()`. The success
+ * screen says every device is signed out, and an invalid token offers a new link.
  * @returns {JSX.Element} The reset form, success screen, or invalid-link screen for
  *   `/reset-password?token=...`.
  * @example
