@@ -1,4 +1,4 @@
-import type { components } from './schema';
+import type { components, paths } from './schema';
 
 type Schemas = components['schemas'];
 
@@ -18,7 +18,11 @@ export type Category = Schemas['Category'];
 export type Condition = Schemas['Condition'];
 export type ProductSummary = Schemas['ProductSummary'];
 export type ProductList = Schemas['ProductList'];
+export type ProductPage = Schemas['ProductPage'];
+/** Query parameters of `GET /products`, exactly as the backend takes them. */
+export type ProductQuery = NonNullable<paths['/products']['get']['parameters']['query']>;
 export type ProductDetail = Schemas['ProductDetail'];
+export type ProductStatus = Schemas['ProductStatus'];
 export type Image = Schemas['Image'];
 export type Special = Schemas['Special'];
 export type AboutContent = Schemas['AboutContent'];
