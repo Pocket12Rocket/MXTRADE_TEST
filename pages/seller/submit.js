@@ -4,6 +4,7 @@ import useAuth from '../../lib/useAuth';
 import { fetchCatalogConfig } from '../../lib/api/catalog';
 import { createSubmission, toSubmissionInput } from '../../lib/api/submissions';
 import { toUserMessage } from '../../lib/userMessage';
+import { useSingleFlight } from '../../lib/useSingleFlight';
 import ImageCropDialog from '../../components/ImageCropDialog';
 import ListingFormFields from '../../components/ListingFormFields';
 import { useListingImages } from '../../lib/useListingImages';
@@ -35,7 +36,7 @@ export default function SellerSubmit() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [status, setStatus] = useState('');
   const [showProfileLink, setShowProfileLink] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { run, pending: isSubmitting } = useSingleFlight();
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
 
   useEffect(() => {
@@ -104,21 +105,20 @@ export default function SellerSubmit() {
       return;
     }
 
-    setIsSubmitting(true);
     setStatus('');
 
     try {
-      await createSubmission({ input: toSubmissionInput(form), files: images.files });
-      setForm(emptyListingForm(form.category, config));
-      images.reset();
-      setShowSuccessPopup(true);
+      await run(async () => {
+        await createSubmission({ input: toSubmissionInput(form), files: images.files });
+        setForm(emptyListingForm(form.category, config));
+        images.reset();
+        setShowSuccessPopup(true);
+      });
     } catch (error) {
       const failure = describeSubmissionError(error, "We couldn't submit your listing right now. Please try again.");
       setStatus(failure.message);
       setFieldErrors(failure.fieldErrors);
       setShowProfileLink(failure.showProfileLink);
-    } finally {
-      setIsSubmitting(false);
     }
   };
 

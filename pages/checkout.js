@@ -13,6 +13,7 @@ import {
 } from '../lib/api/orders';
 import { createCheckout, quoteCheckout, startCheckoutPayfast } from '../lib/api/checkouts';
 import { toUserMessage, reportError } from '../lib/userMessage';
+import { useSingleFlight } from '../lib/useSingleFlight';
 
 const EMPTY_FORM = {
   firstName: '',
@@ -91,7 +92,7 @@ export default function CheckoutPage() {
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [touched, setTouched] = useState({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { run, pending: isSubmitting } = useSingleFlight();
   const [submitError, setSubmitError] = useState('');
   const [serverErrors, setServerErrors] = useState({});
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -214,7 +215,6 @@ export default function CheckoutPage() {
     setSubmitError(err?.code === 'SERVICE_UNAVAILABLE'
       ? 'Payment is temporarily unavailable. Your order has been saved, so please try again in a few minutes.'
       : toUserMessage(err, 'Something went wrong. Please try again.'));
-    setIsSubmitting(false);
   }
 
   async function handleSubmit(event) {
@@ -224,7 +224,6 @@ export default function CheckoutPage() {
     if (items.length === 0) return;
     if (needsEmailVerification || isBlockedByQuote) return;
 
-    setIsSubmitting(true);
     setSubmitError('');
     setServerErrors({});
     setProblemIds([]);
@@ -232,32 +231,34 @@ export default function CheckoutPage() {
     setServerSaysUnverified(false);
 
     try {
-      let target = pendingCheckout;
-      if (!target) {
-        const shippingAddress = {
-          firstName: form.firstName.trim(),
-          lastName: form.lastName.trim(),
-          phone: form.phone.trim(),
-          streetAddress: form.streetAddress.trim(),
-          suburb: form.suburb.trim(),
-          city: form.city.trim(),
-          province: form.province,
-          postalCode: form.postalCode.trim(),
-        };
-        const { checkout, accessToken } = await createCheckout({
-          items,
-          shippingAddress,
-          ...(isGuest ? { buyerEmail: form.email.trim(), acceptTerms: true } : {}),
-        });
-        storeCheckoutToken(checkout, accessToken);
-        target = { id: checkout.id, token: accessToken };
-        setPendingCheckout(target);
-      }
+      await run(async () => {
+        let target = pendingCheckout;
+        if (!target) {
+          const shippingAddress = {
+            firstName: form.firstName.trim(),
+            lastName: form.lastName.trim(),
+            phone: form.phone.trim(),
+            streetAddress: form.streetAddress.trim(),
+            suburb: form.suburb.trim(),
+            city: form.city.trim(),
+            province: form.province,
+            postalCode: form.postalCode.trim(),
+          };
+          const { checkout, accessToken } = await createCheckout({
+            items,
+            shippingAddress,
+            ...(isGuest ? { buyerEmail: form.email.trim(), acceptTerms: true } : {}),
+          });
+          storeCheckoutToken(checkout, accessToken);
+          target = { id: checkout.id, token: accessToken };
+          setPendingCheckout(target);
+        }
 
-      const payfast = await startCheckoutPayfast(target.id, target.token);
-      // Why: the cart is emptied on the confirmation page once the checkout is actually paid, so a
-      // cancelled or failed payment returns the buyer to a cart that still has their items.
-      submitPayfastForm(payfast);
+        const payfast = await startCheckoutPayfast(target.id, target.token);
+        // Why: the cart is emptied on the confirmation page once the checkout is actually paid, so a
+        // cancelled or failed payment returns the buyer to a cart that still has their items.
+        submitPayfastForm(payfast);
+      }, { holdOnSuccess: true });
     } catch (err) {
       handleOrderError(err);
     }

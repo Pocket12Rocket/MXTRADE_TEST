@@ -4,6 +4,7 @@ import PrivateImage from './PrivateImage';
 import { formatRands, getOrderToken, getPaymentStepCopy, getRefundStatusLabel, getRefundTypeLabel, NOT_ARRIVED_TYPE } from '../lib/api/orders';
 import { confirmDelivery } from '../lib/api/returns';
 import { toUserMessage } from '../lib/userMessage';
+import { useSingleFlight } from '../lib/useSingleFlight';
 
 function formatDate(ts) {
   if (!ts) return null;
@@ -110,7 +111,7 @@ function CheckIcon() {
 export default function OrderDetail({ order: initialOrder, refundHref, backHref, backLabel }) {
   const [updatedOrder, setUpdatedOrder] = useState(null);
   const [confirming, setConfirming] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const { run, pending: submitting } = useSingleFlight();
   const [error, setError] = useState('');
   // Why: a fresh `order` prop from the page supersedes the locally updated copy.
   useEffect(() => setUpdatedOrder(null), [initialOrder]);
@@ -130,14 +131,13 @@ export default function OrderDetail({ order: initialOrder, refundHref, backHref,
 
   const handleConfirmDelivery = async () => {
     setError('');
-    setSubmitting(true);
     try {
-      setUpdatedOrder(await confirmDelivery(order.id, getOrderToken(order.id)));
-      setConfirming(false);
+      await run(async () => {
+        setUpdatedOrder(await confirmDelivery(order.id, getOrderToken(order.id)));
+        setConfirming(false);
+      });
     } catch (err) {
       setError(toUserMessage(err, "We couldn't confirm delivery. Please try again."));
-    } finally {
-      setSubmitting(false);
     }
   };
 

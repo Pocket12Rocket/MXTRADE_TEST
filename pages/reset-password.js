@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { resetPassword } from '../lib/api/auth';
 import { getFieldErrors } from '../lib/apiClient';
 import { toUserMessage } from '../lib/userMessage';
+import { useSingleFlight } from '../lib/useSingleFlight';
 
 const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 128;
@@ -44,7 +45,7 @@ export default function ResetPassword() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
   const [message, setMessage] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const { run, pending: submitting } = useSingleFlight();
   const [success, setSuccess] = useState(false);
   const [tokenInvalid, setTokenInvalid] = useState(false);
 
@@ -71,10 +72,11 @@ export default function ResetPassword() {
       return;
     }
 
-    setSubmitting(true);
     try {
-      await resetPassword(token, password);
-      setSuccess(true);
+      await run(async () => {
+        await resetPassword(token, password);
+        setSuccess(true);
+      });
     } catch (err) {
       if (err?.code === 'AUTH_TOKEN_INVALID') {
         setTokenInvalid(true);
@@ -86,8 +88,6 @@ export default function ResetPassword() {
           setMessage(toUserMessage(err, 'We could not reset your password. Please try again.'));
         }
       }
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -188,7 +188,7 @@ export default function ResetPassword() {
             disabled={submitting}
             className="w-full rounded-3xl bg-[#00C5CD] px-4 py-3 font-medium text-white transition hover:bg-[#00CED1] disabled:opacity-60"
           >
-            Update password
+            {submitting ? 'Updating...' : 'Update password'}
           </button>
         </form>
         {message ? <p className="mt-4 text-sm text-red-500">{message}</p> : null}

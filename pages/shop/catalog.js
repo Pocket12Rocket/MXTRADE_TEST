@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import ProductCard from '../../components/ProductCard';
 import { CATEGORY_LABELS, fetchCatalogConfig, fetchProducts } from '../../lib/api/catalog';
 import { toUserMessage } from '../../lib/userMessage';
+import { useSingleFlight } from '../../lib/useSingleFlight';
 
 // Why: Page size for both the initial fetch and "Load more", matching the backend's default.
 const PAGE_SIZE = 24;
@@ -52,7 +53,7 @@ export default function Shop() {
   const [items, setItems] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const { run: runLoadMore, pending: loadingMore } = useSingleFlight();
   const [error, setError] = useState('');
   const [catalogConfig, setCatalogConfig] = useState(null);
   const [selectedSort, setSelectedSort] = useState('popular');
@@ -205,32 +206,31 @@ export default function Shop() {
    * <button onClick={handleLoadMore}>Load more</button>
    */
   function handleLoadMore() {
-    if (!nextCursor || loadingMore) {
-      return;
+    if (!nextCursor) {
+      return undefined;
     }
 
-    const requestId = ++requestIdRef.current;
-    setLoadingMore(true);
+    return runLoadMore(async () => {
+      const requestId = ++requestIdRef.current;
 
-    fetchProducts({ ...buildFilters(), cursor: nextCursor, limit: PAGE_SIZE })
-      .then(({ items: newItems, nextCursor: newNextCursor }) => {
+      try {
+        const { items: newItems, nextCursor: newNextCursor } = await fetchProducts({
+          ...buildFilters(),
+          cursor: nextCursor,
+          limit: PAGE_SIZE,
+        });
         if (requestIdRef.current !== requestId) {
           return;
         }
         setItems((current) => [...current, ...newItems]);
         setNextCursor(newNextCursor);
-      })
-      .catch((err) => {
+      } catch (err) {
         if (requestIdRef.current !== requestId) {
           return;
         }
         setError(toUserMessage(err, "We couldn't load more products right now. Please try again."));
-      })
-      .finally(() => {
-        if (requestIdRef.current === requestId) {
-          setLoadingMore(false);
-        }
-      });
+      }
+    });
   }
 
   const categoryOptions = (catalogConfig?.categories || []).map((category) => category.label);

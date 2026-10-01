@@ -15,6 +15,7 @@ import {
 import { ACCOUNT_TYPE_OPTIONS } from '../lib/api/seller';
 import { getFieldErrors } from '../lib/apiClient';
 import { toUserMessage } from '../lib/userMessage';
+import { useSingleFlight } from '../lib/useSingleFlight';
 
 /**
  * Why: Buyers often type bank numbers with spaces or dashes; strip them once, so validation and
@@ -94,7 +95,7 @@ export default function RefundRequestForm({ orderId, signedInDoneHref, guestDone
   const [bankAccount, setBankAccount] = useState(EMPTY_BANK_ACCOUNT);
   const [fieldErrors, setFieldErrors] = useState({});
   const [images, setImages] = useState([]);
-  const [submitting, setSubmitting] = useState(false);
+  const { run, pending: submitting } = useSingleFlight();
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
@@ -160,11 +161,12 @@ export default function RefundRequestForm({ orderId, signedInDoneHref, guestDone
     const errors = validateRefund(values);
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
-    setSubmitting(true);
     try {
-      await requestRefund(orderId, { type, reason: values.reason, bankAccount: cleanBank, files: images }, getOrderToken(orderId));
-      setSuccess(true);
-      setTimeout(() => router.push(user ? signedInDoneHref : guestDoneHref), 2000);
+      await run(async () => {
+        await requestRefund(orderId, { type, reason: values.reason, bankAccount: cleanBank, files: images }, getOrderToken(orderId));
+        setSuccess(true);
+        setTimeout(() => router.push(user ? signedInDoneHref : guestDoneHref), 2000);
+      }, { holdOnSuccess: true });
     } catch (err) {
       // 422 paths map to the fields; anything else (409 codes, 413, ...) goes through toUserMessage.
       const serverErrors = getFieldErrors(err);
@@ -172,8 +174,6 @@ export default function RefundRequestForm({ orderId, signedInDoneHref, guestDone
       if (Object.keys(serverErrors).length === 0) {
         setError(toUserMessage(err, "We couldn't submit your refund request. Please try again."));
       }
-    } finally {
-      setSubmitting(false);
     }
   };
 

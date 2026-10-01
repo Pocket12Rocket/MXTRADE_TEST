@@ -212,6 +212,15 @@ Never render `err.message`, error codes, stack text or URLs. Use
 says it's safe to show users) and a generic sentence for 5xx. Show per-field validation errors
 with `getFieldErrors(err)` from `lib/apiClient.js`. Never log user or profile objects.
 
+### No double submits
+
+- Every button or form that calls the backend, or changes important state, goes through `useSingleFlight` (`lib/useSingleFlight.js`).
+  - It blocks a second click synchronously, before React re-renders.
+  - It exposes `pending`, so the button can be disabled and show a busy label.
+  - Use `holdOnSuccess` for actions that navigate away (login, the PayFast hand-off).
+- Effects that send a request on mount need a ref guard, so they fire once under StrictMode.
+- New actions need a test that triggers them twice quickly and asserts one API call.
+
 ### No duplicate code
 
 Before writing a helper, constant, status map or component, grep for an existing one and reuse

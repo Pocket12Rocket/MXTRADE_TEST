@@ -16,6 +16,7 @@ import ImageCropDialog from '../components/ImageCropDialog';
 import { useImageCropQueue } from '../lib/useImageCropQueue';
 import { AVATAR_IMAGE_ASPECT, AVATAR_IMAGE_OUTPUT_WIDTH } from '../lib/cropImage';
 import { toUserMessage } from '../lib/userMessage';
+import { useSingleFlight } from '../lib/useSingleFlight';
 import { acceptSellerTerms, acceptTerms } from '../lib/api/auth';
 import { BUYER_TERMS_VERSION, SELLER_TERMS_VERSION } from '../lib/termsVersions';
 
@@ -88,7 +89,7 @@ export default function ProfilePage() {
   const fileInputRef = useRef(null);
 
   // Photo upload state
-  const [uploading, setUploading] = useState(false);
+  const { run: runUpload, pending: uploading } = useSingleFlight();
   const [uploadError, setUploadError] = useState('');
 
   // Edit mode state
@@ -97,11 +98,10 @@ export default function ProfilePage() {
   const [editLastName, setEditLastName] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editCountryCode, setEditCountryCode] = useState('+27');
-  const [saving, setSaving] = useState(false);
+  const { run: runSave, pending: saving } = useSingleFlight();
   const [saveError, setSaveError] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [sellerProfileLoading, setSellerProfileLoading] = useState(false);
-  const [sellerProfileSaving, setSellerProfileSaving] = useState(false);
   const [sellerProfileError, setSellerProfileError] = useState('');
   const [sellerProfileSuccess, setSellerProfileSuccess] = useState('');
   const [isEditingSellerProfile, setIsEditingSellerProfile] = useState(false);
@@ -151,7 +151,6 @@ export default function ProfilePage() {
 
   const saveBasicProfile = async () => {
     setSaveError('');
-    setSaving(true);
     try {
       // The backend returns the normalised Me, so store that rather than guessing locally.
       updateProfileLocal(await updateMe({
@@ -167,8 +166,6 @@ export default function ProfilePage() {
       setSaveError(fieldMessages.length > 0
         ? fieldMessages.join(' ')
         : toUserMessage(err, 'Failed to save changes. Please try again.'));
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -180,7 +177,7 @@ export default function ProfilePage() {
     }
 
     if (hasAcceptedTermsOnce) {
-      await saveBasicProfile();
+      await runSave(saveBasicProfile);
       return;
     }
 
@@ -197,14 +194,13 @@ export default function ProfilePage() {
    */
   const handleCroppedAvatar = async (croppedFile) => {
     setUploadError('');
-    setUploading(true);
     try {
       // The backend returns the updated Me, so no extra /me read is needed.
-      updateProfileLocal(await uploadMyPhoto(croppedFile));
+      await runUpload(async () => {
+        updateProfileLocal(await uploadMyPhoto(croppedFile));
+      });
     } catch (err) {
       setUploadError(toUserMessage(err, 'Upload failed. Please try again.'));
-    } finally {
-      setUploading(false);
     }
   };
 
@@ -314,7 +310,6 @@ export default function ProfilePage() {
   };
 
   const saveSellerProfile = async () => {
-    setSellerProfileSaving(true);
     setSellerProfileError('');
     setSellerProfileSuccess('');
 
@@ -336,8 +331,6 @@ export default function ProfilePage() {
       setSellerProfileError(fieldMessages.length > 0
         ? fieldMessages.join(' ')
         : toUserMessage(error, 'Failed to save seller profile. Please try again.'));
-    } finally {
-      setSellerProfileSaving(false);
     }
   };
 
@@ -365,7 +358,7 @@ export default function ProfilePage() {
     }
 
     if (hasAcceptedSellerTermsOnce) {
-      await saveSellerProfile();
+      await runSave(saveSellerProfile);
       return;
     }
 
@@ -378,18 +371,20 @@ export default function ProfilePage() {
       return;
     }
 
-    setShowSellerTermsModal(false);
-    setHasAcceptedSellerTerms(false);
+    await runSave(async () => {
+      setShowSellerTermsModal(false);
+      setHasAcceptedSellerTerms(false);
 
-    try {
-      // The backend returns the updated Me, so no extra /me read is needed.
-      updateProfileLocal(await acceptSellerTerms(SELLER_TERMS_VERSION));
-    } catch (err) {
-      setSellerProfileError(toUserMessage(err, 'Could not record seller terms acceptance. Please try again.'));
-      return;
-    }
+      try {
+        // The backend returns the updated Me, so no extra /me read is needed.
+        updateProfileLocal(await acceptSellerTerms(SELLER_TERMS_VERSION));
+      } catch (err) {
+        setSellerProfileError(toUserMessage(err, 'Could not record seller terms acceptance. Please try again.'));
+        return;
+      }
 
-    await saveSellerProfile();
+      await saveSellerProfile();
+    });
   };
 
   const handleTermsConfirm = async () => {
@@ -397,23 +392,25 @@ export default function ProfilePage() {
       return;
     }
 
-    setShowTermsModal(false);
-    setPendingTermsAction(null);
-    setHasAcceptedTerms(false);
+    await runSave(async () => {
+      setShowTermsModal(false);
+      setPendingTermsAction(null);
+      setHasAcceptedTerms(false);
 
-    try {
-      // The backend returns the updated Me, so no extra /me read is needed.
-      updateProfileLocal(await acceptTerms(BUYER_TERMS_VERSION));
-    } catch (err) {
-      const termsMessage = toUserMessage(err, 'Could not record terms acceptance. Please try again.');
-      setSaveError(termsMessage);
-      setSellerProfileError(termsMessage);
-      return;
-    }
+      try {
+        // The backend returns the updated Me, so no extra /me read is needed.
+        updateProfileLocal(await acceptTerms(BUYER_TERMS_VERSION));
+      } catch (err) {
+        const termsMessage = toUserMessage(err, 'Could not record terms acceptance. Please try again.');
+        setSaveError(termsMessage);
+        setSellerProfileError(termsMessage);
+        return;
+      }
 
-    if (pendingTermsAction === 'profile') {
-      await saveBasicProfile();
-    }
+      if (pendingTermsAction === 'profile') {
+        await saveBasicProfile();
+      }
+    });
   };
 
   const sellerStatus = profile?.sellerStatus || 'none';
@@ -838,10 +835,10 @@ export default function ProfilePage() {
             <div className="flex flex-wrap gap-3">
               <button
                 type="submit"
-                disabled={sellerProfileSaving}
+                disabled={saving}
                 className="rounded-3xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
               >
-                {sellerProfileSaving ? 'Saving seller profile...' : 'Save seller profile'}
+                {saving ? 'Saving seller profile...' : 'Save seller profile'}
               </button>
               <button
                 type="button"
@@ -858,7 +855,7 @@ export default function ProfilePage() {
       <TermsAndConditionsModal
         isOpen={showTermsModal}
         onClose={() => {
-          if (saving || sellerProfileSaving) return;
+          if (saving) return;
           setShowTermsModal(false);
           setPendingTermsAction(null);
           setHasAcceptedTerms(false);
@@ -866,21 +863,21 @@ export default function ProfilePage() {
         onConfirm={handleTermsConfirm}
         isChecked={hasAcceptedTerms}
         onCheckedChange={setHasAcceptedTerms}
-        isSubmitting={saving || sellerProfileSaving}
+        isSubmitting={saving}
         confirmLabel={pendingTermsAction === 'seller' ? 'I agree and save seller profile' : 'I agree and save profile'}
       />
 
       <TermsAndConditionsModal
         isOpen={showSellerTermsModal}
         onClose={() => {
-          if (sellerProfileSaving) return;
+          if (saving) return;
           setShowSellerTermsModal(false);
           setHasAcceptedSellerTerms(false);
         }}
         onConfirm={handleSellerTermsConfirm}
         isChecked={hasAcceptedSellerTerms}
         onCheckedChange={setHasAcceptedSellerTerms}
-        isSubmitting={sellerProfileSaving}
+        isSubmitting={saving}
         confirmLabel="I agree and save seller profile"
         title="FastSport Seller Terms & Conditions"
         subtitle={`Effective Date: ${SELLER_TERMS_VERSION}`}

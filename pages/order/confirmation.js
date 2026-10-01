@@ -30,6 +30,8 @@ export default function OrderConfirmationPage() {
   const queryToken = typeof query.token === 'string' ? query.token : '';
   // Why: Keeps the token in memory once it is stripped from the URL, in case storage is blocked.
   const tokenRef = useRef('');
+  // Why: the cancel call must run once per checkout, even when React Strict Mode re-runs the effect.
+  const cancelSentForRef = useRef('');
   const [token, setToken] = useState('');
   const [tokenReady, setTokenReady] = useState(false);
 
@@ -93,6 +95,10 @@ export default function OrderConfirmationPage() {
     if (!router.isReady || !tokenReady || !checkoutId || !isCancelled) {
       return;
     }
+    if (cancelSentForRef.current === checkoutId) {
+      return;
+    }
+    cancelSentForRef.current = checkoutId;
 
     cancelCheckout(checkoutId, tokenRef.current).catch((err) => {
       // A cancel that hits a checkout that is no longer pending payment is harmless to the buyer.

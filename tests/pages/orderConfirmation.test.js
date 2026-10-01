@@ -1,3 +1,4 @@
+import { StrictMode } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import OrderConfirmationPage from '../../pages/order/confirmation';
@@ -89,5 +90,14 @@ describe('OrderConfirmationPage', () => {
 
     await waitFor(() => expect(cancelCheckout).toHaveBeenCalledWith('c1', 'stored'));
     expect(getCheckout).not.toHaveBeenCalled();
+  });
+
+  it('cancels the checkout only once under React Strict Mode', async () => {
+    sessionStorage.setItem('fastsport_order_token_c1', 'stored');
+    routerState.query = { checkoutId: 'c1', payment: 'cancelled' };
+
+    render(<StrictMode><OrderConfirmationPage /></StrictMode>);
+
+    await waitFor(() => expect(cancelCheckout).toHaveBeenCalledTimes(1));
   });
 });

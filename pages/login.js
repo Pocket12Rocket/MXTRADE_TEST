@@ -10,6 +10,7 @@ import {
 import { useAuthContext } from '../lib/AuthContext';
 import TermsAndConditionsModal from '../components/TermsAndConditionsModal';
 import { toUserMessage } from '../lib/userMessage';
+import { useSingleFlight } from '../lib/useSingleFlight';
 
 // Why: friendly copy for the `?error=` codes the backend's Google callback redirects back with.
 const GOOGLE_ERROR_MESSAGES = {
@@ -53,7 +54,7 @@ export default function Login() {
   const [passwordMismatchError, setPasswordMismatchError] = useState('');
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
-  const [registering, setRegistering] = useState(false);
+  const { run, pending } = useSingleFlight();
 
   const countryCodes = [
     { cc: 'ZA', code: '+27', name: 'South Africa' },
@@ -127,23 +128,22 @@ export default function Login() {
       return;
     }
 
-    setRegistering(true);
     setMessage('');
     try {
-      await register({
-        email: email.trim(),
-        password,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        phone: phone.trim(),
-        countryCode,
+      await run(async () => {
+        await register({
+          email: email.trim(),
+          password,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          phone: phone.trim(),
+          countryCode,
+        });
+        setPendingVerification(true);
+        setShowTermsModal(false);
       });
-      setPendingVerification(true);
-      setShowTermsModal(false);
     } catch (error) {
       handleAuthError(error);
-    } finally {
-      setRegistering(false);
     }
   };
 
@@ -151,10 +151,12 @@ export default function Login() {
     event.preventDefault();
     if (mode === 'login') {
       try {
-        const me = await login(email.trim(), password);
-        setSignedInUser(me);
-        setMessage('Signed in successfully. Redirecting...');
-        await router.push('/');
+        await run(async () => {
+          const me = await login(email.trim(), password);
+          setSignedInUser(me);
+          setMessage('Signed in successfully. Redirecting...');
+          await router.push('/');
+        }, { holdOnSuccess: true });
       } catch (error) {
         handleAuthError(error);
       }
@@ -188,8 +190,10 @@ export default function Login() {
     const normalizedEmail = email.trim().toLowerCase();
 
     try {
-      await forgotPassword(normalizedEmail);
-      setResetSent(true);
+      await run(async () => {
+        await forgotPassword(normalizedEmail);
+        setResetSent(true);
+      });
     } catch (error) {
       setMessage(toUserMessage(error, 'We could not send the password reset email right now. Please try again later.'));
     }
@@ -201,8 +205,10 @@ export default function Login() {
       return;
     }
     try {
-      await resendVerification(email.trim().toLowerCase());
-      setMessage("If your account still needs verifying, we've sent a new link. Please check your inbox.");
+      await run(async () => {
+        await resendVerification(email.trim().toLowerCase());
+        setMessage("If your account still needs verifying, we've sent a new link. Please check your inbox.");
+      });
     } catch (error) {
       setMessage(toUserMessage(error, 'Could not resend the verification email. Please try again later.'));
     }
@@ -217,7 +223,9 @@ export default function Login() {
    * <button type="button" onClick={handleGoogleSignIn}>Continue with Google</button>
    */
   const handleGoogleSignIn = () => {
-    window.location.assign(getGoogleSignInUrl('/'));
+    run(async () => {
+      window.location.assign(getGoogleSignInUrl('/'));
+    }, { holdOnSuccess: true });
   };
 
   if (mode === 'forgot') {
@@ -279,8 +287,8 @@ export default function Login() {
                 className={defaultInputClass}
               />
             </div>
-            <button className="w-full rounded-3xl bg-[#00C5CD] px-4 py-3 font-medium text-white transition hover:bg-[#00CED1]">
-              Send reset link
+            <button disabled={pending} className="w-full rounded-3xl bg-[#00C5CD] px-4 py-3 font-medium text-white transition hover:bg-[#00CED1] disabled:opacity-60">
+              {pending ? 'Sending...' : 'Send reset link'}
             </button>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
               Need to sign in instead? <button type="button" onClick={() => { setMode('login'); setMessage(''); }} className="font-semibold text-[#00C5CD] hover:text-[#00CED1]">Return to log in</button>
@@ -318,9 +326,10 @@ export default function Login() {
           <button
             type="button"
             onClick={handleResendVerification}
-            className="w-full rounded-3xl border border-slate-200 px-4 py-3 text-sm text-slate-600 hover:bg-slate-50"
+            disabled={pending}
+            className="w-full rounded-3xl border border-slate-200 px-4 py-3 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-60"
           >
-            Resend verification email
+            {pending ? 'Sending...' : 'Resend verification email'}
           </button>
         </div>
         {message ? <p className="text-sm text-slate-500">{message}</p> : null}
@@ -432,13 +441,14 @@ export default function Login() {
             </button>
           </div>
         ) : null}
-        <button className="w-full rounded-3xl bg-slate-900 px-4 py-3 text-white hover:bg-slate-800">
-          {mode === 'login' ? 'Log in' : 'Register'}
+        <button disabled={pending} className="w-full rounded-3xl bg-slate-900 px-4 py-3 text-white hover:bg-slate-800 disabled:opacity-60">
+          {pending && mode === 'login' ? 'Signing in...' : (mode === 'login' ? 'Log in' : 'Register')}
         </button>
         <button
           type="button"
           onClick={handleGoogleSignIn}
-          className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-slate-700 hover:bg-slate-50"
+          disabled={pending}
+          className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-slate-700 hover:bg-slate-50 disabled:opacity-60"
         >
           Continue with Google
         </button>
@@ -454,14 +464,14 @@ export default function Login() {
       <TermsAndConditionsModal
         isOpen={showTermsModal}
         onClose={() => {
-          if (registering) return;
+          if (pending) return;
           setShowTermsModal(false);
           setHasAcceptedTerms(false);
         }}
         onConfirm={handleRegisterWithAcceptedTerms}
         isChecked={hasAcceptedTerms}
         onCheckedChange={setHasAcceptedTerms}
-        isSubmitting={registering}
+        isSubmitting={pending}
         confirmLabel="I agree and create profile"
       />
     </div>

@@ -4,6 +4,7 @@ import { useAuthContext } from '../lib/AuthContext';
 import { acceptTerms } from '../lib/api/auth';
 import { BUYER_TERMS_VERSION } from '../lib/termsVersions';
 import { toUserMessage } from '../lib/userMessage';
+import { useSingleFlight } from '../lib/useSingleFlight';
 
 /**
  * Why: Blocks the app with the buyer terms while `/me` says `termsReacceptRequired`, until the
@@ -16,7 +17,7 @@ import { toUserMessage } from '../lib/userMessage';
 export default function TermsReacceptGate() {
   const { profile, setSignedInUser, signOut } = useAuthContext();
   const [isChecked, setIsChecked] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const { run, pending: submitting } = useSingleFlight();
   const [error, setError] = useState('');
 
   if (!profile?.termsReacceptRequired) {
@@ -30,15 +31,14 @@ export default function TermsReacceptGate() {
    */
   const handleConfirm = async () => {
     if (!isChecked) return;
-    setSubmitting(true);
     setError('');
     try {
-      setSignedInUser(await acceptTerms(BUYER_TERMS_VERSION));
-      setIsChecked(false);
+      await run(async () => {
+        setSignedInUser(await acceptTerms(BUYER_TERMS_VERSION));
+        setIsChecked(false);
+      });
     } catch (err) {
       setError(toUserMessage(err, 'Could not record your acceptance. Please try again.'));
-    } finally {
-      setSubmitting(false);
     }
   };
 
