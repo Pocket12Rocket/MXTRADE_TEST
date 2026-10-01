@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { fetchAboutContent } from '@/lib/api/catalog';
-import type { AboutContent } from '@/lib/api/types';
+import { useMemo } from 'react';
+import { useAbout } from '@/lib/queries/catalog';
 import { toUserMessage } from '@/lib/userMessage';
 
 /**
@@ -28,45 +27,19 @@ function renderBoldText(value: string | null | undefined) {
  * @returns The About/How-it-works article, or a friendly error message.
  */
 export default function About() {
-  const [content, setContent] = useState<AboutContent>({
-    aboutUsBody: '',
-    howItWorksBody: '',
-    updatedAt: null,
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let isMounted = true;
-
-    fetchAboutContent()
-      .then((data) => {
-        if (!isMounted) {
-          return;
-        }
-        setContent({
-          aboutUsBody: data?.aboutUsBody || '',
-          howItWorksBody: data?.howItWorksBody || '',
-          updatedAt: data?.updatedAt || null,
-        });
-      })
-      .catch((err) => {
-        if (isMounted) {
-          setError(
-            toUserMessage(err, "We couldn't load this page's content right now. Please try again."),
-          );
-        }
-      })
-      .finally(() => {
-        if (isMounted) {
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const aboutQuery = useAbout();
+  const content = {
+    aboutUsBody: aboutQuery.data?.aboutUsBody || '',
+    howItWorksBody: aboutQuery.data?.howItWorksBody || '',
+    updatedAt: aboutQuery.data?.updatedAt || null,
+  };
+  const loading = aboutQuery.isPending;
+  const error = aboutQuery.isError
+    ? toUserMessage(
+        aboutQuery.error,
+        "We couldn't load this page's content right now. Please try again.",
+      )
+    : '';
 
   const aboutUsParagraphs = useMemo(() => {
     return String(content.aboutUsBody || '')

@@ -1,4 +1,10 @@
-import { useMutation, useQuery, useQueryClient, type Query } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type Query,
+} from '@tanstack/react-query';
 import { useState } from 'react';
 import {
   cancelCheckout,
@@ -121,6 +127,8 @@ export function useCheckoutQuote(items: CartLine[]) {
     queryKey: queryKeys.checkouts.quote(items),
     queryFn: () => quoteCheckout(items),
     enabled: items.length > 0,
+    // Why: keep showing the previous totals while a changed cart is re-quoted.
+    placeholderData: keepPreviousData,
   });
 }
 

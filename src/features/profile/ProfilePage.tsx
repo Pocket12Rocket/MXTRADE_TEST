@@ -1,15 +1,18 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import useAuth from '@/lib/useAuth';
-import { useAuthContext } from '@/lib/AuthContext';
 import TermsAndConditionsModal from '@/features/auth/TermsAndConditionsModal';
-import { updateMe, uploadMyPhoto } from '@/lib/api/profile';
+import {
+  useAcceptSellerTerms,
+  useAcceptTerms,
+  useUpdateMe,
+  useUploadPhoto,
+} from '@/lib/queries/account';
+import { useMySellerProfile, useSaveSellerProfile } from '@/lib/queries/seller';
 import {
   ACCOUNT_TYPE_OPTIONS,
   SELLER_STATUS_LABELS,
   SELLER_SUPPORT_EMAIL,
-  fetchMySellerProfile,
-  saveMySellerProfile,
   type SellerProfileForm,
 } from '@/lib/api/seller';
 import { getFieldErrors } from '@/lib/apiClient';
@@ -18,7 +21,6 @@ import { useImageCropQueue } from '@/lib/useImageCropQueue';
 import { AVATAR_IMAGE_ASPECT, AVATAR_IMAGE_OUTPUT_WIDTH } from '@/lib/cropImage';
 import { toUserMessage } from '@/lib/userMessage';
 import { useSingleFlight } from '@/lib/useSingleFlight';
-import { acceptSellerTerms, acceptTerms } from '@/lib/api/auth';
 import { BUYER_TERMS_VERSION, SELLER_TERMS_VERSION } from '@/features/auth/termsVersions';
 import type { SellerProfile } from '@/lib/api/types';
 
@@ -104,19 +106,79 @@ const countryCodeToFlag = (cc: string) => {
   return String.fromCodePoint(...codePoints);
 };
 
+const EMPTY_SELLER_PROFILE_FORM: SellerFormState = {
+  idNumber: '',
+  streetAddress: '',
+  suburb: '',
+  city: '',
+  postCode: '',
+  bankName: '',
+  accountType: '',
+  branchName: '',
+  branchCode: '',
+  accountNumber: '',
+};
+
 /**
- * Why: Page component for /profile.
+ * Why: Turns a saved application into form values. The ID and account numbers are never
+ * returned by the backend, so they always start empty and must be re-entered to save.
+ * @param application - The `SellerProfile` from the backend, or null.
+ * @returns Form values.
+ * @example
+ * const form = toSellerForm(sellerProfile);
+ */
+const toSellerForm = (application: SellerProfile | null | undefined): SellerFormState => ({
+  ...EMPTY_SELLER_PROFILE_FORM,
+  streetAddress: application?.streetAddress || '',
+  suburb: application?.suburb || '',
+  city: application?.city || '',
+  postCode: application?.postCode || '',
+  bankName: application?.bankName || '',
+  accountType: application?.accountType || '',
+  branchName: application?.branchName || '',
+  branchCode: application?.branchCode || '',
+});
+
+/**
+ * Why: Page component for /profile; the signed-in profile only mounts once there is a user, so
+ * its seller-profile query never fires for a signed-out visitor.
  * @returns The rendered page.
  * @example
  * // Rendered by the /profile route
  * <ProfilePage />
  */
 export default function ProfilePage() {
-  const { user, profile, loading, refreshProfile } = useAuth();
-  // updateProfileLocal isn't part of useAuth()'s public return shape (kept identical to
-  // avoid touching other consumers) — read it straight from the shared context here so
-  // known-payload saves below can skip an extra /me read.
-  const { updateProfileLocal } = useAuthContext();
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return <p>Loading profile...</p>;
+  }
+
+  if (!user) {
+    return (
+      <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+        <p className="text-slate-600">Please sign in to view your profile.</p>
+        <Link
+          href="/login"
+          className="mt-4 inline-flex rounded-full bg-slate-900 px-5 py-3 text-white hover:bg-slate-800"
+        >
+          Log in
+        </Link>
+      </div>
+    );
+  }
+
+  return <SignedInProfile />;
+}
+
+/**
+ * Why: The profile card, avatar, terms and seller application for a signed-in user.
+ * @returns The rendered profile.
+ * @example
+ * <SignedInProfile />
+ */
+function SignedInProfile() {
+  const { user, profile, refreshProfile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Photo upload state
@@ -132,27 +194,26 @@ export default function ProfilePage() {
   const { run: runSave, pending: saving } = useSingleFlight();
   const [saveError, setSaveError] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [sellerProfileLoading, setSellerProfileLoading] = useState(false);
-  const [sellerProfileError, setSellerProfileError] = useState('');
+  const updateMeMutation = useUpdateMe();
+  const uploadPhotoMutation = useUploadPhoto();
+  const acceptTermsMutation = useAcceptTerms();
+  const acceptSellerTermsMutation = useAcceptSellerTerms();
+  const saveSellerProfileMutation = useSaveSellerProfile();
+  const sellerProfileQuery = useMySellerProfile();
+  const sellerApplication = sellerProfileQuery.data ?? null;
+  const sellerProfileLoading = sellerProfileQuery.isLoading;
+  const sellerLoadError = sellerProfileQuery.error;
+  const [sellerSaveError, setSellerProfileError] = useState('');
   const [sellerProfileSuccess, setSellerProfileSuccess] = useState('');
   const [isEditingSellerProfile, setIsEditingSellerProfile] = useState(false);
-  const EMPTY_SELLER_PROFILE_FORM: SellerFormState = {
-    idNumber: '',
-    streetAddress: '',
-    suburb: '',
-    city: '',
-    postCode: '',
-    bankName: '',
-    accountType: '',
-    branchName: '',
-    branchCode: '',
-    accountNumber: '',
-  };
-  const [sellerProfileForm, setSellerFormState] = useState(EMPTY_SELLER_PROFILE_FORM);
-  const [savedSellerFormState, setSavedSellerFormState] = useState(EMPTY_SELLER_PROFILE_FORM);
-  // Why: the saved application from the backend: status, rejection reason and the last 4 digits
-  // of the ID and account numbers (the full numbers are never returned).
-  const [sellerApplication, setSellerApplication] = useState<SellerProfile | null>(null);
+  // Why: unsaved edits sit on top of the saved application; null shows the saved values.
+  const [sellerEdits, setSellerEdits] = useState<SellerFormState | null>(null);
+  const sellerProfileForm = sellerEdits ?? toSellerForm(sellerApplication);
+  const sellerProfileError =
+    sellerSaveError ||
+    (sellerLoadError
+      ? toUserMessage(sellerLoadError, 'Could not load seller profile details.')
+      : '');
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
   const [pendingTermsAction, setPendingTermsAction] = useState<'profile' | 'seller' | null>(null);
@@ -193,14 +254,12 @@ export default function ProfilePage() {
     setSaveError('');
     try {
       // The backend returns the normalised Me, so store that rather than guessing locally.
-      updateProfileLocal(
-        await updateMe({
-          firstName: editFirstName,
-          lastName: editLastName,
-          phone: editPhone,
-          countryCode: editCountryCode || '+27',
-        }),
-      );
+      await updateMeMutation.mutateAsync({
+        firstName: editFirstName,
+        lastName: editLastName,
+        phone: editPhone,
+        countryCode: editCountryCode || '+27',
+      });
       setSaveSuccess(true);
       setEditing(false);
     } catch (err) {
@@ -244,7 +303,7 @@ export default function ProfilePage() {
     try {
       // The backend returns the updated Me, so no extra /me read is needed.
       await runUpload(async () => {
-        updateProfileLocal(await uploadMyPhoto(croppedFile));
+        await uploadPhotoMutation.mutateAsync(croppedFile);
       });
     } catch (err) {
       setUploadError(toUserMessage(err, 'Upload failed. Please try again.'));
@@ -280,74 +339,12 @@ export default function ProfilePage() {
   }, [saveSuccess]);
 
   /**
-   * Why: Turns a saved application into form values. The ID and account numbers are never
-   * returned by the backend, so they always start empty and must be re-entered to save.
-   * @param application - The `SellerProfile` from the backend, or null.
-   * @returns Form values.
-   */
-  const toSellerForm = (application: SellerProfile | null): SellerFormState => ({
-    ...EMPTY_SELLER_PROFILE_FORM,
-    streetAddress: application?.streetAddress || '',
-    suburb: application?.suburb || '',
-    city: application?.city || '',
-    postCode: application?.postCode || '',
-    bankName: application?.bankName || '',
-    accountType: application?.accountType || '',
-    branchName: application?.branchName || '',
-    branchCode: application?.branchCode || '',
-  });
-
-  useEffect(() => {
-    if (!user?.id) {
-      return;
-    }
-
-    let isMounted = true;
-
-    /**
-     * Why: Loads the seller application and seller profile.
-     */
-    const loadSellerApplication = async () => {
-      setSellerProfileLoading(true);
-      setSellerProfileError('');
-      try {
-        const application = await fetchMySellerProfile();
-        if (!isMounted) {
-          return;
-        }
-
-        const loadedSellerProfile = toSellerForm(application);
-        setSellerApplication(application);
-        setSellerFormState(loadedSellerProfile);
-        setSavedSellerFormState(loadedSellerProfile);
-      } catch (err) {
-        if (isMounted) {
-          setSellerProfileError(toUserMessage(err, 'Could not load seller profile details.'));
-        }
-      } finally {
-        if (isMounted) {
-          setSellerProfileLoading(false);
-        }
-      }
-    };
-
-    loadSellerApplication();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [user?.id]);
-
-  /**
    * Why: Updates one seller form field.
    * @param fieldName - The field name.
    * @param value - The new value.
    */
   const handleSellerFieldChange = (fieldName: keyof SellerFormState, value: string) => {
-    setSellerFormState((currentValue) => ({
-      ...currentValue,
-      [fieldName]: value,
-    }));
+    setSellerEdits({ ...sellerProfileForm, [fieldName]: value });
   };
 
   /**
@@ -365,7 +362,7 @@ export default function ProfilePage() {
   const handleCancelSellerProfileEdit = () => {
     setSellerProfileError('');
     setSellerProfileSuccess('');
-    setSellerFormState(savedSellerFormState);
+    setSellerEdits(null);
     setIsEditingSellerProfile(false);
   };
 
@@ -378,11 +375,10 @@ export default function ProfilePage() {
 
     try {
       // Why: the required-field check in `handleSellerProfileSubmit` guarantees `accountType` is set.
-      const saved = await saveMySellerProfile(sellerProfileForm as SellerProfileForm);
-      const savedForm = toSellerForm(saved);
-      setSellerApplication(saved);
-      setSellerFormState(savedForm);
-      setSavedSellerFormState(savedForm);
+      const saved = await saveSellerProfileMutation.mutateAsync(
+        sellerProfileForm as SellerProfileForm,
+      );
+      setSellerEdits(null);
       // Why: the backend decides sellerStatus/canSell (a bank or ID change sends an approved
       // seller back to review), so re-read /me rather than guessing locally.
       await refreshProfile();
@@ -454,7 +450,7 @@ export default function ProfilePage() {
 
       try {
         // The backend returns the updated Me, so no extra /me read is needed.
-        updateProfileLocal(await acceptSellerTerms(SELLER_TERMS_VERSION));
+        await acceptSellerTermsMutation.mutateAsync(SELLER_TERMS_VERSION);
       } catch (err) {
         setSellerProfileError(
           toUserMessage(err, 'Could not record seller terms acceptance. Please try again.'),
@@ -481,7 +477,7 @@ export default function ProfilePage() {
 
       try {
         // The backend returns the updated Me, so no extra /me read is needed.
-        updateProfileLocal(await acceptTerms(BUYER_TERMS_VERSION));
+        await acceptTermsMutation.mutateAsync(BUYER_TERMS_VERSION);
       } catch (err) {
         const termsMessage = toUserMessage(
           err,
@@ -515,24 +511,6 @@ export default function ProfilePage() {
     Boolean(profile?.termsAcceptedVersion) && !profile?.termsReacceptRequired;
   const hasAcceptedSellerTermsOnce =
     Boolean(profile?.sellerTermsAcceptedVersion) && !profile?.sellerTermsReacceptRequired;
-
-  if (loading) {
-    return <p>Loading profile...</p>;
-  }
-
-  if (!user) {
-    return (
-      <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-        <p className="text-slate-600">Please sign in to view your profile.</p>
-        <Link
-          href="/login"
-          className="mt-4 inline-flex rounded-full bg-slate-900 px-5 py-3 text-white hover:bg-slate-800"
-        >
-          Log in
-        </Link>
-      </div>
-    );
-  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
@@ -673,7 +651,7 @@ export default function ProfilePage() {
               Email cannot be changed here. Contact support if needed.
             </p>
             <p className="mt-1 text-base font-semibold text-slate-900">
-              {profile?.email || user.email}
+              {profile?.email || user?.email}
             </p>
           </div>
 
@@ -711,7 +689,7 @@ export default function ProfilePage() {
               Email address
             </p>
             <p className="mt-2 text-base font-semibold text-slate-900">
-              {profile?.email || user.email}
+              {profile?.email || user?.email}
             </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">

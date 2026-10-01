@@ -22,22 +22,20 @@ const INVALID_LINK_MESSAGE = 'This link is invalid or has expired.';
 export default function VerifyEmail() {
   const router = useRouter();
   const hasRunRef = useRef(false);
-  const [status, setStatus] = useState<'verifying' | 'success' | 'failure'>('verifying');
+  const [verifyStatus, setStatus] = useState<'verifying' | 'success' | 'failure'>('verifying');
   const [email, setEmail] = useState('');
   const { run, pending: resending } = useSingleFlight();
   const [resendMessage, setResendMessage] = useState('');
 
+  const token = typeof router.query.token === 'string' ? router.query.token : '';
+  // Why: a link without a token can never verify, so it fails without a request.
+  const status = router.isReady && !token ? 'failure' : verifyStatus;
+
   useEffect(() => {
-    if (!router.isReady || hasRunRef.current) {
+    if (!router.isReady || !token || hasRunRef.current) {
       return;
     }
     hasRunRef.current = true;
-
-    const token = typeof router.query.token === 'string' ? router.query.token : '';
-    if (!token) {
-      setStatus('failure');
-      return;
-    }
 
     verifyEmail(token)
       .then(() => {
@@ -47,7 +45,7 @@ export default function VerifyEmail() {
         console.error('[verify-email]', err?.code || err?.message || err);
         setStatus('failure');
       });
-  }, [router.isReady, router.query.token]);
+  }, [router.isReady, token]);
 
   /**
    * Why: Lets a user whose link expired or was already used request a fresh one without leaving

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import PrivateImage from './PrivateImage';
 import {
@@ -9,7 +9,7 @@ import {
   getRefundTypeLabel,
   NOT_ARRIVED_TYPE,
 } from '@/lib/api/orders';
-import { confirmDelivery } from '@/lib/api/returns';
+import { useConfirmDelivery } from '@/lib/queries/orders';
 import { toUserMessage } from '@/lib/userMessage';
 import { useSingleFlight } from '@/lib/useSingleFlight';
 import type { Order } from '@/lib/api/types';
@@ -149,13 +149,13 @@ export default function OrderDetail({
   backHref,
   backLabel,
 }: OrderDetailProps) {
-  const [updatedOrder, setUpdatedOrder] = useState<Order | null>(null);
+  const [updated, setUpdated] = useState<{ from: Order; order: Order } | null>(null);
+  const confirmDelivery = useConfirmDelivery();
   const [confirming, setConfirming] = useState(false);
   const { run, pending: submitting } = useSingleFlight();
   const [error, setError] = useState('');
   // Why: a fresh `order` prop from the page supersedes the locally updated copy.
-  useEffect(() => setUpdatedOrder(null), [initialOrder]);
-  const order = updatedOrder || initialOrder;
+  const order = updated?.from === initialOrder ? updated.order : initialOrder;
   const completedIdx = resolvedStepIndex(order);
   const refund = order.refund;
   const deadline = formatDate(order.refundDeadline);
@@ -182,7 +182,11 @@ export default function OrderDetail({
     setError('');
     try {
       await run(async () => {
-        setUpdatedOrder(await confirmDelivery(order.id, getOrderToken(order.id)));
+        const confirmed = await confirmDelivery.mutateAsync({
+          orderId: order.id,
+          token: getOrderToken(order.id),
+        });
+        setUpdated({ from: initialOrder, order: confirmed });
         setConfirming(false);
       });
     } catch (err) {

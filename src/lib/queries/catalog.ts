@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import {
   fetchAboutContent,
   fetchCatalogConfig,
@@ -23,6 +23,8 @@ export function useProducts(filters: ProductListFilters = {}) {
     queryKey: queryKeys.products.list(filters),
     queryFn: ({ pageParam }) => fetchProducts({ ...filters, cursor: pageParam ?? undefined }),
     ...cursorPaging,
+    // Why: keep the current results on screen while a filter change loads.
+    placeholderData: keepPreviousData,
   });
 }
 

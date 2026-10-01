@@ -1,6 +1,4 @@
-import { useEffect, useState } from 'react';
-import { fetchFaqs } from '@/lib/api/catalog';
-import type { Faq } from '@/lib/api/types';
+import { useFaqs } from '@/lib/queries/catalog';
 import { toUserMessage } from '@/lib/userMessage';
 
 /**
@@ -8,18 +6,12 @@ import { toUserMessage } from '@/lib/userMessage';
  * @returns The FAQ list, a loading state, or a friendly error message.
  */
 export default function FAQ() {
-  const [faqs, setFaqs] = useState<Faq[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    fetchFaqs()
-      .then(setFaqs)
-      .catch((err) =>
-        setError(toUserMessage(err, "We couldn't load the FAQ right now. Please try again.")),
-      )
-      .finally(() => setLoading(false));
-  }, []);
+  const faqsQuery = useFaqs();
+  const faqs = faqsQuery.data ?? [];
+  const loading = faqsQuery.isPending;
+  const error = faqsQuery.isError
+    ? toUserMessage(faqsQuery.error, "We couldn't load the FAQ right now. Please try again.")
+    : '';
 
   return (
     <div className="space-y-10">

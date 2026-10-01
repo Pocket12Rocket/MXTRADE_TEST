@@ -3,11 +3,11 @@ import { useRouter } from 'next/router';
 import { useEffect, useRef, useState } from 'react';
 import { getOrderToken, getPaymentStepCopy, storeCheckoutToken } from '@/lib/api/orders';
 import { isApiProblem } from '@/lib/apiClient';
-import { cancelCheckout } from '@/lib/api/checkouts';
+import { useCancelCheckout, useCheckout } from '@/lib/queries/checkouts';
 import type { CheckoutStatus } from '@/lib/api/types';
 import { reportError, toUserMessage } from '@/lib/userMessage';
-import { useOrderStatusPoll } from './useOrderStatusPoll';
 import useAuth from '@/lib/useAuth';
+import { useSingleFlight } from '@/lib/useSingleFlight';
 import { useCart } from '@/features/cart/cartContext';
 
 const FAILED_STATUSES: CheckoutStatus[] = ['payment_failed', 'cancelled'];
@@ -15,7 +15,7 @@ const FAILED_STATUSES: CheckoutStatus[] = ['payment_failed', 'cancelled'];
 /**
  * Why: Where PayFast returns the buyer after paying for a checkout, and where a guest's emailed
  * link lands (`?checkoutId=…&token=…`). It stores and strips the token, releases the stock hold on
- * a cancelled payment, otherwise polls the checkout (`useOrderStatusPoll`) until payment is
+ * a cancelled payment, otherwise polls the checkout (`useCheckout`) until payment is
  * confirmed, then lists each seller's order.
  * @returns The confirming, confirmed, failed, late-payment or cancelled state.
  * @example
@@ -30,39 +30,41 @@ export default function OrderConfirmationPage() {
   const isCancelled = query.payment === 'cancelled';
   const [cancelError, setCancelError] = useState('');
   const queryToken = typeof query.token === 'string' ? query.token : '';
-  // Why: Keeps the token in memory once it is stripped from the URL, in case storage is blocked.
-  const tokenRef = useRef('');
+  // Why: Keeps the emailed token in memory once it is stripped from the URL, in case storage is blocked.
+  const [heldToken, setHeldToken] = useState('');
+  if (queryToken && queryToken !== heldToken) setHeldToken(queryToken);
+  const isReady = router.isReady && Boolean(checkoutId);
+  const token = isReady ? queryToken || heldToken || getOrderToken(checkoutId) || '' : '';
   // Why: the cancel call must run once per checkout, even when React Strict Mode re-runs the effect.
   const cancelSentForRef = useRef('');
-  const [token, setToken] = useState('');
-  const [tokenReady, setTokenReady] = useState(false);
+  const { run } = useSingleFlight();
+  const { mutateAsync: cancelAsync } = useCancelCheckout();
 
   // Why: A guest's emailed link carries the token in the URL; it is stored for this tab and removed
   // from the address bar so it doesn't linger in history. The PayFast return has none and reads storage.
   useEffect(() => {
-    if (!router.isReady || !checkoutId) return;
-    if (queryToken) {
-      tokenRef.current = queryToken;
-      storeCheckoutToken({ id: checkoutId }, queryToken);
-      const { token: removed, ...rest } = router.query;
-      router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true });
-    }
-    tokenRef.current = tokenRef.current || getOrderToken(checkoutId);
-    setToken(tokenRef.current);
-    setTokenReady(true);
+    if (!router.isReady || !checkoutId || !queryToken) return;
+    storeCheckoutToken({ id: checkoutId }, queryToken);
+    const { token: removed, ...rest } = router.query;
+    router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router.isReady, checkoutId, queryToken]);
 
   const {
-    checkout,
-    error: pollError,
+    data: loaded,
+    error: loadError,
     polling,
     timedOut,
-  } = useOrderStatusPoll({
-    checkoutId,
-    token,
-    enabled: router.isReady && tokenReady && !isCancelled,
-  });
+  } = useCheckout(checkoutId, token, { poll: true, enabled: isReady && !isCancelled });
+  const checkout = loaded ?? null;
+  // Why: a failed refresh shouldn't hide a checkout that already loaded, so the error shows only without one.
+  const pollError =
+    !checkout && loadError
+      ? toUserMessage(loadError, "We couldn't load your order details. Please try again.")
+      : '';
+  useEffect(() => {
+    if (loadError) reportError('checkout-status-poll', loadError);
+  }, [loadError]);
   const error = cancelError || pollError;
   const status = checkout?.status;
   const orders = checkout?.orders || [];
@@ -73,8 +75,8 @@ export default function OrderConfirmationPage() {
   // Why: A guest's token opens every order in the checkout, so once the orders are known it is
   // stored under each order id for the order and refund pages.
   useEffect(() => {
-    if (checkout?.id && tokenRef.current) storeCheckoutToken(checkout, tokenRef.current);
-  }, [checkout]);
+    if (checkout?.id && token) storeCheckoutToken(checkout, token);
+  }, [checkout, token]);
 
   // Why: empty the cart only once payment is confirmed (checkout paid, including late orders the team
   // will resolve), so a cancelled or failed PayFast attempt keeps the buyer's items.
@@ -109,7 +111,7 @@ export default function OrderConfirmationPage() {
   else if (stillPending) heading = 'Payment still being confirmed';
 
   useEffect(() => {
-    if (!router.isReady || !tokenReady || !checkoutId || !isCancelled) {
+    if (!isReady || !isCancelled) {
       return;
     }
     if (cancelSentForRef.current === checkoutId) {
@@ -117,7 +119,7 @@ export default function OrderConfirmationPage() {
     }
     cancelSentForRef.current = checkoutId;
 
-    cancelCheckout(checkoutId, tokenRef.current).catch((err) => {
+    run(() => cancelAsync({ checkoutId, token })).catch((err) => {
       // A cancel that hits a checkout that is no longer pending payment is harmless to the buyer.
       if (isApiProblem(err) && err.code === 'ORDER_NOT_PAYABLE') {
         return;
@@ -125,7 +127,7 @@ export default function OrderConfirmationPage() {
       reportError('order-confirmation', err);
       setCancelError(toUserMessage(err, "We couldn't load your order details. Please try again."));
     });
-  }, [router.isReady, tokenReady, isCancelled, checkoutId]);
+  }, [isReady, isCancelled, checkoutId, token, run, cancelAsync]);
 
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 px-4 text-center">

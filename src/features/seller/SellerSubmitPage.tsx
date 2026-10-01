@@ -1,9 +1,10 @@
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { FormEvent } from 'react';
 import useAuth from '@/lib/useAuth';
-import { fetchCatalogConfig } from '@/lib/api/catalog';
-import { createSubmission, toSubmissionInput } from '@/lib/api/submissions';
+import { toSubmissionInput } from '@/lib/api/submissions';
+import { useCatalogConfig } from '@/lib/queries/catalog';
+import { useCreateSubmission } from '@/lib/queries/submissions';
 import { toUserMessage } from '@/lib/userMessage';
 import { useSingleFlight } from '@/lib/useSingleFlight';
 import ImageCropDialog from '@/components/ImageCropDialog';
@@ -19,7 +20,7 @@ import {
   type ListingFormErrors,
   type ListingFormState,
 } from '@/lib/listingForm';
-import type { CatalogConfig, Category } from '@/lib/api/types';
+import type { Category } from '@/lib/api/types';
 
 // Why: the seller-facing name of the parts category differs from the storefront label.
 const SELL_CATEGORY_LABEL_OVERRIDES: Partial<Record<string, string>> = {
@@ -37,41 +38,22 @@ const SELL_CATEGORY_LABEL_OVERRIDES: Partial<Record<string, string>> = {
 export default function SellerSubmit() {
   const { user, profile, loading } = useAuth();
   const images = useListingImages();
-  const [config, setConfig] = useState<CatalogConfig | null>(null);
+  const { data: config, error: configError } = useCatalogConfig();
+  const createSubmission = useCreateSubmission();
   const [form, setForm] = useState<ListingFormState | null>(null);
   const [fieldErrors, setFieldErrors] = useState<ListingFormErrors>({});
-  const [status, setStatus] = useState('');
+  const [actionStatus, setStatus] = useState('');
   const [showProfileLink, setShowProfileLink] = useState(false);
   const { run, pending: isSubmitting } = useSingleFlight();
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    fetchCatalogConfig()
-      .then((result) => {
-        if (isMounted) setConfig(result);
-      })
-      .catch((error) => {
-        if (isMounted)
-          setStatus(
-            toUserMessage(
-              error,
-              "We couldn't load the listing options right now. Please try again.",
-            ),
-          );
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!loading && !user) {
-      setStatus('Please log in to submit products.');
-    }
-  }, [loading, user]);
+  const status =
+    actionStatus ||
+    (configError
+      ? toUserMessage(
+          configError,
+          "We couldn't load the listing options right now. Please try again.",
+        )
+      : '');
 
   /**
    * Why: Starts the form for the chosen category with that category's default selections.
@@ -80,7 +62,7 @@ export default function SellerSubmit() {
    * handleCategoryChoice('gear');
    */
   const handleCategoryChoice = (categoryKey: Category) => {
-    setForm(emptyListingForm(categoryKey, config));
+    setForm(emptyListingForm(categoryKey, config ?? null));
     setFieldErrors({});
     setStatus('');
   };
@@ -106,7 +88,7 @@ export default function SellerSubmit() {
     event.preventDefault();
     if (!user || !form) return;
 
-    const errors = validateListingForm(form, config, images.total);
+    const errors = validateListingForm(form, config ?? null, images.total);
     setFieldErrors(errors);
     setShowProfileLink(false);
     if (Object.keys(errors).length > 0) {
@@ -118,8 +100,11 @@ export default function SellerSubmit() {
 
     try {
       await run(async () => {
-        await createSubmission({ input: toSubmissionInput(form), files: images.files });
-        setForm(emptyListingForm(form.category, config));
+        await createSubmission.mutateAsync({
+          input: toSubmissionInput(form),
+          files: images.files,
+        });
+        setForm(emptyListingForm(form.category, config ?? null));
         images.reset();
         setShowSuccessPopup(true);
       });

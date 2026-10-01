@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import useAuth from '@/lib/useAuth';
 import OrderDetail from './OrderDetail';
-import { getOrder, getOrderToken, storeOrderToken } from '@/lib/api/orders';
+import { getOrderToken, storeOrderToken } from '@/lib/api/orders';
+import { useOrder } from '@/lib/queries/orders';
 import { toUserMessage } from '@/lib/userMessage';
-import type { Order } from '@/lib/api/types';
 
 /**
  * Why: The page the confirmation email links to (`/order/{orderId}?token={accessToken}`) so a
@@ -20,40 +20,29 @@ export default function GuestOrderPage() {
   const { orderId: queryOrderId, token: queryToken } = router.query;
   const orderId = typeof queryOrderId === 'string' ? queryOrderId : '';
   const { user, loading: authLoading } = useAuth();
-  const [order, setOrder] = useState<Order | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const queryTokenValue = typeof queryToken === 'string' ? queryToken : '';
   // Why: Keeps the token in memory once it is stripped from the URL, in case storage is blocked.
-  const tokenRef = useRef('');
-  const [missingToken, setMissingToken] = useState(false);
+  const [heldToken, setHeldToken] = useState('');
+  if (queryTokenValue && queryTokenValue !== heldToken) setHeldToken(queryTokenValue);
+  const ready = router.isReady && Boolean(orderId) && !authLoading;
+  const token = queryTokenValue || heldToken || (ready ? getOrderToken(orderId) : '');
+  const missingToken = ready && !user && !token;
+  const {
+    data: order,
+    isPending,
+    isError,
+    error,
+  } = useOrder(ready && !missingToken ? orderId : '', token);
 
   useEffect(() => {
-    if (!router.isReady || !orderId || authLoading) return;
-    if (typeof queryToken === 'string' && queryToken) {
-      tokenRef.current = queryToken;
-      storeOrderToken(orderId, queryToken);
-      router.replace({ pathname: '/order/[orderId]', query: { orderId } }, `/order/${orderId}`, {
-        shallow: true,
-      });
-    }
-    const token = tokenRef.current || getOrderToken(orderId);
-    tokenRef.current = token;
-    setMissingToken(!user && !token);
-    if (!user && !token) {
-      setLoading(false);
-      return;
-    }
+    if (!ready || !queryTokenValue) return;
+    storeOrderToken(orderId, queryTokenValue);
+    router.replace({ pathname: '/order/[orderId]', query: { orderId } }, `/order/${orderId}`, {
+      shallow: true,
+    });
+  }, [ready, orderId, queryTokenValue, router]);
 
-    getOrder(orderId, token)
-      .then(setOrder)
-      .catch((err) =>
-        setError(toUserMessage(err, "We couldn't load this order. Please try again.")),
-      )
-      .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router.isReady, orderId, user, authLoading]);
-
-  if (authLoading || loading) {
+  if (!ready || (!missingToken && isPending)) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
         <p className="text-slate-500">Loading order…</p>
@@ -81,10 +70,12 @@ export default function GuestOrderPage() {
     );
   }
 
-  if (error) {
+  if (isError) {
     return (
       <div className="mx-auto max-w-3xl space-y-4 px-4 py-10">
-        <p className="text-red-600">{error}</p>
+        <p className="text-red-600">
+          {toUserMessage(error, "We couldn't load this order. Please try again.")}
+        </p>
       </div>
     );
   }

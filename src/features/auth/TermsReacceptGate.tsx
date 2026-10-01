@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import TermsAndConditionsModal from './TermsAndConditionsModal';
 import { useAuthContext } from '@/lib/AuthContext';
-import { acceptTerms } from '@/lib/api/auth';
+import { useAcceptTerms } from '@/lib/queries/account';
 import { BUYER_TERMS_VERSION } from './termsVersions';
 import { toUserMessage } from '@/lib/userMessage';
 import { useSingleFlight } from '@/lib/useSingleFlight';
@@ -15,7 +15,8 @@ import { useSingleFlight } from '@/lib/useSingleFlight';
  * <TermsReacceptGate />
  */
 export default function TermsReacceptGate() {
-  const { profile, setSignedInUser, signOut } = useAuthContext();
+  const { profile, signOut } = useAuthContext();
+  const { mutateAsync: acceptTerms } = useAcceptTerms();
   const [isChecked, setIsChecked] = useState(false);
   const { run, pending: submitting } = useSingleFlight();
   const [error, setError] = useState('');
@@ -25,15 +26,15 @@ export default function TermsReacceptGate() {
   }
 
   /**
-   * Why: Records acceptance of the version shown and stores the updated `Me` returned by the
-   * backend, which clears `termsReacceptRequired` and closes the gate.
+   * Why: Records acceptance of the version shown; the mutation stores the updated `Me`, which
+   * clears `termsReacceptRequired` and closes the gate.
    */
   const handleConfirm = async () => {
     if (!isChecked) return;
     setError('');
     try {
       await run(async () => {
-        setSignedInUser(await acceptTerms(BUYER_TERMS_VERSION));
+        await acceptTerms(BUYER_TERMS_VERSION);
         setIsChecked(false);
       });
     } catch (err) {

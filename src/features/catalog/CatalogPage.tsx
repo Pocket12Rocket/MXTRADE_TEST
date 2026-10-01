@@ -1,14 +1,9 @@
 import { useRouter } from 'next/router';
 import { useEffect, useRef, useState, type ChangeEvent, type MouseEvent } from 'react';
 import ProductCard from './ProductCard';
-import {
-  CATEGORY_LABELS,
-  fetchCatalogConfig,
-  fetchProducts,
-  type ClientProduct,
-  type ProductFilters,
-} from '@/lib/api/catalog';
-import type { CatalogConfig } from '@/lib/api/types';
+import { CATEGORY_LABELS, type ProductFilters } from '@/lib/api/catalog';
+import { useCatalogConfig, useProducts } from '@/lib/queries/catalog';
+import { flattenPages } from '@/lib/queries/pagination';
 import { toUserMessage } from '@/lib/userMessage';
 import { useSingleFlight } from '@/lib/useSingleFlight';
 
@@ -52,26 +47,28 @@ function normalizeCategoryValue(value: string) {
 }
 
 /**
- * Why: Main browse/search/filter catalog page. Filtering, search and sorting happen server-side
- * via `fetchProducts()`/`fetchCatalogConfig()`; errors show a friendly sentence via
- * `toUserMessage()`.
- * @returns The shop catalog with filters, sorting, pagination and product grid.
+ * Why: The URL filters are only known once the router is ready, so the first product request waits
+ * for that instead of fetching an unfiltered list first.
+ * @returns The catalog, or the loading line until the router is ready.
  */
 export default function Shop() {
   const router = useRouter();
-  const [items, setItems] = useState<ClientProduct[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  return router.isReady ? <ShopCatalog /> : <p>Loading products…</p>;
+}
+
+/**
+ * Why: Main browse/search/filter catalog page. Filtering, search and sorting happen server-side
+ * through the product hooks; errors show a friendly sentence via `toUserMessage()`.
+ * @returns The shop catalog with filters, sorting, pagination and product grid.
+ */
+function ShopCatalog() {
+  const router = useRouter();
   const { run: runLoadMore, pending: loadingMore } = useSingleFlight();
-  const [error, setError] = useState('');
-  const [catalogConfig, setCatalogConfig] = useState<CatalogConfig | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState('');
+  const { data: catalogConfig } = useCatalogConfig();
   const [selectedSort, setSelectedSort] = useState('popular');
   const [selectedManufacturer, setSelectedManufacturer] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
-
-  // Why: Guards every fetch (page-1 and "Load more") so a response from a superseded request is
-  // discarded instead of overwriting newer results.
-  const requestIdRef = useRef(0);
 
   const searchQuery = typeof router.query.q === 'string' ? router.query.q.trim() : '';
   const queryCategory =
@@ -79,8 +76,8 @@ export default function Shop() {
   const querySubcategory = typeof router.query.sub === 'string' ? router.query.sub.trim() : '';
   const defaultSort = searchQuery ? 'relevance' : 'popular';
 
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [selectedSubcategory, setSelectedSubcategory] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState(queryCategory);
+  const [selectedSubcategory, setSelectedSubcategory] = useState(querySubcategory);
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [brandFilterQuery, setBrandFilterQuery] = useState('');
   const [showBrandPicker, setShowBrandPicker] = useState(false);
@@ -113,27 +110,6 @@ export default function Shop() {
     });
   }, [defaultSort]);
 
-  // Why: Loads the filter panel's option lists once. Kept independent of the product fetch so a
-  // config failure never blocks the page — it just renders without those filter options.
-  useEffect(() => {
-    let cancelled = false;
-    fetchCatalogConfig()
-      .then((result) => {
-        if (!cancelled) {
-          setCatalogConfig(result);
-        }
-      })
-      .catch((err) => {
-        console.error(
-          '[shop/catalog] catalog config',
-          (err as { code?: string } | null)?.code || err,
-        );
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   // Why: A stable primitive to depend on for the fetch effect below. The backend accepts a
   // comma-separated brand list (any match), so every checked brand is sent.
   const brandKey = selectedBrands.join(',');
@@ -163,86 +139,54 @@ export default function Shop() {
       minPrice: priceMin === '' ? undefined : Number(priceMin),
       maxPrice: priceMax === '' ? undefined : Number(priceMax),
       sort: SORT_API_MAP[selectedSort] || defaultSort,
+      limit: PAGE_SIZE,
     };
   }
 
-  // Why: Resets to page 1 and refetches when a filter changes (debounced); `buildFilters` and
-  // `defaultSort` are left out of the deps because they derive from the listed state.
+  // Why: A filter change refetches from page 1, debounced so typing and slider drags settle first.
+  const filters = buildFilters();
+  const filtersKey = JSON.stringify(filters);
+  const [debouncedFilters, setDebouncedFilters] = useState(filters);
+
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      const requestId = ++requestIdRef.current;
-      setLoading(true);
-      setError('');
-
-      fetchProducts({ ...buildFilters(), limit: PAGE_SIZE })
-        .then(({ items: newItems, nextCursor: newNextCursor }) => {
-          if (requestIdRef.current !== requestId) {
-            return;
-          }
-          setItems(newItems);
-          setNextCursor(newNextCursor);
-        })
-        .catch((err) => {
-          if (requestIdRef.current !== requestId) {
-            return;
-          }
-          setError(toUserMessage(err, "We couldn't load the shop right now. Please try again."));
-          setItems([]);
-          setNextCursor(null);
-        })
-        .finally(() => {
-          if (requestIdRef.current === requestId) {
-            setLoading(false);
-          }
-        });
+      setDebouncedFilters(JSON.parse(filtersKey) as ProductFilters);
+      setLoadMoreError('');
     }, SEARCH_DEBOUNCE_MS);
 
     return () => clearTimeout(timeoutId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    searchQuery,
-    selectedCategory,
-    selectedSubcategory,
-    selectedManufacturer,
-    selectedModel,
-    brandKey,
-    selectedCondition,
-    priceMin,
-    priceMax,
-    selectedSort,
-  ]);
+  }, [filtersKey]);
+
+  const productsQuery = useProducts(debouncedFilters);
+  const items = flattenPages(productsQuery.data);
+  const nextCursor = productsQuery.hasNextPage;
+  const loading = productsQuery.isPending;
+  const error =
+    loadMoreError ||
+    (productsQuery.isError && !productsQuery.data
+      ? toUserMessage(productsQuery.error, "We couldn't load the shop right now. Please try again.")
+      : '');
 
   /**
-   * Why: "Load more" button handler — fetches the next page with the cursor the server returned
-   * and appends it to the current results, ignoring a stale response the same way the page-1
-   * effect does.
+   * Why: "Load more" button handler, which asks the query for the next cursor page and appends it.
    * @example
    * <button onClick={handleLoadMore}>Load more</button>
    */
   function handleLoadMore() {
-    if (!nextCursor) {
+    if (!productsQuery.hasNextPage) {
       return undefined;
     }
 
     return runLoadMore(async () => {
-      const requestId = ++requestIdRef.current;
-
-      try {
-        const { items: newItems, nextCursor: newNextCursor } = await fetchProducts({
-          ...buildFilters(),
-          cursor: nextCursor,
-          limit: PAGE_SIZE,
-        });
-        if (requestIdRef.current !== requestId) {
-          return;
-        }
-        setItems((current) => [...current, ...newItems]);
-        setNextCursor(newNextCursor);
-      } catch (err) {
-        if (requestIdRef.current !== requestId) {
-          return;
-        }
-        setError(toUserMessage(err, "We couldn't load more products right now. Please try again."));
+      setLoadMoreError('');
+      const result = await productsQuery.fetchNextPage();
+      if (result.isError) {
+        setLoadMoreError(
+          toUserMessage(
+            result.error,
+            "We couldn't load more products right now. Please try again.",
+          ),
+        );
       }
     });
   }

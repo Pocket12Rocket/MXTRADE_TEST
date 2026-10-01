@@ -3,7 +3,8 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import CarouselControl from '@/components/CarouselControl';
 import ServiceFeeNote from '@/components/ServiceFeeNote';
-import { fetchProductById, recordProductView, type ClientProduct } from '@/lib/api/catalog';
+import { recordProductView } from '@/lib/api/catalog';
+import { useProduct } from '@/lib/queries/catalog';
 import { useCart } from '@/features/cart/cartContext';
 import { toUserMessage } from '@/lib/userMessage';
 import { useSingleFlight } from '@/lib/useSingleFlight';
@@ -19,9 +20,15 @@ export default function ProductDetail() {
   const router = useRouter();
   const id = typeof router.query.id === 'string' ? router.query.id : undefined;
   const { addItem } = useCart();
-  const [product, setProduct] = useState<ClientProduct | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const productQuery = useProduct(id);
+  const product = productQuery.data ?? null;
+  const loading = productQuery.isPending;
+  const error = productQuery.isError
+    ? toUserMessage(
+        productQuery.error,
+        "We couldn't load this product right now. Please try again.",
+      )
+    : '';
   const [addedToCart, setAddedToCart] = useState(false);
   const [stockLimitError, setStockLimitError] = useState('');
   const [activeImageIndex, setActiveImageIndex] = useState(-1);
@@ -190,20 +197,6 @@ export default function ProductDetail() {
   function handleImageZoomToggle() {
     setLightboxZoom((currentValue) => (currentValue > 1 ? 1 : 2));
   }
-
-  useEffect(() => {
-    if (!id) return;
-
-    fetchProductById(id)
-      .then((result) => {
-        setProduct(result);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(toUserMessage(err, "We couldn't load this product right now. Please try again."));
-        setLoading(false);
-      });
-  }, [id]);
 
   // Why: counts the view on the backend for "Popular this week", deduped per product per browser
   // session (sessionStorage) so a reload of the same product in the same tab doesn't

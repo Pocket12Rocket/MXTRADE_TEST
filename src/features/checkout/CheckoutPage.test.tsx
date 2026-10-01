@@ -1,4 +1,5 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { screen, waitFor, fireEvent } from '@testing-library/react';
+import { renderWithQueryClient } from '@/test/renderWithQueryClient';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CheckoutPage from './CheckoutPage';
 import { createCheckout, quoteCheckout, startCheckoutPayfast } from '@/lib/api/checkouts';
@@ -64,7 +65,7 @@ beforeEach(() => {
 
 describe('CheckoutPage double submit', () => {
   it('creates the checkout once for two rapid submits', async () => {
-    const { container } = render(<CheckoutPage />);
+    const { container } = renderWithQueryClient(<CheckoutPage />);
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Continue to payment' })).toBeEnabled(),
     );
@@ -73,7 +74,8 @@ describe('CheckoutPage double submit', () => {
     fireEvent.submit(form);
     fireEvent.submit(form);
 
-    expect(createCheckout).toHaveBeenCalledTimes(1);
+    // Why: a mutation starts its function a few microtasks after the call, so wait for it.
+    await waitFor(() => expect(createCheckout).toHaveBeenCalledTimes(1));
     expect(screen.getByRole('button', { name: 'Processing…' })).toBeDisabled();
   });
 });

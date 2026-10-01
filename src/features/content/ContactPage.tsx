@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { sendContactMessage } from '@/lib/api/contact';
+import { useSendContact } from '@/lib/queries/account';
 import { toUserMessage } from '@/lib/userMessage';
 import { useSingleFlight } from '@/lib/useSingleFlight';
 
@@ -17,6 +17,7 @@ export default function ContactPage() {
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
   const { run, pending: isSubmitting } = useSingleFlight();
+  const { mutateAsync: sendContact } = useSendContact();
   const [status, setStatus] = useState('');
   const [isError, setIsError] = useState(false);
 
@@ -38,7 +39,7 @@ export default function ContactPage() {
 
     try {
       await run(async () => {
-        await sendContactMessage({
+        await sendContact({
           name: name.trim(),
           email: email.trim(),
           message: message.trim(),

@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { renderWithQueryClient } from '@/test/renderWithQueryClient';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SellerSubmit from './SellerSubmitPage';
 import { createSubmission } from '@/lib/api/submissions';
@@ -47,14 +48,14 @@ beforeEach(() => {
 
 describe('SellerSubmit double submit', () => {
   it('creates the submission once for two rapid submits', async () => {
-    const { container } = render(<SellerSubmit />);
+    const { container } = renderWithQueryClient(<SellerSubmit />);
     fireEvent.click(await screen.findByRole('button', { name: 'Gear' }));
 
     const form = container.querySelector('form') as HTMLFormElement;
     fireEvent.submit(form);
     fireEvent.submit(form);
 
-    expect(createSubmission).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(createSubmission).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Submitting…' })).toBeDisabled());
   });
 });

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { renderWithQueryClient } from '@/test/renderWithQueryClient';
 import RefundRequestForm, { validateRefund } from './RefundRequestForm';
 import { requestRefund } from '@/lib/api/orders';
 
@@ -113,7 +114,7 @@ describe('RefundRequestForm', () => {
   it('has no type preselected, shows the bank note and blocks an invalid submit without calling the API', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    const { container } = render(
+    const { container } = renderWithQueryClient(
       <RefundRequestForm orderId="o1" signedInDoneHref="/a" guestDoneHref="/b" />,
     );
 
@@ -131,10 +132,10 @@ describe('RefundRequestForm', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('sends the refund request once for two rapid submits', () => {
+  it('sends the refund request once for two rapid submits', async () => {
     routerState.query = { type: 'never_arrived' };
     vi.mocked(requestRefund).mockReturnValue(new Promise(() => {}));
-    const { container } = render(
+    const { container } = renderWithQueryClient(
       <RefundRequestForm orderId="o1" signedInDoneHref="/a" guestDoneHref="/b" />,
     );
 
@@ -159,12 +160,14 @@ describe('RefundRequestForm', () => {
     fireEvent.submit(form);
     fireEvent.submit(form);
 
-    expect(requestRefund).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(requestRefund).toHaveBeenCalledTimes(1));
     expect(screen.getByRole('button', { name: 'Submitting...' })).toBeDisabled();
   });
 
   it('offers only the problem types, without never_arrived', () => {
-    render(<RefundRequestForm orderId="o1" signedInDoneHref="/a" guestDoneHref="/b" />);
+    renderWithQueryClient(
+      <RefundRequestForm orderId="o1" signedInDoneHref="/a" guestDoneHref="/b" />,
+    );
 
     expect(screen.getAllByRole('radio').map((radio) => (radio as HTMLInputElement).value)).toEqual([
       'damaged',
@@ -175,7 +178,9 @@ describe('RefundRequestForm', () => {
   });
 
   it('shows the 20-character hint and required photos for other', () => {
-    render(<RefundRequestForm orderId="o1" signedInDoneHref="/a" guestDoneHref="/b" />);
+    renderWithQueryClient(
+      <RefundRequestForm orderId="o1" signedInDoneHref="/a" guestDoneHref="/b" />,
+    );
 
     fireEvent.click(screen.getByLabelText('Other issue'));
     expect(screen.getByText(/at least 20 characters/)).toBeInTheDocument();
@@ -184,7 +189,9 @@ describe('RefundRequestForm', () => {
 
   it('preselects never_arrived from ?type=never_arrived, with optional photos', () => {
     routerState.query = { type: 'never_arrived' };
-    render(<RefundRequestForm orderId="o1" signedInDoneHref="/a" guestDoneHref="/b" />);
+    renderWithQueryClient(
+      <RefundRequestForm orderId="o1" signedInDoneHref="/a" guestDoneHref="/b" />,
+    );
 
     expect(screen.getByLabelText('Never arrived')).toBeChecked();
     expect(screen.queryByText(/at least 20 characters/)).not.toBeInTheDocument();

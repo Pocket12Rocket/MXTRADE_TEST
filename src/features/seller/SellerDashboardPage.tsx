@@ -1,7 +1,8 @@
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
 import useAuth from '@/lib/useAuth';
-import { listMySubmissions } from '@/lib/api/submissions';
+import { useMySubmissions } from '@/lib/queries/submissions';
+import { flattenPages } from '@/lib/queries/pagination';
+import type { Me } from '@/lib/api/types';
 import { toUserMessage } from '@/lib/userMessage';
 
 // Why: one page is enough for the dashboard count; "N+" is shown if the seller has more pending.
@@ -14,23 +15,6 @@ const PENDING_COUNT_LIMIT = 100;
  */
 export default function SellerDashboard() {
   const { user, profile, loading } = useAuth();
-  const [pending, setPending] = useState({ count: 0, hasMore: false });
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (!loading && user && profile?.canSell) {
-      listMySubmissions({ status: 'pending', limit: PENDING_COUNT_LIMIT })
-        .then(({ items, nextCursor }) =>
-          setPending({ count: items.length, hasMore: Boolean(nextCursor) }),
-        )
-        .catch((err) =>
-          setError(
-            toUserMessage(err, "We couldn't load your submissions right now. Please try again."),
-          ),
-        );
-    }
-  }, [loading, user, profile?.canSell]);
-
   if (loading) {
     return <p>Loading seller dashboard...</p>;
   }
@@ -65,6 +49,23 @@ export default function SellerDashboard() {
       </div>
     );
   }
+
+  return <SellerDashboardContent profile={profile} />;
+}
+
+/**
+ * Why: Only a seller who can sell has submissions to count, so the query lives in its own
+ * component that mounts after the sign-in and seller checks.
+ * @param props - Component props.
+ * @param props.profile - The signed-in seller's profile.
+ * @returns The dashboard sections.
+ */
+function SellerDashboardContent({ profile }: { profile: Me }) {
+  const { data, error: loadError, hasNextPage } = useMySubmissions('pending', PENDING_COUNT_LIMIT);
+  const pending = { count: flattenPages(data).length, hasMore: Boolean(hasNextPage) };
+  const error = loadError
+    ? toUserMessage(loadError, "We couldn't load your submissions right now. Please try again.")
+    : '';
 
   return (
     <div className="space-y-8">

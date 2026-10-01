@@ -1,10 +1,12 @@
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import ProductCard from './ProductCard';
 import CarouselControl from '@/components/CarouselControl';
 import ServiceFeeNote from '@/components/ServiceFeeNote';
-import { fetchNewProducts, fetchPopularProducts, type ClientProduct } from '@/lib/api/catalog';
-import { reportError } from '@/lib/userMessage';
+import type { ClientProduct } from '@/lib/api/catalog';
+import { useNewProducts, usePopularProducts } from '@/lib/queries/catalog';
+
+const NO_PRODUCTS: ClientProduct[] = [];
 
 /**
  * Why: Home page. Each carousel asks the backend for exactly the items it shows (popular by
@@ -12,77 +14,36 @@ import { reportError } from '@/lib/userMessage';
  * @returns The home page markup (popular carousel + three category carousels).
  */
 export default function Home() {
-  const [popularProducts, setPopularProducts] = useState<ClientProduct[]>([]);
-  const [isLoadingPopular, setIsLoadingPopular] = useState(true);
-  const [popularCarouselIndex, setPopularCarouselIndex] = useState(0);
+  const popularQuery = usePopularProducts(null, 6);
+  const gearQuery = useNewProducts('gear', 6);
+  const partsQuery = useNewProducts('parts', 6);
+  const accessoriesQuery = useNewProducts('accessories', 6);
 
-  // New state for category carousels
-  const [gearProducts, setGearProducts] = useState<ClientProduct[]>([]);
-  const [partsProducts, setPartsProducts] = useState<ClientProduct[]>([]);
-  const [accessoriesProducts, setAccessoriesProducts] = useState<ClientProduct[]>([]);
-  const [isLoadingGear, setIsLoadingGear] = useState(true);
-  const [isLoadingParts, setIsLoadingParts] = useState(true);
-  const [isLoadingAccessories, setIsLoadingAccessories] = useState(true);
-  const [gearCarouselIndex, setGearCarouselIndex] = useState(0);
-  const [partsCarouselIndex, setPartsCarouselIndex] = useState(0);
-  const [accessoriesCarouselIndex, setAccessoriesCarouselIndex] = useState(0);
+  // Why: a failed carousel shows its "no products" state, like an empty one.
+  const popularProducts = popularQuery.data ?? NO_PRODUCTS;
+  const gearProducts = gearQuery.data ?? NO_PRODUCTS;
+  const partsProducts = partsQuery.data ?? NO_PRODUCTS;
+  const accessoriesProducts = accessoriesQuery.data ?? NO_PRODUCTS;
+  const isLoadingPopular = popularQuery.isPending;
+  const isLoadingGear = gearQuery.isPending;
+  const isLoadingParts = partsQuery.isPending;
+  const isLoadingAccessories = accessoriesQuery.isPending;
 
+  const [popularIndex, setPopularCarouselIndex] = useState(0);
+  const [gearIndex, setGearCarouselIndex] = useState(0);
+  const [partsIndex, setPartsCarouselIndex] = useState(0);
+  const [accessoriesIndex, setAccessoriesCarouselIndex] = useState(0);
+
+  const maxPopularCarouselIndex = Math.max(popularProducts.length - 3, 0);
   const maxGearCarouselIndex = Math.max(gearProducts.length - 3, 0);
   const maxPartsCarouselIndex = Math.max(partsProducts.length - 3, 0);
   const maxAccessoriesCarouselIndex = Math.max(accessoriesProducts.length - 3, 0);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    // Why: four small, cacheable backend reads in parallel, one per carousel.
-    /**
-     * Why: Loads the popular and new-in-category carousels.
-     */
-    const loadHomeCarousels = async () => {
-      try {
-        const [popular, gear, parts, accessories] = await Promise.all([
-          fetchPopularProducts({ limit: 6 }),
-          fetchNewProducts({ category: 'gear', limit: 6 }),
-          fetchNewProducts({ category: 'parts', limit: 6 }),
-          fetchNewProducts({ category: 'accessories', limit: 6 }),
-        ]);
-        if (!isMounted) return;
-
-        setPopularProducts(popular);
-        setGearProducts(gear);
-        setPartsProducts(parts);
-        setAccessoriesProducts(accessories);
-      } catch (err) {
-        // Why: leave lists empty (each carousel renders a "no products" state) but log the failure.
-        reportError('home-carousels', err);
-      } finally {
-        if (isMounted) {
-          setIsLoadingPopular(false);
-          setIsLoadingGear(false);
-          setIsLoadingParts(false);
-          setIsLoadingAccessories(false);
-        }
-      }
-    };
-
-    loadHomeCarousels();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    setGearCarouselIndex((currentValue) => Math.min(currentValue, maxGearCarouselIndex));
-  }, [maxGearCarouselIndex]);
-  useEffect(() => {
-    setPartsCarouselIndex((currentValue) => Math.min(currentValue, maxPartsCarouselIndex));
-  }, [maxPartsCarouselIndex]);
-  useEffect(() => {
-    setAccessoriesCarouselIndex((currentValue) =>
-      Math.min(currentValue, maxAccessoriesCarouselIndex),
-    );
-  }, [maxAccessoriesCarouselIndex]);
+  // Why: a list that shrinks must not leave the carousel scrolled past its last item.
+  const popularCarouselIndex = Math.min(popularIndex, maxPopularCarouselIndex);
+  const gearCarouselIndex = Math.min(gearIndex, maxGearCarouselIndex);
+  const partsCarouselIndex = Math.min(partsIndex, maxPartsCarouselIndex);
+  const accessoriesCarouselIndex = Math.min(accessoriesIndex, maxAccessoriesCarouselIndex);
 
   /**
    * Why: Scrolls the gear carousel back.
@@ -122,12 +83,6 @@ export default function Home() {
       Math.min(currentValue + 1, maxAccessoriesCarouselIndex),
     );
   };
-
-  const maxPopularCarouselIndex = Math.max(popularProducts.length - 3, 0);
-
-  useEffect(() => {
-    setPopularCarouselIndex((currentValue) => Math.min(currentValue, maxPopularCarouselIndex));
-  }, [maxPopularCarouselIndex]);
 
   /**
    * Why: Scrolls the popular carousel back.

@@ -14,14 +14,8 @@ import {
   submitPayfastForm,
   toProvinceValue,
 } from '@/lib/api/orders';
-import {
-  createCheckout,
-  formatQuoteUnitPrice,
-  quoteCheckout,
-  startCheckoutPayfast,
-  type ClientCheckoutQuote,
-  type QuoteLine,
-} from '@/lib/api/checkouts';
+import { formatQuoteUnitPrice, type QuoteLine } from '@/lib/api/checkouts';
+import { useCheckoutQuote, useCreateCheckout, useStartPayfast } from '@/lib/queries/checkouts';
 import { toUserMessage, reportError } from '@/lib/userMessage';
 import { useSingleFlight } from '@/lib/useSingleFlight';
 import type { Me } from '@/lib/api/types';
@@ -132,7 +126,7 @@ export default function CheckoutPage() {
   const profile: CheckoutProfile | null = useAuth().profile;
   const { items, removeItem, updateQuantity } = useCart();
 
-  const [form, setForm] = useState<CheckoutForm>(EMPTY_FORM);
+  const [edits, setEdits] = useState<Partial<CheckoutForm>>({});
   const [touched, setTouched] = useState<Partial<Record<string, boolean>>>({});
   const { run, pending: isSubmitting } = useSingleFlight();
   const [submitError, setSubmitError] = useState('');
@@ -140,10 +134,9 @@ export default function CheckoutPage() {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [termsOutdated, setTermsOutdated] = useState(false);
   const [problemIds, setProblemIds] = useState<string[]>([]);
-  const [quote, setQuote] = useState<ClientCheckoutQuote | null>(null);
-  const [quoteLoading, setQuoteLoading] = useState(false);
-  const [quoteError, setQuoteError] = useState('');
-  const [quoteVersion, setQuoteVersion] = useState(0);
+  const quoteQuery = useCheckoutQuote(items);
+  const createCheckoutMutation = useCreateCheckout();
+  const startPayfastMutation = useStartPayfast();
   // Why: Once the checkout exists, a payment-start failure (PayFast 503, rate limit, network) must
   // retry payment for that same checkout instead of creating a duplicate one.
   const [pendingCheckout, setPendingCheckout] = useState<PendingCheckout | null>(null);
@@ -151,61 +144,35 @@ export default function CheckoutPage() {
 
   const isGuest = !user;
   const needsEmailVerification = Boolean(user) && (!user?.emailVerified || serverSaysUnverified);
-  const cartKey = useMemo(
-    () => JSON.stringify(items.map((item) => [item.id, item.quantity])),
-    [items],
-  );
+  const quote = quoteQuery.data ?? null;
+  const quoteLoading = quoteQuery.isFetching;
+  const quoteFailure = quoteQuery.error;
+  const quoteError =
+    quoteFailure && !quoteLoading
+      ? toUserMessage(quoteFailure, "We couldn't price your cart. Please try again.")
+      : '';
 
   useEffect(() => {
-    if (items.length === 0) {
-      setQuote(null);
-      return undefined;
-    }
-
-    let isMounted = true;
-    setQuoteLoading(true);
-    setQuoteError('');
-    quoteCheckout(items)
-      .then((result) => {
-        if (isMounted) setQuote(result);
-      })
-      .catch((err) => {
-        reportError('checkout-quote', err);
-        if (isMounted)
-          setQuoteError(toUserMessage(err, "We couldn't price your cart. Please try again."));
-      })
-      .finally(() => {
-        if (isMounted) setQuoteLoading(false);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-    // `items` is tracked through `cartKey` (ids and quantities) so cart-object churn doesn't re-quote.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cartKey, quoteVersion]);
+    if (quoteFailure) reportError('checkout-quote', quoteFailure);
+  }, [quoteFailure]);
 
   const hasUnavailableItems =
     Boolean(quote) && quote!.items.some((item) => getQuoteLineIssue(item));
   // Why: With a checkout already created the stock is held, so the quote no longer gates payment.
   const isBlockedByQuote = !pendingCheckout && (quoteLoading || !quote || hasUnavailableItems);
 
-  useEffect(() => {
-    if (!user) return;
-
-    const profileFirstName = (profile?.firstName || '').trim();
-    const profileLastName = (profile?.lastName || '').trim();
+  // Why: A signed-in buyer's form starts from their saved profile; anything they type wins.
+  const profileForm = useMemo<CheckoutForm>(() => {
+    if (!user) return EMPTY_FORM;
     const displayNameParts = String(profile?.displayName || '')
       .trim()
-      .split(/\s+/)
+      .split(/s+/)
       .filter(Boolean);
     const fallbackFirstName = displayNameParts[0] || '';
     const fallbackLastName = displayNameParts.length > 1 ? displayNameParts.slice(1).join(' ') : '';
-
-    setForm((current) => ({
-      ...current,
-      firstName: profileFirstName || fallbackFirstName,
-      lastName: profileLastName || fallbackLastName,
+    return {
+      firstName: (profile?.firstName || '').trim() || fallbackFirstName,
+      lastName: (profile?.lastName || '').trim() || fallbackLastName,
       email: String(user.email || '').trim(),
       phone: profile?.phone || '',
       streetAddress: profile?.streetAddress || '',
@@ -213,8 +180,9 @@ export default function CheckoutPage() {
       city: profile?.city || '',
       province: toProvinceValue(profile?.province),
       postalCode: profile?.postCode || profile?.postalCode || '',
-    }));
+    };
   }, [user, profile]);
+  const form: CheckoutForm = { ...profileForm, ...edits };
 
   const clientErrors = Object.fromEntries(
     Object.entries(form).map(([key, val]) => [key, fieldError(key, val)]),
@@ -229,7 +197,7 @@ export default function CheckoutPage() {
    */
   function handleChange(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value } = event.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
+    setEdits((prev) => ({ ...prev, [name]: value }));
     setServerErrors((prev) => (prev[name] ? { ...prev, [name]: '' } : prev));
   }
 
@@ -266,7 +234,7 @@ export default function CheckoutPage() {
 
     if (problem?.code === 'INSUFFICIENT_STOCK' || problem?.code === 'PRODUCT_UNAVAILABLE') {
       setProblemIds(stockProblemIds(fieldErrors, items));
-      setQuoteVersion((version) => version + 1);
+      void quoteQuery.refetch();
     }
     if (problem?.code === 'RESERVATION_EXPIRED' || problem?.code === 'ORDER_NOT_PAYABLE') {
       setPendingCheckout(null);
@@ -316,7 +284,7 @@ export default function CheckoutPage() {
               province: form.province as Province,
               postalCode: form.postalCode.trim(),
             };
-            const { checkout, accessToken } = await createCheckout({
+            const { checkout, accessToken } = await createCheckoutMutation.mutateAsync({
               items,
               shippingAddress,
               ...(isGuest ? { buyerEmail: form.email.trim(), acceptTerms: true } : {}),
@@ -326,7 +294,10 @@ export default function CheckoutPage() {
             setPendingCheckout(target);
           }
 
-          const payfast = await startCheckoutPayfast(target.id, target.token);
+          const payfast = await startPayfastMutation.mutateAsync({
+            checkoutId: target.id,
+            token: target.token,
+          });
           // Why: the cart is emptied on the confirmation page once the checkout is actually paid, so a
           // cancelled or failed payment returns the buyer to a cart that still has their items.
           submitPayfastForm(payfast);

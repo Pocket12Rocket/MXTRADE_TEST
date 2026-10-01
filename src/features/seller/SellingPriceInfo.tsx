@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { formatRands } from '@/lib/api/orders';
 import { SERVICE_FEE_WAIVED_LABEL, randsToCents } from '@/lib/api/catalog';
-import { useServiceFeeQuote } from './useServiceFeeQuote';
+import { useServiceFeeQuote } from '@/lib/queries/submissions';
 
 interface SellingPriceInfoProps {
   price: string;
@@ -25,7 +25,7 @@ export default function SellingPriceInfo({
 }: SellingPriceInfoProps) {
   const [show, setShow] = useState(false);
   // Why: a fee-free listing has no fee to quote, so the buyer price is the seller price.
-  const fetched = useServiceFeeQuote(serviceFeeWaived ? '' : price);
+  const fetched = useServiceFeeQuote(serviceFeeWaived ? '' : price).data ?? null;
   const cents = randsToCents(price);
   const quote = serviceFeeWaived
     ? Number.isFinite(cents) && cents > 0

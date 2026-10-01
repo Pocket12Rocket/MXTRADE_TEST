@@ -11,8 +11,8 @@ import {
   REFUND_TYPES,
   getOrderToken,
   getRefundRules,
-  requestRefund,
 } from '@/lib/api/orders';
+import { useRequestRefund } from '@/lib/queries/orders';
 import { ACCOUNT_TYPE_OPTIONS } from '@/lib/api/seller';
 import { getFieldErrors } from '@/lib/apiClient';
 import { toUserMessage } from '@/lib/userMessage';
@@ -145,6 +145,7 @@ export default function RefundRequestForm({
   const [fieldErrors, setFieldErrors] = useState<FieldMessages>({});
   const [images, setImages] = useState<File[]>([]);
   const { run, pending: submitting } = useSingleFlight();
+  const requestRefund = useRequestRefund();
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
@@ -240,17 +241,17 @@ export default function RefundRequestForm({
     try {
       await run(
         async () => {
-          await requestRefund(
+          await requestRefund.mutateAsync({
             orderId,
-            {
+            submission: {
               type,
               reason: values.reason,
               // Validated above: the account type is one of the backend enum values.
               bankAccount: cleanBank as RefundBankAccountInput,
               files: images,
             },
-            getOrderToken(orderId),
-          );
+            token: getOrderToken(orderId),
+          });
           setSuccess(true);
           setTimeout(() => router.push(user ? signedInDoneHref : guestDoneHref), 2000);
         },

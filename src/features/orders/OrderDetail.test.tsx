@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { renderWithQueryClient } from '@/test/renderWithQueryClient';
 import OrderDetail from './OrderDetail';
 import { confirmDelivery } from '@/lib/api/returns';
 import type { Order } from '@/lib/api/types';
@@ -23,7 +24,9 @@ const BASE = {
 } as unknown as Order;
 
 const renderOrder = (overrides?: Partial<Order>) =>
-  render(<OrderDetail order={{ ...BASE, ...overrides }} refundHref="/order/x/return" />);
+  renderWithQueryClient(
+    <OrderDetail order={{ ...BASE, ...overrides }} refundHref="/order/x/return" />,
+  );
 
 beforeEach(() => {
   vi.mocked(confirmDelivery).mockReset();
@@ -181,7 +184,7 @@ describe('OrderDetail returns actions', () => {
     fireEvent.click(confirmButton);
     fireEvent.click(confirmButton);
 
-    expect(confirmDelivery).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(confirmDelivery).toHaveBeenCalledTimes(1));
     finish({ ...BASE, status: 'completed', completedBy: 'buyer' });
     await waitFor(() => expect(screen.getByText('You confirmed delivery.')).toBeInTheDocument());
     expect(confirmDelivery).toHaveBeenCalledTimes(1);

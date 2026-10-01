@@ -1,9 +1,10 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Catalog from './CatalogPage';
 import { fetchCatalogConfig, fetchProducts, type ClientProduct } from '@/lib/api/catalog';
 import type { CatalogConfig } from '@/lib/api/types';
+import { renderWithQueryClient } from '@/test/renderWithQueryClient';
 
 let routerQuery = {};
 
@@ -53,7 +54,7 @@ describe('Shop catalog', () => {
       nextCursor: null,
     });
 
-    render(<Catalog />);
+    renderWithQueryClient(<Catalog />);
 
     await screen.findByText('Fox Boots');
 
@@ -69,7 +70,7 @@ describe('Shop catalog', () => {
       nextCursor: null,
     });
 
-    render(<Catalog />);
+    renderWithQueryClient(<Catalog />);
     await screen.findByText('Fox Boots');
     expect(fetchProducts).toHaveBeenCalledTimes(1);
 
@@ -89,7 +90,7 @@ describe('Shop catalog', () => {
       .mockResolvedValueOnce({ items: [makeProduct('1', 'Product A')], nextCursor: 'cursor-1' })
       .mockResolvedValueOnce({ items: [makeProduct('2', 'Product B')], nextCursor: null });
 
-    render(<Catalog />);
+    renderWithQueryClient(<Catalog />);
     await screen.findByText('Product A');
 
     const loadMoreButton = screen.getByRole('button', { name: 'Load more' });
@@ -106,7 +107,7 @@ describe('Shop catalog', () => {
   it('shows a friendly message when the product fetch fails', async () => {
     vi.mocked(fetchProducts).mockRejectedValue({ name: 'ApiProblemError', status: 500, code: '' });
 
-    render(<Catalog />);
+    renderWithQueryClient(<Catalog />);
 
     expect(
       await screen.findByText('Something went wrong on our side. Please try again in a moment.'),

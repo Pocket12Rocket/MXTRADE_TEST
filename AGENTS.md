@@ -101,7 +101,7 @@ src/
     product/                ProductPage: detail and view tracking
     cart/                   cartContext (cart in localStorage, keyed per user id), CartDrawer
     checkout/               CheckoutPage (quote, order, PayFast form post), OrderConfirmationPage
-                            (PayFast return and cancel), useOrderStatusPoll
+                            (PayFast return and cancel)
     orders/                 OrdersPage, OrderDetailPage, ReturnOrderPage (signed in),
                             GuestOrderPage, GuestReturnOrderPage (email link, ?token=),
                             OrderDetail, RefundRequestForm, PrivateImage, usePrivateImageUrl

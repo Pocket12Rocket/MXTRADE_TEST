@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
+import { renderWithQueryClient } from '@/test/renderWithQueryClient';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import GuestOrderPage from './GuestOrderPage';
 import { getOrder, getOrderToken, storeOrderToken } from '@/lib/api/orders';
@@ -54,7 +55,7 @@ describe('GuestOrderPage', () => {
     routerState.query = { orderId: order.id, token: 'tok-1' };
     vi.mocked(getOrder).mockResolvedValue(order);
 
-    render(<GuestOrderPage />);
+    renderWithQueryClient(<GuestOrderPage />);
 
     expect(await screen.findByText('Trail Shoes')).toBeInTheDocument();
     expect(storeOrderToken).toHaveBeenCalledWith(order.id, 'tok-1');
@@ -71,7 +72,7 @@ describe('GuestOrderPage', () => {
     vi.mocked(getOrderToken).mockReturnValue('stored');
     vi.mocked(getOrder).mockResolvedValue(order);
 
-    render(<GuestOrderPage />);
+    renderWithQueryClient(<GuestOrderPage />);
 
     expect(await screen.findByText('Trail Shoes')).toBeInTheDocument();
     expect(getOrder).toHaveBeenCalledWith(order.id, 'stored');
@@ -82,14 +83,14 @@ describe('GuestOrderPage', () => {
     authState.user = { id: 'u1' };
     vi.mocked(getOrder).mockResolvedValue(order);
 
-    render(<GuestOrderPage />);
+    renderWithQueryClient(<GuestOrderPage />);
 
     expect(await screen.findByText('Trail Shoes')).toBeInTheDocument();
     expect(getOrder).toHaveBeenCalledWith(order.id, '');
   });
 
   it('asks a visitor with no token and no session to open the emailed link', async () => {
-    render(<GuestOrderPage />);
+    renderWithQueryClient(<GuestOrderPage />);
 
     expect(
       await screen.findByText('Open this order from the link in your email'),

@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
 import useAuth from '@/lib/useAuth';
-import { listMyOrders, orderStatusColour } from '@/lib/api/orders';
+import { orderStatusColour } from '@/lib/api/orders';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useMyOrders } from '@/lib/queries/orders';
+import { flattenPages } from '@/lib/queries/pagination';
 import { toUserMessage } from '@/lib/userMessage';
 import { useSingleFlight } from '@/lib/useSingleFlight';
-import type { OrderSummary } from '@/lib/api/types';
 
 const ORDERS_PAGE_SIZE = 20;
 
@@ -17,63 +17,8 @@ const ORDERS_PAGE_SIZE = 20;
  */
 export default function OrdersPage() {
   const { user, loading } = useAuth();
-  const [orders, setOrders] = useState<OrderSummary[]>([]);
-  const [ordersLoading, setOrdersLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [ordersCursor, setOrdersCursor] = useState<string | null>(null);
-  const [hasMoreOrders, setHasMoreOrders] = useState(false);
-  const { run: runLoadMore, pending: isLoadingMoreOrders } = useSingleFlight();
 
-  useEffect(() => {
-    if (!loading && user) {
-      listMyOrders({ limit: ORDERS_PAGE_SIZE })
-        .then(({ items, nextCursor }) => {
-          setOrders(items);
-          setOrdersCursor(nextCursor);
-          setHasMoreOrders(Boolean(nextCursor));
-        })
-        .catch((err) => {
-          setError(toUserMessage(err, "We couldn't load your orders right now. Please try again."));
-        })
-        .finally(() => setOrdersLoading(false));
-    } else {
-      setOrdersLoading(false);
-    }
-  }, [user, loading]);
-
-  /**
-   * Why: Fetches the next page of the buyer's orders using the `nextCursor` of the previous page.
-   * @returns Resolves once the next page has been appended to state.
-   * @example
-   * <button onClick={handleLoadMoreOrders}>Load more orders</button>
-   */
-  const handleLoadMoreOrders = async (): Promise<void> => {
-    if (!ordersCursor || !user) {
-      return;
-    }
-
-    try {
-      await runLoadMore(async () => {
-        const { items, nextCursor } = await listMyOrders({
-          cursor: ordersCursor,
-          limit: ORDERS_PAGE_SIZE,
-        });
-        setOrders((currentOrders) => [...currentOrders, ...items]);
-        setOrdersCursor(nextCursor);
-        setHasMoreOrders(Boolean(nextCursor));
-      });
-    } catch (err) {
-      setError(toUserMessage(err, "We couldn't load more orders right now. Please try again."));
-    }
-  };
-
-  if (loading || ordersLoading) {
-    return (
-      <div className="flex justify-center items-center min-h-[40vh]">
-        <p>Loading orders...</p>
-      </div>
-    );
-  }
+  if (loading) return <OrdersLoading />;
 
   if (!user) {
     return (
@@ -94,10 +39,46 @@ export default function OrdersPage() {
     );
   }
 
+  return <OrdersList />;
+}
+
+/**
+ * Why: Shows the same loading line for the sign-in check and the first page of orders.
+ * @returns The loading state.
+ */
+function OrdersLoading() {
+  return (
+    <div className="flex justify-center items-center min-h-[40vh]">
+      <p>Loading orders...</p>
+    </div>
+  );
+}
+
+/**
+ * Why: Only a signed-in buyer's list is requested, so the query lives in its own component that
+ * mounts after the sign-in check.
+ * @returns The buyer's orders with a "Load more" control.
+ */
+function OrdersList() {
+  const { data, isPending, isError, error, isFetchNextPageError, hasNextPage, fetchNextPage } =
+    useMyOrders(ORDERS_PAGE_SIZE);
+  const { run: runLoadMore, pending: isLoadingMoreOrders } = useSingleFlight();
+  const orders = flattenPages(data);
+  const errorMessage = isError
+    ? toUserMessage(
+        error,
+        isFetchNextPageError
+          ? "We couldn't load more orders right now. Please try again."
+          : "We couldn't load your orders right now. Please try again.",
+      )
+    : '';
+
+  if (isPending) return <OrdersLoading />;
+
   return (
     <div className="max-w-3xl mx-auto mt-8 p-4 sm:p-8 rounded-3xl border border-slate-200 bg-white shadow-sm">
       <h1 className="text-2xl font-semibold mb-6">My Orders</h1>
-      {error && <p className="text-red-600 mb-4">{error}</p>}
+      {errorMessage && <p className="text-red-600 mb-4">{errorMessage}</p>}
       {orders.length === 0 ? (
         <p className="text-slate-600">No orders found for your account.</p>
       ) : (
@@ -178,11 +159,11 @@ export default function OrdersPage() {
           })}
         </ul>
       )}
-      {hasMoreOrders ? (
+      {hasNextPage ? (
         <div className="mt-6 flex justify-center">
           <button
             type="button"
-            onClick={handleLoadMoreOrders}
+            onClick={() => runLoadMore(() => fetchNextPage())}
             disabled={isLoadingMoreOrders}
             className="rounded-full border border-slate-300 bg-white px-6 py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 shadow-sm hover:border-[#00CED1] hover:text-[#00C5CD] disabled:cursor-not-allowed disabled:opacity-60"
           >

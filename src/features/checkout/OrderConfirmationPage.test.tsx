@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
+import { renderWithQueryClient } from '@/test/renderWithQueryClient';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import OrderConfirmationPage from './OrderConfirmationPage';
 import { cancelCheckout, getCheckout } from '@/lib/api/checkouts';
@@ -47,7 +48,7 @@ describe('OrderConfirmationPage', () => {
   it('stores the emailed token, strips it from the URL and loads the checkout with it', async () => {
     routerState.query = { checkoutId: 'c1', token: 'tok-1' };
 
-    render(<OrderConfirmationPage />);
+    renderWithQueryClient(<OrderConfirmationPage />);
 
     expect(await screen.findByText(/Ann: Paid/)).toBeInTheDocument();
     expect(getCheckout).toHaveBeenCalledWith('c1', 'tok-1');
@@ -66,7 +67,7 @@ describe('OrderConfirmationPage', () => {
   it('reads the stored token on the PayFast return, with nothing to strip', async () => {
     sessionStorage.setItem('fastsport_order_token_c1', 'stored');
 
-    render(<OrderConfirmationPage />);
+    renderWithQueryClient(<OrderConfirmationPage />);
 
     expect(await screen.findByText(/Ann: Paid/)).toBeInTheDocument();
     expect(getCheckout).toHaveBeenCalledWith('c1', 'stored');
@@ -74,7 +75,7 @@ describe('OrderConfirmationPage', () => {
   });
 
   it('shows the checkout as under review when any order is late, and empties the cart', async () => {
-    render(<OrderConfirmationPage />);
+    renderWithQueryClient(<OrderConfirmationPage />);
 
     expect(await screen.findByText(/Bob: Payment under review/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Payment under review' })).toBeInTheDocument();
@@ -87,7 +88,7 @@ describe('OrderConfirmationPage', () => {
       orders: [checkout.orders[0]],
     } as Checkout);
 
-    render(<OrderConfirmationPage />);
+    renderWithQueryClient(<OrderConfirmationPage />);
 
     expect(await screen.findByText(/Ann: Paid/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Order placed!' })).toBeInTheDocument();
@@ -97,7 +98,7 @@ describe('OrderConfirmationPage', () => {
     sessionStorage.setItem('fastsport_order_token_c1', 'stored');
     routerState.query = { checkoutId: 'c1', payment: 'cancelled' };
 
-    render(<OrderConfirmationPage />);
+    renderWithQueryClient(<OrderConfirmationPage />);
 
     await waitFor(() => expect(cancelCheckout).toHaveBeenCalledWith('c1', 'stored'));
     expect(getCheckout).not.toHaveBeenCalled();
@@ -107,7 +108,7 @@ describe('OrderConfirmationPage', () => {
     sessionStorage.setItem('fastsport_order_token_c1', 'stored');
     routerState.query = { checkoutId: 'c1', payment: 'cancelled' };
 
-    render(
+    renderWithQueryClient(
       <StrictMode>
         <OrderConfirmationPage />
       </StrictMode>,

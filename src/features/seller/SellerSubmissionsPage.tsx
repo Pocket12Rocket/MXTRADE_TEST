@@ -3,22 +3,24 @@ import Accordion from '@mui/material/Accordion';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useRouter } from 'next/router';
 import useAuth from '@/lib/useAuth';
-import { SERVICE_FEE_WAIVED_LABEL, fetchCatalogConfig } from '@/lib/api/catalog';
+import { SERVICE_FEE_WAIVED_LABEL } from '@/lib/api/catalog';
+import { type SellerListing, toSubmissionInput } from '@/lib/api/submissions';
+import type { CatalogConfig } from '@/lib/api/types';
+import { useCatalogConfig } from '@/lib/queries/catalog';
+import { flattenPages } from '@/lib/queries/pagination';
 import {
-  type SellerListing,
-  deleteSubmission,
-  editLiveProduct,
-  fetchProductForEdit,
-  listMyProducts,
-  listMySubmissions,
-  removeMyProduct,
-  toSubmissionInput,
-  updateSubmission,
-} from '@/lib/api/submissions';
+  useDeleteSubmission,
+  useEditLiveProduct,
+  useMyProduct,
+  useMyProducts,
+  useMySubmissions,
+  useRemoveMyProduct,
+  useUpdateSubmission,
+} from '@/lib/queries/submissions';
 import { toUserMessage } from '@/lib/userMessage';
 import { useSingleFlight } from '@/lib/useSingleFlight';
 import ImageCropDialog from '@/components/ImageCropDialog';
@@ -35,7 +37,6 @@ import {
   type ListingFormErrors,
   type ListingFormState,
 } from '@/lib/listingForm';
-import type { CatalogConfig } from '@/lib/api/types';
 
 const PAGE_SIZE = 25;
 
@@ -119,102 +120,116 @@ function getDetailRows(listing: SellerListing): Array<[string, string]> {
  * // Rendered by Next.js at /seller/submissions
  */
 export default function SellerSubmissions() {
-  const router = useRouter();
   const { user, profile, loading } = useAuth();
+
+  if (loading) {
+    return <p>Loading seller data...</p>;
+  }
+
+  if (!user) {
+    return (
+      <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+        <p className="text-slate-600">Please sign in to view your submissions.</p>
+        <Link
+          href="/login"
+          className="mt-4 inline-flex rounded-full bg-slate-900 px-5 py-3 text-white hover:bg-slate-800"
+        >
+          Go to login
+        </Link>
+      </div>
+    );
+  }
+
+  if (!profile?.canSell) {
+    return (
+      <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+        <p className="text-slate-600">
+          Selling is not enabled on your account yet, so there are no seller submissions to manage.
+        </p>
+        <Link
+          href="/profile"
+          className="mt-4 inline-flex rounded-full bg-slate-900 px-5 py-3 text-white hover:bg-slate-800"
+        >
+          Go to profile
+        </Link>
+      </div>
+    );
+  }
+
+  return <SellerListings />;
+}
+
+/**
+ * Why: Only a seller who can sell has listings to load, so the queries live in their own
+ * component that mounts after the sign-in and seller checks.
+ * @returns The listings table with its edit and details dialogs.
+ */
+function SellerListings() {
+  const router = useRouter();
   const images = useListingImages();
-  const [config, setConfig] = useState<CatalogConfig | null>(null);
-  const [submissions, setSubmissions] = useState<SellerListing[]>([]);
-  const [products, setProducts] = useState<SellerListing[]>([]);
-  const [submissionsCursor, setSubmissionsCursor] = useState<string | null>(null);
-  const [productsCursor, setProductsCursor] = useState<string | null>(null);
+  const { data: config, error: configError } = useCatalogConfig();
+  const submissionsQuery = useMySubmissions(undefined, PAGE_SIZE);
+  const productsQuery = useMyProducts(PAGE_SIZE);
+  const submissions = useMemo(() => flattenPages(submissionsQuery.data), [submissionsQuery.data]);
+  const products = useMemo(() => flattenPages(productsQuery.data), [productsQuery.data]);
+  const deleteSubmission = useDeleteSubmission();
+  const removeMyProduct = useRemoveMyProduct();
+  const updateSubmission = useUpdateSubmission();
+  const editLiveProduct = useEditLiveProduct();
   const { run: runLoadMore, pending: isLoadingMore } = useSingleFlight();
   const { run: runDelete, pending: isDeleting } = useSingleFlight();
-  const { run: runOpenEdit, pending: isPreparingEdit } = useSingleFlight();
-  const [error, setError] = useState('');
+  const [actionError, setError] = useState('');
   const [deletingId, setDeletingId] = useState('');
-  const [preparingEditId, setPreparingEditId] = useState('');
-  const [selectedSubmission, setSelectedSubmission] = useState<SellerListing | null>(null);
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState('');
+  const selectedSubmission = submissions.find((item) => item.id === selectedSubmissionId) ?? null;
   const [editing, setEditing] = useState<EditingListing | null>(null);
   const [editForm, setEditForm] = useState<ListingFormState | null>(null);
   const [editFieldErrors, setEditFieldErrors] = useState<ListingFormErrors>({});
   const [editStatus, setEditStatus] = useState('');
   const [editShowProfileLink, setEditShowProfileLink] = useState(false);
   const { run: runSaveEdit, pending: isSavingEdit } = useSingleFlight();
+  // Why: A live product's list row lacks its description, sizes, fitment and image ids, so the
+  // full product is fetched when the seller opens its edit dialog.
+  const [productEditId, setProductEditId] = useState('');
+  const productToEdit = useMyProduct(productEditId);
+  const preparingEditId =
+    productEditId && !editing && productToEdit.isFetching ? productEditId : '';
+  const isPreparingEdit = Boolean(preparingEditId);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    fetchCatalogConfig()
-      .then((result) => {
-        if (isMounted) setConfig(result);
-      })
-      .catch((err) => {
-        if (isMounted)
-          setError(
-            toUserMessage(err, "We couldn't load the listing options right now. Please try again."),
-          );
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  /**
-   * Why: Loads the first page of the seller's submissions and products (used on mount and after
-   * every change, so the table always shows what the backend holds).
-   * @returns The freshly loaded submissions page (for refreshing an open dialog).
-   * @example
-   * const { items } = await loadFirstPages();
-   */
-  const loadFirstPages = async () => {
-    const [submissionPage, productPage] = await Promise.all([
-      listMySubmissions({ limit: PAGE_SIZE }),
-      listMyProducts({ limit: PAGE_SIZE }),
-    ]);
-    setSubmissions(submissionPage.items);
-    setSubmissionsCursor(submissionPage.nextCursor);
-    setProducts(productPage.items);
-    setProductsCursor(productPage.nextCursor);
-    return submissionPage;
-  };
-
-  useEffect(() => {
-    if (!loading && user && profile?.canSell) {
-      loadFirstPages().catch((err) => {
-        setError(toUserMessage(err, "We couldn't load your listings right now. Please try again."));
-      });
-    }
-  }, [loading, user, profile?.canSell]);
+  let loadError = '';
+  if (configError) {
+    loadError = toUserMessage(
+      configError,
+      "We couldn't load the listing options right now. Please try again.",
+    );
+  } else if (submissionsQuery.error || productsQuery.error) {
+    loadError = toUserMessage(
+      submissionsQuery.error ?? productsQuery.error,
+      submissionsQuery.isFetchNextPageError || productsQuery.isFetchNextPageError
+        ? "We couldn't load more listings right now. Please try again."
+        : "We couldn't load your listings right now. Please try again.",
+    );
+  } else if (productEditId && productToEdit.isError) {
+    loadError = toUserMessage(
+      productToEdit.error,
+      "We couldn't open that listing for editing right now. Please try again.",
+    );
+  }
+  const error = actionError || loadError;
 
   /**
-   * Why: Cursor pagination: appends the next page of whichever lists still have more.
+   * Why: Cursor pagination: fetches the next page of whichever lists still have more.
    * @example
    * <button onClick={handleLoadMore}>Load more</button>
    */
-  const handleLoadMore = async () => {
+  const handleLoadMore = () => {
     setError('');
-
-    try {
-      await runLoadMore(async () => {
-        const [submissionPage, productPage] = await Promise.all([
-          submissionsCursor
-            ? listMySubmissions({ cursor: submissionsCursor, limit: PAGE_SIZE })
-            : null,
-          productsCursor ? listMyProducts({ cursor: productsCursor, limit: PAGE_SIZE }) : null,
-        ]);
-        if (submissionPage) {
-          setSubmissions((prev) => [...prev, ...submissionPage.items]);
-          setSubmissionsCursor(submissionPage.nextCursor);
-        }
-        if (productPage) {
-          setProducts((prev) => [...prev, ...productPage.items]);
-          setProductsCursor(productPage.nextCursor);
-        }
-      });
-    } catch (err) {
-      setError(toUserMessage(err, "We couldn't load more listings right now. Please try again."));
-    }
+    return runLoadMore(() =>
+      Promise.all([
+        submissionsQuery.hasNextPage ? submissionsQuery.fetchNextPage() : null,
+        productsQuery.hasNextPage ? productsQuery.fetchNextPage() : null,
+      ]),
+    );
   };
 
   const listings = useMemo<ListingRow[]>(() => {
@@ -271,15 +286,13 @@ export default function SellerSubmissions() {
 
       try {
         if (listing.listingType === 'submission') {
-          await deleteSubmission(listing.id);
-          setSubmissions((prev) => prev.filter((item) => item.id !== listing.id));
+          await deleteSubmission.mutateAsync(listing.id);
         } else {
-          await removeMyProduct(listing.id);
-          setProducts((prev) => prev.filter((item) => item.id !== listing.id));
+          await removeMyProduct.mutateAsync(listing.id);
         }
 
-        if (selectedSubmission?.id === listing.id) {
-          setSelectedSubmission(null);
+        if (selectedSubmissionId === listing.id) {
+          setSelectedSubmissionId('');
         }
       } catch (err) {
         setError(
@@ -303,50 +316,59 @@ export default function SellerSubmissions() {
     }
 
     if (listing.viewType === 'modal') {
-      setSelectedSubmission(listing.item);
+      setSelectedSubmissionId(listing.item.id);
     }
   };
 
   /**
-   * Why: Opens the edit dialog prefilled from the listing. A live product's list row lacks its
-   * description, sizes, fitment and image ids, so those are fetched first.
+   * Why: Opens the edit dialog prefilled from the listing.
+   * @param source - The listing to edit: a submission, or the full live product.
+   * @param kind - Whether it is a submission or a live product.
+   * @param catalogConfig - The listing options the form is built from.
+   * @example
+   * beginEdit(listing.item, 'submission', config);
+   */
+  const beginEdit = (
+    source: SellerListing,
+    kind: EditingListing['kind'],
+    catalogConfig: CatalogConfig,
+  ) => {
+    setProductEditId('');
+    setEditing({ listing: source, kind });
+    setEditForm(formFromListing(source, catalogConfig));
+    setEditFieldErrors({});
+    setEditStatus('');
+    setEditShowProfileLink(false);
+    images.reset(source.imageItems);
+  };
+
+  /**
+   * Why: A submission opens at once; a live product asks for its full details first.
    * @param listing - A row from `listings`.
    * @example
    * <button onClick={() => handleOpenEdit(listing)}>Edit</button>
    */
-  const handleOpenEdit = (listing: ListingRow) =>
-    runOpenEdit(async () => {
-      if (!listing.canEdit || !config) {
-        return;
-      }
+  const handleOpenEdit = (listing: ListingRow) => {
+    if (!listing.canEdit || !config) {
+      return;
+    }
 
-      setError('');
-      let source = listing.item;
+    setError('');
 
-      if (listing.listingType === 'product') {
-        setPreparingEditId(listing.id);
-        try {
-          source = await fetchProductForEdit(listing.item.id);
-        } catch (err) {
-          setError(
-            toUserMessage(
-              err,
-              "We couldn't open that listing for editing right now. Please try again.",
-            ),
-          );
-          return;
-        } finally {
-          setPreparingEditId('');
-        }
-      }
+    if (listing.listingType === 'product') {
+      if (productEditId !== listing.id) setProductEditId(listing.id);
+      else if (productToEdit.isError) void productToEdit.refetch();
+      return;
+    }
 
-      setEditing({ listing: source, kind: listing.listingType });
-      setEditForm(formFromListing(source, config));
-      setEditFieldErrors({});
-      setEditStatus('');
-      setEditShowProfileLink(false);
-      images.reset(source.imageItems);
-    });
+    beginEdit(listing.item, 'submission', config);
+  };
+
+  // Why: The product's details arrive after the click, so the dialog opens during render once they
+  // are in, instead of from an effect.
+  if (productEditId && config && !editing && productToEdit.data && !productToEdit.isFetching) {
+    beginEdit(productToEdit.data, 'product', config);
+  }
 
   /**
    * Why: Closes the edit dialog and drops its in-progress state.
@@ -403,15 +425,11 @@ export default function SellerSubmissions() {
           files: images.files,
         };
         if (editing.kind === 'product') {
-          await editLiveProduct(editing.listing.id, payload);
+          await editLiveProduct.mutateAsync({ productId: editing.listing.id, ...payload });
         } else {
-          await updateSubmission(editing.listing.id, payload);
+          await updateSubmission.mutateAsync({ id: editing.listing.id, ...payload });
         }
 
-        const refreshed = await loadFirstPages();
-        setSelectedSubmission((prev) =>
-          prev ? refreshed.items.find((item) => item.id === prev.id) || null : prev,
-        );
         handleCloseEdit();
       });
     } catch (err) {
@@ -424,40 +442,6 @@ export default function SellerSubmissions() {
       setEditShowProfileLink(failure.showProfileLink);
     }
   };
-
-  if (loading) {
-    return <p>Loading seller data...</p>;
-  }
-
-  if (!user) {
-    return (
-      <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-        <p className="text-slate-600">Please sign in to view your submissions.</p>
-        <Link
-          href="/login"
-          className="mt-4 inline-flex rounded-full bg-slate-900 px-5 py-3 text-white hover:bg-slate-800"
-        >
-          Go to login
-        </Link>
-      </div>
-    );
-  }
-
-  if (!profile?.canSell) {
-    return (
-      <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-        <p className="text-slate-600">
-          Selling is not enabled on your account yet, so there are no seller submissions to manage.
-        </p>
-        <Link
-          href="/profile"
-          className="mt-4 inline-flex rounded-full bg-slate-900 px-5 py-3 text-white hover:bg-slate-800"
-        >
-          Go to profile
-        </Link>
-      </div>
-    );
-  }
 
   const isProductEdit = editing?.kind === 'product';
   const isRejectedResubmit =
@@ -614,7 +598,7 @@ export default function SellerSubmissions() {
               </div>
             )}
 
-            {submissionsCursor || productsCursor ? (
+            {submissionsQuery.hasNextPage || productsQuery.hasNextPage ? (
               <button
                 type="button"
                 onClick={handleLoadMore}
@@ -642,7 +626,7 @@ export default function SellerSubmissions() {
               </div>
               <button
                 type="button"
-                onClick={() => setSelectedSubmission(null)}
+                onClick={() => setSelectedSubmissionId('')}
                 className="rounded-full border border-slate-300 px-4 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]"
               >
                 Close
