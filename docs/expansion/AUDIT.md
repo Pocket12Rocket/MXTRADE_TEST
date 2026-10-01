@@ -90,6 +90,15 @@ The backend's cross-repo plan is approved. The Recommended option is built for T
 | 3 | **D-25** one order per seller under one checkout, paid with one PayFast payment | Checkout rewrite against the draft (`/checkouts`), grouped by seller | Contract draft first, then build plus money-path integration tests | Per-seller orders, `checkoutId`, DuplicatePayment changes |
 | 4 | **D-26** returns: the `completed` status (buyer confirms delivery, or automatically after 48 hours), problem refunds within 48 hours, never arrived from 10 business days, payouts once complete, fee-free resale, refund paid within 48 hours | "Confirm delivery" button, never-arrived option, `completed` status | Status, confirm, job, holiday calendar, waiver, payBy | Complete column, waiver on approve, holidays screen, overdue badges |
 
+**Client status (2026-10-01): phase 2 implemented and reconciled with the built backend.**
+
+- D-22 and D-23 (refund type picker and bank details): `e61686a`.
+- D-27 (service fee on listings, checkout and orders): `3b6977a`.
+- D-25 (per-seller checkouts, guest token from the email link): `70f6772` and `ab9fced`.
+- D-26 (confirm delivery, Complete status, report not arrived, refund rules, fee-waived label): `70f6772` and `a16ce7f`.
+- JSDoc rule applied across the repo: `b6b1b0b`.
+- 157 unit tests pass and the build passes. **The browser test pass hasn't started.**
+
 Also pending: return-policy and terms pages, once business supplies the copy (question j; draft at `FastSport_BackEnd/docs/RETURN_POLICY.md`).
 
 ## Open questions and waiting items
