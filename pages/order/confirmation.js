@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
-import { cancelOrder, getOrderToken, getPaymentStepCopy } from '../../lib/api/orders';
+import { getOrderToken, getPaymentStepCopy } from '../../lib/api/orders';
+import { cancelCheckout } from '../../lib/api/checkouts';
 import { reportError, toUserMessage } from '../../lib/userMessage';
 import { useOrderStatusPoll } from '../../lib/useOrderStatusPoll';
 import useAuth from '../../lib/useAuth';
@@ -10,46 +11,49 @@ import { useCart } from '../../lib/cartContext';
 const FAILED_STATUSES = ['payment_failed', 'cancelled'];
 
 /**
- * Why: Where PayFast returns the buyer. On a cancelled payment it releases the stock hold with the
- * stored order token. Otherwise it polls the order (`useOrderStatusPoll`) because PayFast confirms
+ * Why: Where PayFast returns the buyer after paying for a checkout (one payment, one order per
+ * seller, D-25). On a cancelled payment it releases the stock hold of the whole checkout with the
+ * stored token. Otherwise it polls the checkout (`useOrderStatusPoll`) because PayFast confirms
  * payment through a server-to-server notification that often arrives a few seconds after the buyer
- * lands here, so the order may briefly still be `pending_payment`. Errors go through `toUserMessage()`.
+ * lands here, so the checkout may briefly still be `pending_payment`. Once paid it lists each
+ * seller's order with a link to it. Errors go through `toUserMessage()`.
  * @returns {JSX.Element} The confirming, confirmed, failed, late-payment or cancelled state.
  * @example
- * // Rendered at /order/confirmation?orderId=<uuid>&payment=cancelled
+ * // Rendered at /order/confirmation?checkoutId=<uuid>&payment=cancelled
  * <OrderConfirmationPage />
  */
 export default function OrderConfirmationPage() {
   const router = useRouter();
   const { query } = router;
   const { user } = useAuth();
-  const orderId = typeof query.orderId === 'string' ? query.orderId : '';
+  const checkoutId = typeof query.checkoutId === 'string' ? query.checkoutId : '';
   const isCancelled = query.payment === 'cancelled';
   const [cancelError, setCancelError] = useState('');
-  const token = router.isReady && orderId ? getOrderToken(orderId) : '';
-  const { order, error: pollError, polling, timedOut } = useOrderStatusPoll({
-    orderId,
+  const token = router.isReady && checkoutId ? getOrderToken(checkoutId) : '';
+  const { checkout, error: pollError, polling, timedOut } = useOrderStatusPoll({
+    checkoutId,
     token,
     enabled: router.isReady && !isCancelled,
   });
   const error = cancelError || pollError;
-  const status = order?.status;
+  const status = checkout?.status;
+  const orders = checkout?.orders || [];
+  const isLate = orders.some((order) => order.status === 'late_payment');
   const { clearCart } = useCart();
 
-  // Why: empty the cart only once payment is confirmed (paid, or a late payment the team will
-  // resolve), so a cancelled or failed PayFast attempt keeps the buyer's items.
+  // Why: empty the cart only once payment is confirmed (checkout paid, or a late payment the team
+  // will resolve), so a cancelled or failed PayFast attempt keeps the buyer's items.
   useEffect(() => {
-    if (status === 'paid' || status === 'late_payment') {
+    if (status === 'paid' || isLate) {
       clearCart();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status]);
+  }, [status, isLate]);
   const isFailed = isCancelled || FAILED_STATUSES.includes(status);
-  const isLate = status === 'late_payment';
-  const isConfirming = !isCancelled && !error && Boolean(orderId) && (!order || (status === 'pending_payment' && polling));
+  const isConfirming = !isCancelled && !error && Boolean(checkoutId) && (!checkout || (status === 'pending_payment' && polling));
   const stillPending = !isCancelled && status === 'pending_payment' && timedOut;
   const isAmber = isFailed || isConfirming || isLate || stillPending;
-  const orderHref = user ? `/profile/orders/${orderId}` : `/order/${orderId}`;
+  const orderHref = (orderId) => (user ? `/profile/orders/${orderId}` : `/order/${orderId}`);
   const lateCopy = getPaymentStepCopy('late_payment');
 
   let heading = 'Order placed!';
@@ -60,19 +64,19 @@ export default function OrderConfirmationPage() {
   else if (stillPending) heading = 'Payment still being confirmed';
 
   useEffect(() => {
-    if (!router.isReady || !orderId || !isCancelled) {
+    if (!router.isReady || !checkoutId || !isCancelled) {
       return;
     }
 
-    cancelOrder(orderId, getOrderToken(orderId)).catch((err) => {
-      // A cancel that hits an order that is no longer pending payment is harmless to the buyer.
+    cancelCheckout(checkoutId, getOrderToken(checkoutId)).catch((err) => {
+      // A cancel that hits a checkout that is no longer pending payment is harmless to the buyer.
       if (err?.code === 'ORDER_NOT_PAYABLE') {
         return;
       }
       reportError('order-confirmation', err);
       setCancelError(toUserMessage(err, "We couldn't load your order details. Please try again."));
     });
-  }, [router.isReady, isCancelled, orderId]);
+  }, [router.isReady, isCancelled, checkoutId]);
 
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 px-4 text-center">
@@ -87,21 +91,26 @@ export default function OrderConfirmationPage() {
         {!isCancelled && isFailed ? <p className="mt-3 text-sm text-slate-600">Your payment did not go through and you have not been charged. You can return to checkout to try again.</p> : null}
         {isLate ? <p className="mt-3 text-sm text-slate-600">{lateCopy.sublabel}</p> : null}
         {stillPending ? <p className="mt-3 text-sm text-slate-600">Your payment is still being confirmed. We&apos;ll email you once it&apos;s done.</p> : null}
-        {order && !isCancelled && !isFailed && !isLate && !stillPending && !isConfirming ? <p className="mt-3 text-sm text-slate-600">Status: {order.statusLabel}</p> : null}
+        {checkout && !isCancelled && !isFailed && !isLate && !stillPending && !isConfirming ? <p className="mt-3 text-sm text-slate-600">Your payment was received.</p> : null}
         {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
-        {orderId ? (
-          <p className="mt-3 text-xs text-slate-400">Order reference: <span className="font-mono">{orderId}</span></p>
+        {checkoutId ? (
+          <p className="mt-3 text-xs text-slate-400">Checkout reference: <span className="font-mono">{checkoutId}</span></p>
+        ) : null}
+        {orders.length > 0 && !isFailed && !isConfirming ? (
+          <ul className="mt-4 space-y-2">
+            {orders.map((order) => (
+              <li key={order.id} className="text-sm text-slate-600">
+                {order.seller?.name}: {order.statusLabel}{' '}
+                <Link href={orderHref(order.id)} className="font-semibold text-slate-900 underline">View order</Link>
+              </li>
+            ))}
+          </ul>
         ) : null}
       </div>
       <div className="flex flex-col gap-3 sm:flex-row">
         {isFailed ? (
           <Link href="/checkout" className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800">
             Back to checkout
-          </Link>
-        ) : null}
-        {stillPending || isLate ? (
-          <Link href={orderHref} className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800">
-            View your order
           </Link>
         ) : null}
         <Link href="/shop" className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800">

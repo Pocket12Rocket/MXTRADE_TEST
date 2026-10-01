@@ -117,7 +117,8 @@ lib/
                             from the API shape to the page shape)
   api/profile.js, seller.js Profile (PATCH /me, photo) and seller application
   api/submissions.js        Seller submissions and products, multipart builder, toSellerListing()
-  api/orders.js             Checkout quote, orders, guest order tokens, PayFast form post, refunds
+  api/checkouts.js          Checkout quote (per seller), create, PayFast start, cancel, get (D-25)
+  api/orders.js             Orders, guest tokens (per checkout and order), PayFast form post, refunds
   api/contact.js            Contact form
   listingForm.js, useListingImages.js, useMarkupQuote.js   Shared listing form logic, photos, price preview
   AuthContext.js, useAuth.js  Shared session state from GET /me (user, profile, signOut, ...)

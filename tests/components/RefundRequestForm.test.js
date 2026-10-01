@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import RefundRequestForm, { validateRefund } from '../../components/RefundRequestForm';
 
-vi.mock('next/router', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+const routerState = { push: vi.fn(), query: {} };
+vi.mock('next/router', () => ({ useRouter: () => routerState }));
 vi.mock('../../lib/useAuth', () => ({ default: () => ({ user: { uid: 'u1' }, loading: false }) }));
 
 const BANK = { accountHolder: 'A Buyer', bankName: 'FNB', accountType: 'savings', branchCode: '250655', accountNumber: '62123456789' };
@@ -41,7 +42,10 @@ describe('validateRefund', () => {
 });
 
 describe('RefundRequestForm', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    routerState.query = {};
+  });
 
   it('has no type preselected, shows the bank note and blocks an invalid submit without calling the API', () => {
     const fetchMock = vi.fn();
@@ -58,14 +62,26 @@ describe('RefundRequestForm', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('shows the 20-character hint and optional photos only for the matching types', () => {
+  it('offers only the problem types, without never_arrived', () => {
+    render(<RefundRequestForm orderId="o1" signedInDoneHref="/a" guestDoneHref="/b" />);
+
+    expect(screen.getAllByRole('radio').map((radio) => radio.value)).toEqual(['damaged', 'not_as_described', 'other']);
+    expect(screen.queryByLabelText('Never arrived')).not.toBeInTheDocument();
+  });
+
+  it('shows the 20-character hint and required photos for other', () => {
     render(<RefundRequestForm orderId="o1" signedInDoneHref="/a" guestDoneHref="/b" />);
 
     fireEvent.click(screen.getByLabelText('Other issue'));
     expect(screen.getByText(/at least 20 characters/)).toBeInTheDocument();
     expect(screen.getByText(/Upload images \(required/)).toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByLabelText('Never arrived'));
+  it('preselects never_arrived from ?type=never_arrived, with optional photos', () => {
+    routerState.query = { type: 'never_arrived' };
+    render(<RefundRequestForm orderId="o1" signedInDoneHref="/a" guestDoneHref="/b" />);
+
+    expect(screen.getByLabelText('Never arrived')).toBeChecked();
     expect(screen.queryByText(/at least 20 characters/)).not.toBeInTheDocument();
     expect(screen.getByText(/Upload images \(optional/)).toBeInTheDocument();
   });

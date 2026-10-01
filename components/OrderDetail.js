@@ -1,6 +1,9 @@
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import PrivateImage from './PrivateImage';
-import { formatRands, getOrderToken, getPaymentStepCopy, getRefundStatusLabel, getRefundTypeLabel } from '../lib/api/orders';
+import { formatRands, getOrderToken, getPaymentStepCopy, getRefundStatusLabel, getRefundTypeLabel, NOT_ARRIVED_TYPE } from '../lib/api/orders';
+import { confirmDelivery } from '../lib/api/returns';
+import { toUserMessage } from '../lib/userMessage';
 
 function formatDate(ts) {
   if (!ts) return null;
@@ -37,11 +40,31 @@ const TIMELINE_STEPS = [
     sublabel: 'Your order has been delivered.',
     dateField: 'deliveredAt',
   },
+  {
+    key: 'completed',
+    label: 'Complete',
+    // sublabel comes from getCompleteStepSublabel(order.completedBy), applied in the component.
+    dateField: 'completedAt',
+  },
 ];
 
 /**
- * Why: Maps the order onto the 3-step timeline. Refund statuses only occur after delivery, so
- * they show the full timeline; statuses before payment show none.
+ * Why: The final timeline step says who completed the sale (D-26): the buyer confirming delivery,
+ * or the automatic completion 48 hours after delivery.
+ * @param {string|null} [completedBy] - `Order.completedBy`: 'buyer', 'auto' or null.
+ * @returns {string} Note for the Complete step.
+ * @example
+ * getCompleteStepSublabel('buyer'); // 'You confirmed delivery.'
+ */
+function getCompleteStepSublabel(completedBy) {
+  if (completedBy === 'buyer') return 'You confirmed delivery.';
+  if (completedBy === 'auto') return 'Completed automatically 48 hours after delivery.';
+  return "The sale completes when you confirm delivery, or automatically 48 hours after delivery.";
+}
+
+/**
+ * Why: Maps the order onto the 4-step timeline. Refund statuses only occur after delivery, so
+ * they show up to Delivered; statuses before payment show none.
  * @param {string} status - API order status.
  * @returns {number} Index of the last completed step, or -1.
  * @example
@@ -49,6 +72,7 @@ const TIMELINE_STEPS = [
  */
 function resolvedStepIndex(status) {
   const s = (status || '').toLowerCase();
+  if (s === 'completed') return 3;
   if (s === 'delivered' || s === 'refund_pending' || s === 'refunded') return 2;
   if (s === 'shipped') return 1;
   if (s === 'paid' || s === 'late_payment') return 0;
@@ -65,25 +89,54 @@ function CheckIcon() {
 
 /**
  * Why: One order-detail view shared by the signed-in buyer page and the guest (emailed link)
- * page, so the items, totals, timeline and refund block are never duplicated. The refund action
- * only shows when the API says `canRequestRefund`; refund photos are private URLs, so they use `PrivateImage`
+ * page, so the items, totals, timeline and refund block are never duplicated. The actions only
+ * show when the API says so: "Confirm delivery" (`canConfirmDelivery`), "Request refund" for
+ * problems (`canRequestRefund`) and "Report not arrived" (`canReportNotArrived`, D-26); refund photos are private URLs, so they use `PrivateImage`
 (a plain `<img>`, or a token fetch for guests), never `next/image`.
  * @param {object} props - Component props.
- * @param {object} props.order - Order from `GET /orders/{id}`.
- * @param {string} props.refundHref - Where the "Request refund" link goes (differs for guests).
+ * @param {object} props.order - Order from `GET /orders/{id}`; replaced locally by the response of
+ *   a successful delivery confirmation.
+ * @param {string} props.refundHref - Where the "Request refund" link goes (differs for guests);
+ *   "Report not arrived" links to it with `?type=never_arrived`.
  * @param {string} [props.backHref] - Optional back link target; omitted for guests.
  * @param {string} [props.backLabel] - Label for the back link.
  * @returns {JSX.Element} The order detail.
  * @example
  * <OrderDetail order={order} refundHref={`/profile/orders/${order.id}/return`} backHref="/profile/orders" backLabel="My Orders" />
  */
-export default function OrderDetail({ order, refundHref, backHref, backLabel }) {
+export default function OrderDetail({ order: initialOrder, refundHref, backHref, backLabel }) {
+  const [updatedOrder, setUpdatedOrder] = useState(null);
+  const [confirming, setConfirming] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  // Why: a fresh `order` prop from the page supersedes the locally updated copy.
+  useEffect(() => setUpdatedOrder(null), [initialOrder]);
+  const order = updatedOrder || initialOrder;
   const completedIdx = resolvedStepIndex(order.status);
   const refund = order.refund;
   const deadline = formatDate(order.refundDeadline);
   const timelineSteps = TIMELINE_STEPS.map((step) =>
-    step.key === 'purchased' ? { ...step, ...getPaymentStepCopy(order.status) } : step
+    step.key === 'purchased' ? { ...step, ...getPaymentStepCopy(order.status) }
+      : step.key === 'completed' ? { ...step, sublabel: getCompleteStepSublabel(order.completedBy) }
+        : step
   );
+  const reportableFrom = formatDate(order.notArrivedReportableFrom);
+  const reportTooEarly = !order.canReportNotArrived && reportableFrom
+    && new Date(order.notArrivedReportableFrom) > new Date()
+    && order.status !== 'delivered' && order.status !== 'completed';
+
+  const handleConfirmDelivery = async () => {
+    setError('');
+    setSubmitting(true);
+    try {
+      setUpdatedOrder(await confirmDelivery(order.id, getOrderToken(order.id)));
+      setConfirming(false);
+    } catch (err) {
+      setError(toUserMessage(err, "We couldn't confirm delivery. Please try again."));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
@@ -240,7 +293,60 @@ export default function OrderDetail({ order, refundHref, backHref, backLabel }) 
         </div>
       )}
 
-      {/* Refund CTA, only when the API says the order can be refunded */}
+      {/* Confirm delivery, only when the API says the buyer can complete the sale */}
+      {order.canConfirmDelivery && (
+        <div className="flex flex-col items-end gap-2">
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          {confirming ? (
+            <>
+              <p className="text-sm text-slate-700">Confirming means you&apos;re happy with the item. Problem refunds are no longer possible after this.</p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirming(false)}
+                  disabled={submitting}
+                  className="rounded-full border border-slate-300 bg-white px-6 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelivery}
+                  disabled={submitting}
+                  className="rounded-full bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {submitting ? 'Confirming...' : 'Yes, confirm delivery'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className="rounded-full bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-700"
+            >
+              Confirm delivery
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Report not arrived, or when it becomes available */}
+      {order.canReportNotArrived && (
+        <div className="flex flex-col items-end gap-2">
+          <Link
+            href={`${refundHref}?type=${NOT_ARRIVED_TYPE}`}
+            className="rounded-full bg-rose-600 px-6 py-3 text-sm font-semibold text-white hover:bg-rose-700"
+          >
+            Report not arrived
+          </Link>
+        </div>
+      )}
+      {reportTooEarly && (
+        <p className="text-right text-xs text-slate-500">You can report a missing parcel from {reportableFrom}</p>
+      )}
+
+      {/* Refund CTA, only when the API says a problem refund is possible */}
       {order.canRequestRefund && (
         <div className="flex flex-col items-end gap-2">
           {deadline && <p className="text-xs text-slate-500">You can request a refund until {deadline} (48 hours after delivery).</p>}

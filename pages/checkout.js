@@ -5,15 +5,13 @@ import useAuth from '../lib/useAuth';
 import { getFieldErrors } from '../lib/apiClient';
 import {
   PROVINCES,
-  createOrder,
   formatRands,
   getQuoteLineIssue,
-  quoteCheckout,
-  startPayfast,
-  storeOrderToken,
+  storeCheckoutToken,
   submitPayfastForm,
   toProvinceValue,
 } from '../lib/api/orders';
+import { createCheckout, quoteCheckout, startCheckoutPayfast } from '../lib/api/checkouts';
 import { toUserMessage, reportError } from '../lib/userMessage';
 
 const EMPTY_FORM = {
@@ -79,9 +77,9 @@ function stockProblemIds(fieldErrors, items) {
 }
 
 /**
- * Why: Cart, server quote, order creation, then PayFast redirect. Prices, availability, the
- * delivery fee and the total all come from the backend quote (D-05); the client never computes
- * money. Guests can check out (D-10) with an email and accepted terms; signed-in buyers must have
+ * Why: Cart, server quote, checkout creation, then one PayFast redirect for the whole checkout
+ * (one order per seller, D-25). Prices, availability, each seller's fees and the grand total all
+ * come from the backend quote (D-05); the client never computes money. Guests can check out (D-10) with an email and accepted terms; signed-in buyers must have
  * a verified email (D-11). Every failure goes through `toUserMessage()`, with per-field
  * messages from `getFieldErrors()`.
  * @returns {JSX.Element} The checkout form, or an empty-cart state.
@@ -105,9 +103,9 @@ export default function CheckoutPage() {
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState('');
   const [quoteVersion, setQuoteVersion] = useState(0);
-  // Why: Once the order exists, a payment-start failure (PayFast 503, rate limit, network) must
-  // retry payment for that same order instead of creating a duplicate one.
-  const [pendingOrder, setPendingOrder] = useState(null);
+  // Why: Once the checkout exists, a payment-start failure (PayFast 503, rate limit, network) must
+  // retry payment for that same checkout instead of creating a duplicate one.
+  const [pendingCheckout, setPendingCheckout] = useState(null);
   const [serverSaysUnverified, setServerSaysUnverified] = useState(false);
 
   const isGuest = !user;
@@ -143,8 +141,8 @@ export default function CheckoutPage() {
   }, [cartKey, quoteVersion]);
 
   const hasUnavailableItems = Boolean(quote) && quote.items.some((item) => getQuoteLineIssue(item));
-  // Why: With an order already created the stock is held, so the quote no longer gates payment.
-  const isBlockedByQuote = !pendingOrder && (quoteLoading || !quote || hasUnavailableItems);
+  // Why: With a checkout already created the stock is held, so the quote no longer gates payment.
+  const isBlockedByQuote = !pendingCheckout && (quoteLoading || !quote || hasUnavailableItems);
 
   useEffect(() => {
     if (!user) return;
@@ -191,7 +189,7 @@ export default function CheckoutPage() {
   }
 
   /**
-   * Why: Maps a failed order or payment call to what the buyer sees: stock conflicts flag the
+   * Why: Maps a failed checkout or payment call to what the buyer sees: stock conflicts flag the
    * affected lines and refresh the quote, 422s show under their fields, and everything else is
    * the backend's user-safe message via `toUserMessage()`.
    * @param {*} err - The caught error.
@@ -208,13 +206,13 @@ export default function CheckoutPage() {
       setQuoteVersion((version) => version + 1);
     }
     if (err?.code === 'RESERVATION_EXPIRED' || err?.code === 'ORDER_NOT_PAYABLE') {
-      setPendingOrder(null);
+      setPendingCheckout(null);
     }
     setServerSaysUnverified(err?.code === 'AUTH_EMAIL_NOT_VERIFIED');
     setTermsOutdated(err?.code === 'TERMS_VERSION_OUTDATED');
     setServerErrors(err?.status === 422 ? toFormErrors(fieldErrors) : {});
-    // Why: on this page a 503 can only come from starting the PayFast payment, and the order is
-    // already saved, so say so rather than showing the generic "service unavailable" text.
+    // Why: on this page a 503 can only come from starting the PayFast payment, and the checkout
+    // is already saved, so say so rather than showing the generic "service unavailable" text.
     setSubmitError(err?.code === 'SERVICE_UNAVAILABLE'
       ? 'Payment is temporarily unavailable. Your order has been saved, so please try again in a few minutes.'
       : toUserMessage(err, 'Something went wrong. Please try again.'));
@@ -236,7 +234,7 @@ export default function CheckoutPage() {
     setServerSaysUnverified(false);
 
     try {
-      let target = pendingOrder;
+      let target = pendingCheckout;
       if (!target) {
         const shippingAddress = {
           firstName: form.firstName.trim(),
@@ -248,18 +246,18 @@ export default function CheckoutPage() {
           province: form.province,
           postalCode: form.postalCode.trim(),
         };
-        const { order, accessToken } = await createOrder({
+        const { checkout, accessToken } = await createCheckout({
           items,
           shippingAddress,
           ...(isGuest ? { buyerEmail: form.email.trim(), acceptTerms: true } : {}),
         });
-        storeOrderToken(order.id, accessToken);
-        target = { id: order.id, token: accessToken };
-        setPendingOrder(target);
+        storeCheckoutToken(checkout, accessToken);
+        target = { id: checkout.id, token: accessToken };
+        setPendingCheckout(target);
       }
 
-      const payfast = await startPayfast(target.id, target.token);
-      // Why: the cart is emptied on the confirmation page once the order is actually paid, so a
+      const payfast = await startCheckoutPayfast(target.id, target.token);
+      // Why: the cart is emptied on the confirmation page once the checkout is actually paid, so a
       // cancelled or failed payment returns the buyer to a cart that still has their items.
       submitPayfastForm(payfast);
     } catch (err) {
@@ -278,7 +276,55 @@ export default function CheckoutPage() {
     );
   }
 
-  const summaryLines = quote ? quote.items : items;
+  /**
+   * Why: One summary line, shared by every seller group and the cart fallback so the availability
+   * flags and the fix-it actions look and behave identically wherever the line appears.
+   * @param {object} item - A quote line (with `available`/`availableQuantity`) or a cart item.
+   * @param {boolean} fromQuote - True for a quote line (adds price and availability issues).
+   * @returns {JSX.Element} The list item.
+   * @example
+   * renderLine(quote.items[0], true);
+   */
+  function renderLine(item, fromQuote) {
+    const image = fromQuote ? item.thumbnailUrl : item.primaryImage;
+    const issue = fromQuote ? getQuoteLineIssue(item) : null;
+    const isFlagged = Boolean(issue) || problemIds.includes(item.id);
+    return (
+      <li key={item.id} className="flex items-center gap-3">
+        <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-xl bg-slate-100">
+          {image ? (
+            <img src={image} alt={item.name} className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-[9px] font-semibold uppercase text-slate-400">No img</div>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="truncate text-sm font-semibold text-slate-900">{item.name}</p>
+          {item.quantity > 1 && <p className="text-xs text-slate-500">Qty: {item.quantity}</p>}
+          {isFlagged ? (
+            <p className="text-xs text-red-500">
+              {issue === 'reduced'
+                ? `Only ${item.availableQuantity} available.`
+                : 'No longer available. It is not included in the total.'}
+            </p>
+          ) : null}
+          {issue === 'reduced' ? (
+            <button type="button" onClick={() => updateQuantity(item.id, item.availableQuantity)} className="text-xs font-semibold text-slate-700 underline">
+              Change quantity to {item.availableQuantity}
+            </button>
+          ) : null}
+          {issue === 'unavailable' ? (
+            <button type="button" onClick={() => removeItem(item.id)} className="text-xs font-semibold text-slate-700 underline">
+              Remove from cart
+            </button>
+          ) : null}
+        </div>
+        <p className="text-sm font-semibold text-slate-900">{fromQuote ? formatRands(item.lineTotalCents) : ''}</p>
+      </li>
+    );
+  }
+  const renderQuoteLine = (item) => renderLine(item, true);
+  const renderCartLine = (item) => renderLine(item, false);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
@@ -364,52 +410,41 @@ export default function CheckoutPage() {
           <div className="space-y-4">
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <h2 className="text-base font-semibold text-slate-900">Order summary</h2>
-              <ul className="mt-4 space-y-3">
-                {summaryLines.map((item) => {
-                  const image = quote ? item.thumbnailUrl : item.primaryImage;
-                  const issue = quote ? getQuoteLineIssue(item) : null;
-                  const isFlagged = Boolean(issue) || problemIds.includes(item.id);
-                  return (
-                    <li key={item.id} className="flex items-center gap-3">
-                      <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-xl bg-slate-100">
-                        {image ? (
-                          <img src={image} alt={item.name} className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-[9px] font-semibold uppercase text-slate-400">No img</div>
-                        )}
+              {quote ? (
+                <>
+                  {quote.unassignedItems.length > 0 ? (
+                    <ul className="mt-4 space-y-3">{quote.unassignedItems.map(renderQuoteLine)}</ul>
+                  ) : null}
+                  {quote.sellers.map((group) => (
+                    <div key={group.seller.id} className="mt-4 border-t border-slate-200 pt-4">
+                      <p className="text-sm font-semibold text-slate-900">Seller: {group.seller.name}</p>
+                      <ul className="mt-3 space-y-3">{group.items.map(renderQuoteLine)}</ul>
+                      <div className="mt-3 space-y-1 text-sm text-slate-700">
+                        <div className="flex justify-between"><span>Items</span><span>{formatRands(group.itemsCents)}</span></div>
+                        {group.serviceFeeCents != null ? (
+                          <div className="flex justify-between"><span>Service fee</span><span>{formatRands(group.serviceFeeCents)}</span></div>
+                        ) : null}
+                        <div className="flex justify-between"><span>Delivery</span><span>{formatRands(group.deliveryFeeCents)}</span></div>
+                        <div className="flex justify-between font-semibold text-slate-900"><span>Seller total</span><span>{formatRands(group.totalCents)}</span></div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="truncate text-sm font-semibold text-slate-900">{item.name}</p>
-                        {item.quantity > 1 && <p className="text-xs text-slate-500">Qty: {item.quantity}</p>}
-                        {isFlagged ? (
-                          <p className="text-xs text-red-500">
-                            {issue === 'reduced'
-                              ? `Only ${item.availableQuantity} available.`
-                              : 'No longer available. It is not included in the total.'}
-                          </p>
-                        ) : null}
-                        {issue === 'reduced' ? (
-                          <button type="button" onClick={() => updateQuantity(item.id, item.availableQuantity)} className="text-xs font-semibold text-slate-700 underline">
-                            Change quantity to {item.availableQuantity}
-                          </button>
-                        ) : null}
-                        {issue === 'unavailable' ? (
-                          <button type="button" onClick={() => removeItem(item.id)} className="text-xs font-semibold text-slate-700 underline">
-                            Remove from cart
-                          </button>
-                        ) : null}
-                      </div>
-                      <p className="text-sm font-semibold text-slate-900">{quote ? formatRands(item.lineTotalCents) : ''}</p>
-                    </li>
-                  );
-                })}
-              </ul>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <ul className="mt-4 space-y-3">{items.map(renderCartLine)}</ul>
+              )}
               {quoteError ? <p className="mt-3 text-xs text-red-500">{quoteError}</p> : null}
               <div className="mt-4 border-t border-slate-200 pt-4 space-y-2">
                 <div className="flex justify-between text-base">
                   <span>Subtotal</span>
                   <span>{quote ? formatRands(quote.subtotalCents) : '…'}</span>
                 </div>
+                {quote?.serviceFeeCents != null ? (
+                  <div className="flex justify-between text-base">
+                    <span>Service fee</span>
+                    <span>{formatRands(quote.serviceFeeCents)}</span>
+                  </div>
+                ) : null}
                 <div className="flex justify-between text-base">
                     <span>Delivery{quote ? ` (${quote.sellerCount} seller${quote.sellerCount === 1 ? '' : 's'})` : ''}</span>
                     <span>{quote ? formatRands(quote.deliveryFeeCents) : 'Calculating...'}</span>
@@ -419,7 +454,7 @@ export default function CheckoutPage() {
                   <span>{quote ? formatRands(quote.totalCents) : '…'}</span>
                 </div>
               </div>
-                <p className="mt-2 text-xs text-slate-500">Nationwide delivery is charged per seller in the cart. Multiple items from the same seller share one delivery fee.</p>
+                <p className="mt-2 text-xs text-slate-500">Your cart is split into one order per seller, paid in one payment. Delivery is charged per seller; multiple items from the same seller share one delivery fee.</p>
             </div>
 
             {submitError && (
@@ -436,7 +471,7 @@ export default function CheckoutPage() {
             >
               {isBlockedByQuote && (quoteLoading || !quote)
                 ? 'Calculating delivery…'
-                : (isSubmitting ? 'Processing…' : (pendingOrder ? 'Retry payment' : 'Continue to payment'))}
+                : (isSubmitting ? 'Processing…' : (pendingCheckout ? 'Retry payment' : 'Continue to payment'))}
             </button>
 
             <Link href="/shop" className="block text-center text-xs text-slate-500 hover:text-slate-700 underline">

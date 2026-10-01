@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildRefundFormData,
-  cancelOrder,
-  createOrder,
   fetchPrivateImageBlob,
   formatRands,
   getOrder,
@@ -15,9 +13,8 @@ import {
   getQuoteLineIssue,
   ORDER_STATUSES,
   orderStatusColour,
-  quoteCheckout,
   requestRefund,
-  startPayfast,
+  storeCheckoutToken,
   storeOrderToken,
   submitPayfastForm,
   toProvinceValue,
@@ -47,14 +44,9 @@ describe('order token header', () => {
 
     await getOrder('o1', 'secret');
     await getOrder('o1');
-    await startPayfast('o1', 'secret');
-    await cancelOrder('o1', 'secret');
 
     expect(fetchMock.mock.calls[0][1].headers['X-Order-Token']).toBe('secret');
     expect(fetchMock.mock.calls[1][1].headers['X-Order-Token']).toBeUndefined();
-    expect(fetchMock.mock.calls[2][0]).toMatch(/\/orders\/o1\/payfast$/);
-    expect(fetchMock.mock.calls[2][1].headers['X-Order-Token']).toBe('secret');
-    expect(fetchMock.mock.calls[3][0]).toMatch(/\/orders\/o1\/cancel$/);
   });
 
   it('stores and reads the token per order in sessionStorage', () => {
@@ -66,50 +58,21 @@ describe('order token header', () => {
     expect(getOrderToken('other')).toBe('');
   });
 
+  it('indexes a checkout token under the checkout id and every order id', () => {
+    storeCheckoutToken({ id: 'c1', orders: [{ id: 'o1' }, { id: 'o2' }] }, 'ctok');
+
+    expect(getOrderToken('c1')).toBe('ctok');
+    expect(getOrderToken('o1')).toBe('ctok');
+    expect(getOrderToken('o2')).toBe('ctok');
+    expect(getOrderToken('o3')).toBe('');
+  });
+
   it('does not throw when storage is unavailable', () => {
     const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('blocked');
     });
     expect(() => storeOrderToken('o1', 'tok')).not.toThrow();
     spy.mockRestore();
-  });
-});
-
-describe('quoteCheckout and createOrder', () => {
-  it('maps cart items to productId/quantity and tags quote items with id', async () => {
-    const fetchMock = stubFetch({
-      items: [{ productId: 'p1', name: 'Helmet', unitPriceCents: 1000, quantity: 2, lineTotalCents: 2000, available: true, availableQuantity: 5 }],
-      subtotalCents: 2000,
-      deliveryFeeCents: 15000,
-      sellerCount: 1,
-      totalCents: 17000,
-    });
-
-    const quote = await quoteCheckout([{ id: 'p1', quantity: 2, price: 10 }]);
-
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toMatch(/\/checkout\/quote$/);
-    expect(JSON.parse(init.body)).toEqual({ items: [{ productId: 'p1', quantity: 2 }] });
-    expect(quote.items[0].id).toBe('p1');
-    expect(quote.deliveryFeeCents).toBe(15000);
-  });
-
-  it('sends guest email and terms only when provided', async () => {
-    const fetchMock = stubFetch({ order: { id: 'o1' }, accessToken: 't' }, 201);
-
-    await createOrder({ items: [{ id: 'p1', quantity: 1 }], shippingAddress: { city: 'X' }, buyerEmail: 'a@b.co', acceptTerms: true });
-    await createOrder({ items: [{ id: 'p1', quantity: 1 }], shippingAddress: { city: 'X' } });
-
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
-      items: [{ productId: 'p1', quantity: 1 }],
-      shippingAddress: { city: 'X' },
-      buyerEmail: 'a@b.co',
-      acceptTerms: true,
-    });
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
-      items: [{ productId: 'p1', quantity: 1 }],
-      shippingAddress: { city: 'X' },
-    });
   });
 });
 
@@ -128,6 +91,8 @@ describe('orderStatusColour', () => {
       expect(orderStatusColour(status)).toMatch(/^bg-/);
     });
     expect(orderStatusColour('late_payment')).toBe('bg-amber-100 text-amber-700');
+    expect(ORDER_STATUSES).toContain('completed');
+    expect(orderStatusColour('completed')).toBe('bg-teal-100 text-teal-700');
     expect(orderStatusColour('purchased')).toBe('bg-slate-100 text-slate-700');
   });
 });
@@ -151,18 +116,6 @@ describe('helpers', () => {
   it('formats cents as rands', () => {
     expect(formatRands(129950)).toBe('R1299.50');
     expect(formatRands(undefined)).toBe('R0.00');
-  });
-});
-
-describe('startPayfast errors', () => {
-  it('surfaces a 503 SERVICE_UNAVAILABLE problem with its code', async () => {
-    const fetchMock = vi.fn(async () => new Response(
-      JSON.stringify({ status: 503, code: 'SERVICE_UNAVAILABLE', title: 'Service Unavailable' }),
-      { status: 503, headers: { 'content-type': 'application/problem+json' } }
-    ));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await expect(startPayfast('o1', 'tok')).rejects.toMatchObject({ status: 503, code: 'SERVICE_UNAVAILABLE' });
   });
 });
 

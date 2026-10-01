@@ -4,7 +4,9 @@ import useAuth from '../lib/useAuth';
 import {
   REFUND_IMAGE_TYPES,
   REFUND_MAX_IMAGE_BYTES,
+  NOT_ARRIVED_TYPE,
   REFUND_MAX_REASON_LENGTH,
+  REFUND_PROBLEM_TYPES,
   REFUND_TYPES,
   getOrderToken,
   getRefundRules,
@@ -67,7 +69,9 @@ export function validateRefund({ type, reason, bankAccount, images }) {
 
 /**
  * Why: Refund request form (`POST /orders/{id}/refund-request`) shared by the signed-in and guest
- * return pages. The buyer picks a refund type (no default); photos are required (1-5, D-08) except
+ * return pages. The buyer picks a problem type (no default: damaged, not as described or other);
+ * `never_arrived` has its own "Report not arrived" entry, so the return pages open the form with
+ * `?type=never_arrived` and that type is preselected (D-26). Photos are required (1-5, D-08) except
  * for `never_arrived`, and sent uncropped as chosen. The buyer also gives the bank account for the
  * refund EFT (D-22). 422 field errors show under their fields (`data.type`, `data.reason`,
  * `data.bankAccount.*`, `images`); the backend's 409 `REFUND_WINDOW_CLOSED`,
@@ -84,7 +88,12 @@ export function validateRefund({ type, reason, bankAccount, images }) {
 export default function RefundRequestForm({ orderId, signedInDoneHref, guestDoneHref }) {
   const router = useRouter();
   const { user, loading } = useAuth();
-  const [type, setType] = useState('');
+  const [chosenType, setType] = useState('');
+  // Why: the query is read at render, not in initial state, because `router.query` can still be
+  // empty on the first render of a statically optimised page.
+  const fromNotArrivedLink = router.query?.type === NOT_ARRIVED_TYPE;
+  const type = chosenType || (fromNotArrivedLink ? NOT_ARRIVED_TYPE : '');
+  const typeOptions = fromNotArrivedLink ? REFUND_TYPES : REFUND_PROBLEM_TYPES;
   const [reason, setReason] = useState('');
   const [bankAccount, setBankAccount] = useState(EMPTY_BANK_ACCOUNT);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -198,7 +207,7 @@ export default function RefundRequestForm({ orderId, signedInDoneHref, guestDone
       <form onSubmit={handleSubmit} className="space-y-4">
         <fieldset>
           <legend className="block text-sm font-medium text-slate-700 mb-1">What went wrong?</legend>
-          {REFUND_TYPES.map((option) => (
+          {typeOptions.map((option) => (
             <label key={option.value} className="flex items-center gap-2 py-1 text-sm text-slate-700">
               <input
                 type="radio"

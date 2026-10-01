@@ -1,7 +1,7 @@
 # Tech debt register — Fast Sport / MXTrade (storefront client)
 
 **Date:** 2026-09-29
-**Next free IDs:** `PERF-20` · `BUG-12` · `SEC-37` · `DOS-20` · `ARCH-15` · `DX-07` · `LEGAL-30`
+**Next free IDs:** `PERF-20` · `BUG-12` · `SEC-37` · `DOS-20` · `ARCH-15` · `DX-08` · `LEGAL-30`
 
 This register collects the findings of four read-only audits (Firestore query/caching cost, security & rules, repo structure & architecture, denial-of-service & cost amplification) plus a legal/compliance research pass, run on 2026-09-19 against the old Firebase version of this app, plus the owner's decisions on how to treat them. It exists so that issues found once don't need to be rediscovered: every row is a discrete, evidence-backed item that any contributor (human or agent) can pick up, fix, and close.
 
@@ -103,6 +103,7 @@ _No open rows. Every BUG row was in Firestore query logic, refund/stock handling
 | DX-04 | Low | The FAQ page may render empty | `pages/faq.js:3,17` calls `fetchFaqs()` from `lib/api/catalog.js` and shows an empty state when the list is empty; the original finding (zero FAQ documents in the live Firebase project) was about data that no longer exists | If the backend has no FAQ content yet, the FAQ page looks unfinished to every visitor. Not a code bug. | Confirm the backend has FAQ content (FastSport_Admin manages it), or hide the `/faq` page and its links until it does. | Open (check after migration) |
 | DX-05 | Low | Stray `MXTRADE_TEST` gitlink (orphan submodule) at the repo root | `git ls-files -s MXTRADE_TEST` shows mode `160000` commit `67bcf0dd` with no `.gitmodules` file; the folder is empty on disk; `.dockerignore` already excludes it | Clones get an empty, un-initialisable `MXTRADE_TEST/` folder; tools that recurse the tree can trip over it, and it confuses which folder is the real repo. | Confirm with the owner it is accidental, then `git rm --cached MXTRADE_TEST` and delete the empty folder. | Open |
 | DX-06 | Low | Next 16 dev overlay logs `[HMR] Invalid message: isrManifest` TypeErrors | Seen in the browser console during `next dev` (Next 16.3.6, Turbopack, Pages Router) on every route change, 2026-09-27: `TypeError: Cannot read properties of undefined (reading 'components') at handleStaticIndicator` | Dev-only console noise; not present in the production build. It can hide real errors when reading the console during Playwright checks. | Re-check after the next Next 16 patch release; if it persists, report upstream or filter it when reviewing console output. | Open |
+| DX-07 | Low | `tests/pages/reset-password.test.js` is flaky under full-suite load | 2026-10-01: 2 of its 4 tests failed once in a full `npx vitest run` (22 files) and passed both alone and on the next full run; no related code changed | Intermittent red runs erode trust in the suite and can hide real failures | Raise the `waitFor`/`findBy*` timeouts in that file or use fake timers, and consider `pool: 'vmThreads'` (Vitest suggests it for heavy jsdom setup) | Open |
 
 ---
 
