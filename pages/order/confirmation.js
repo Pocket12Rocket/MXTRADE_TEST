@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { useEffect, useState } from 'react';
-import { getOrderToken, getPaymentStepCopy } from '../../lib/api/orders';
+import { useEffect, useRef, useState } from 'react';
+import { getOrderToken, getPaymentStepCopy, storeCheckoutToken } from '../../lib/api/orders';
 import { cancelCheckout } from '../../lib/api/checkouts';
 import { reportError, toUserMessage } from '../../lib/userMessage';
 import { useOrderStatusPoll } from '../../lib/useOrderStatusPoll';
@@ -11,7 +11,8 @@ import { useCart } from '../../lib/cartContext';
 const FAILED_STATUSES = ['payment_failed', 'cancelled'];
 
 /**
- * Why: Where PayFast returns the buyer after paying for a checkout. It releases the stock hold on
+ * Why: Where PayFast returns the buyer after paying for a checkout, and where a guest's emailed
+ * link lands (`?checkoutId=…&token=…`). It stores and strips the token, releases the stock hold on
  * a cancelled payment, otherwise polls the checkout (`useOrderStatusPoll`) until payment is
  * confirmed, then lists each seller's order.
  * @returns {JSX.Element} The confirming, confirmed, failed, late-payment or cancelled state.
@@ -26,26 +27,55 @@ export default function OrderConfirmationPage() {
   const checkoutId = typeof query.checkoutId === 'string' ? query.checkoutId : '';
   const isCancelled = query.payment === 'cancelled';
   const [cancelError, setCancelError] = useState('');
-  const token = router.isReady && checkoutId ? getOrderToken(checkoutId) : '';
+  const queryToken = typeof query.token === 'string' ? query.token : '';
+  // Why: Keeps the token in memory once it is stripped from the URL, in case storage is blocked.
+  const tokenRef = useRef('');
+  const [token, setToken] = useState('');
+  const [tokenReady, setTokenReady] = useState(false);
+
+  // Why: A guest's emailed link carries the token in the URL; it is stored for this tab and removed
+  // from the address bar so it doesn't linger in history. The PayFast return has none and reads storage.
+  useEffect(() => {
+    if (!router.isReady || !checkoutId) return;
+    if (queryToken) {
+      tokenRef.current = queryToken;
+      storeCheckoutToken({ id: checkoutId }, queryToken);
+      const { token: removed, ...rest } = router.query;
+      router.replace({ pathname: router.pathname, query: rest }, undefined, { shallow: true });
+    }
+    tokenRef.current = tokenRef.current || getOrderToken(checkoutId);
+    setToken(tokenRef.current);
+    setTokenReady(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.isReady, checkoutId, queryToken]);
+
   const { checkout, error: pollError, polling, timedOut } = useOrderStatusPoll({
     checkoutId,
     token,
-    enabled: router.isReady && !isCancelled,
+    enabled: router.isReady && tokenReady && !isCancelled,
   });
   const error = cancelError || pollError;
   const status = checkout?.status;
   const orders = checkout?.orders || [];
-  const isLate = orders.some((order) => order.status === 'late_payment');
+  // Why: A paid checkout can hold a mix of confirmed and late orders; only when every order is late
+  // is the whole payment "under review", otherwise each order's own status label tells the story.
+  const isLate = orders.length > 0 && orders.every((order) => order.status === 'late_payment');
   const { clearCart } = useCart();
 
-  // Why: empty the cart only once payment is confirmed (checkout paid, or a late payment the team
+  // Why: A guest's token opens every order in the checkout, so once the orders are known it is
+  // stored under each order id for the order and refund pages.
+  useEffect(() => {
+    if (checkout?.id && tokenRef.current) storeCheckoutToken(checkout, tokenRef.current);
+  }, [checkout]);
+
+  // Why: empty the cart only once payment is confirmed (checkout paid, including late orders the team
   // will resolve), so a cancelled or failed PayFast attempt keeps the buyer's items.
   useEffect(() => {
-    if (status === 'paid' || isLate) {
+    if (status === 'paid') {
       clearCart();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, isLate]);
+  }, [status]);
   const isFailed = isCancelled || FAILED_STATUSES.includes(status);
   const isConfirming = !isCancelled && !error && Boolean(checkoutId) && (!checkout || (status === 'pending_payment' && polling));
   const stillPending = !isCancelled && status === 'pending_payment' && timedOut;
@@ -61,11 +91,11 @@ export default function OrderConfirmationPage() {
   else if (stillPending) heading = 'Payment still being confirmed';
 
   useEffect(() => {
-    if (!router.isReady || !checkoutId || !isCancelled) {
+    if (!router.isReady || !tokenReady || !checkoutId || !isCancelled) {
       return;
     }
 
-    cancelCheckout(checkoutId, getOrderToken(checkoutId)).catch((err) => {
+    cancelCheckout(checkoutId, tokenRef.current).catch((err) => {
       // A cancel that hits a checkout that is no longer pending payment is harmless to the buyer.
       if (err?.code === 'ORDER_NOT_PAYABLE') {
         return;
@@ -73,7 +103,7 @@ export default function OrderConfirmationPage() {
       reportError('order-confirmation', err);
       setCancelError(toUserMessage(err, "We couldn't load your order details. Please try again."));
     });
-  }, [router.isReady, isCancelled, checkoutId]);
+  }, [router.isReady, tokenReady, isCancelled, checkoutId]);
 
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 px-4 text-center">

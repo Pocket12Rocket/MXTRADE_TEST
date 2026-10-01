@@ -413,18 +413,27 @@ export default function CheckoutPage() {
               <h2 className="text-base font-semibold text-slate-900">Order summary</h2>
               {quote ? (
                 <>
-                  {quote.sellers.map((group) => (
-                    <div key={group.seller.id} className="mt-4 border-t border-slate-200 pt-4">
-                      <p className="text-sm font-semibold text-slate-900">Seller: {group.seller.name}</p>
-                      <ul className="mt-3 space-y-3">{group.items.map(renderQuoteLine)}</ul>
-                      <div className="mt-3 space-y-1 text-sm text-slate-700">
-                        <div className="flex justify-between"><span>Items</span><span>{formatRands(group.itemsCents)}</span></div>
-                        <div className="flex justify-between"><span>Service fee</span><span>{formatRands(group.serviceFeeCents)}</span></div>
-                        <div className="flex justify-between"><span>Delivery</span><span>{formatRands(group.deliveryFeeCents)}</span></div>
-                        <div className="flex justify-between font-semibold text-slate-900"><span>Seller total</span><span>{formatRands(group.totalCents)}</span></div>
+                  {quote.sellers.map((group) => {
+                    // Why: A seller with nothing buyable has no totals or delivery fee (the backend sends 0s), so
+                    // show only its flagged lines instead of a misleading R0.00 delivery row.
+                    const hasBuyable = group.items.some((item) => getQuoteLineIssue(item) !== 'unavailable');
+                    return (
+                      <div key={group.seller.id} className="mt-4 border-t border-slate-200 pt-4">
+                        <p className="text-sm font-semibold text-slate-900">Seller: {group.seller.name}</p>
+                        <ul className="mt-3 space-y-3">{group.items.map(renderQuoteLine)}</ul>
+                        {hasBuyable ? (
+                          <div className="mt-3 space-y-1 text-sm text-slate-700">
+                            <div className="flex justify-between"><span>Items</span><span>{formatRands(group.itemsCents)}</span></div>
+                            <div className="flex justify-between"><span>Service fee</span><span>{formatRands(group.serviceFeeCents)}</span></div>
+                            <div className="flex justify-between"><span>Delivery</span><span>{formatRands(group.deliveryFeeCents)}</span></div>
+                            <div className="flex justify-between font-semibold text-slate-900"><span>Seller total</span><span>{formatRands(group.totalCents)}</span></div>
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-sm text-slate-500">None of this seller&apos;s items can be bought, so there is no order or delivery fee for them.</p>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </>
               ) : (
                 <ul className="mt-4 space-y-3">{items.map(renderCartLine)}</ul>
