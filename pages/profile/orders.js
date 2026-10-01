@@ -4,6 +4,7 @@ import { listMyOrders, orderStatusColour } from '../../lib/api/orders';
 import Link from 'next/link';
 import Image from 'next/image';
 import { toUserMessage } from '../../lib/userMessage';
+import { useSingleFlight } from '../../lib/useSingleFlight';
 
 const ORDERS_PAGE_SIZE = 20;
 
@@ -20,7 +21,7 @@ export default function OrdersPage() {
   const [error, setError] = useState('');
   const [ordersCursor, setOrdersCursor] = useState(null);
   const [hasMoreOrders, setHasMoreOrders] = useState(false);
-  const [isLoadingMoreOrders, setIsLoadingMoreOrders] = useState(false);
+  const { run: runLoadMore, pending: isLoadingMoreOrders } = useSingleFlight();
 
   useEffect(() => {
     if (!loading && user) {
@@ -46,20 +47,19 @@ export default function OrdersPage() {
    * <button onClick={handleLoadMoreOrders}>Load more orders</button>
    */
   const handleLoadMoreOrders = async () => {
-    if (!ordersCursor || isLoadingMoreOrders || !user) {
+    if (!ordersCursor || !user) {
       return;
     }
 
-    setIsLoadingMoreOrders(true);
     try {
-      const { items, nextCursor } = await listMyOrders({ cursor: ordersCursor, limit: ORDERS_PAGE_SIZE });
-      setOrders((currentOrders) => [...currentOrders, ...items]);
-      setOrdersCursor(nextCursor);
-      setHasMoreOrders(Boolean(nextCursor));
+      await runLoadMore(async () => {
+        const { items, nextCursor } = await listMyOrders({ cursor: ordersCursor, limit: ORDERS_PAGE_SIZE });
+        setOrders((currentOrders) => [...currentOrders, ...items]);
+        setOrdersCursor(nextCursor);
+        setHasMoreOrders(Boolean(nextCursor));
+      });
     } catch (err) {
       setError(toUserMessage(err, "We couldn't load more orders right now. Please try again."));
-    } finally {
-      setIsLoadingMoreOrders(false);
     }
   };
 

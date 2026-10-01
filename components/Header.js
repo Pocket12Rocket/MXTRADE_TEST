@@ -7,6 +7,7 @@ import CartDrawer from './CartDrawer';
 import CategoryTabs from './CategoryTabs';
 import MobileNavigationDrawer from './MobileNavigationDrawer';
 import { useAuthContext } from '../lib/AuthContext';
+import { useSingleFlight } from '../lib/useSingleFlight';
 
 const navItems = [
   { href: '/shop', label: 'Shop' },
@@ -34,6 +35,7 @@ export default function Header() {
   const router = useRouter();
   const { totalItems } = useCart();
   const { user, profile, signOut } = useAuthContext();
+  const { run: runLogout, pending: isLoggingOut } = useSingleFlight();
   const [activeTopTab, setActiveTopTab] = useState(null);
   const [isMegaMenuOpen, setIsMegaMenuOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -89,11 +91,11 @@ export default function Header() {
     router.push(`/shop/catalog?q=${encodeURIComponent(trimmedSearch)}`);
   };
 
-  const handleLogout = async () => {
+  const handleLogout = () => runLogout(async () => {
     await signOut();
     setIsProfileMenuOpen(false);
     router.push('/login');
-  };
+  });
 
   const handleSellClick = () => {
     if (!user) {
@@ -267,9 +269,10 @@ export default function Header() {
                     <button
                       type="button"
                       onClick={handleLogout}
-                      className="block w-full rounded-xl px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                      disabled={isLoggingOut}
+                      className="block w-full rounded-xl px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-60"
                     >
-                      Log out
+                      {isLoggingOut ? 'Logging out...' : 'Log out'}
                     </button>
                   </div>
                 ) : null}

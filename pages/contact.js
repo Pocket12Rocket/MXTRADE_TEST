@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { sendContactMessage } from '../lib/api/contact';
 import { toUserMessage } from '../lib/userMessage';
+import { useSingleFlight } from '../lib/useSingleFlight';
 
 /**
  * Why: Public contact form, sent through the backend (`POST /contact`). Failures, including the
@@ -15,7 +16,7 @@ export default function ContactPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { run, pending: isSubmitting } = useSingleFlight();
   const [status, setStatus] = useState('');
   const [isError, setIsError] = useState(false);
 
@@ -28,23 +29,22 @@ export default function ContactPage() {
       return;
     }
 
-    setIsSubmitting(true);
     setStatus('');
     setIsError(false);
 
     try {
-      await sendContactMessage({ name: name.trim(), email: email.trim(), message: message.trim() });
+      await run(async () => {
+        await sendContactMessage({ name: name.trim(), email: email.trim(), message: message.trim() });
 
-      setStatus('Thank you. Your message was sent to the admin team.');
-      setName('');
-      setEmail('');
-      setMessage('');
-      setIsError(false);
+        setStatus('Thank you. Your message was sent to the admin team.');
+        setName('');
+        setEmail('');
+        setMessage('');
+        setIsError(false);
+      });
     } catch (error) {
       setIsError(true);
       setStatus(toUserMessage(error, 'Could not send your message right now.'));
-    } finally {
-      setIsSubmitting(false);
     }
   };
 

@@ -18,6 +18,7 @@ import {
   updateSubmission,
 } from '../../lib/api/submissions';
 import { toUserMessage } from '../../lib/userMessage';
+import { useSingleFlight } from '../../lib/useSingleFlight';
 import ImageCropDialog from '../../components/ImageCropDialog';
 import ListingFormFields from '../../components/ListingFormFields';
 import ServiceFeeNote from '../../components/ServiceFeeNote';
@@ -101,7 +102,9 @@ export default function SellerSubmissions() {
   const [products, setProducts] = useState([]);
   const [submissionsCursor, setSubmissionsCursor] = useState(null);
   const [productsCursor, setProductsCursor] = useState(null);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const { run: runLoadMore, pending: isLoadingMore } = useSingleFlight();
+  const { run: runDelete, pending: isDeleting } = useSingleFlight();
+  const { run: runOpenEdit, pending: isPreparingEdit } = useSingleFlight();
   const [error, setError] = useState('');
   const [deletingId, setDeletingId] = useState('');
   const [preparingEditId, setPreparingEditId] = useState('');
@@ -111,7 +114,7 @@ export default function SellerSubmissions() {
   const [editFieldErrors, setEditFieldErrors] = useState({});
   const [editStatus, setEditStatus] = useState('');
   const [editShowProfileLink, setEditShowProfileLink] = useState(false);
-  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const { run: runSaveEdit, pending: isSavingEdit } = useSingleFlight();
 
   useEffect(() => {
     let isMounted = true;
@@ -164,26 +167,25 @@ export default function SellerSubmissions() {
    * <button onClick={handleLoadMore}>Load more</button>
    */
   const handleLoadMore = async () => {
-    setIsLoadingMore(true);
     setError('');
 
     try {
-      const [submissionPage, productPage] = await Promise.all([
-        submissionsCursor ? listMySubmissions({ cursor: submissionsCursor, limit: PAGE_SIZE }) : null,
-        productsCursor ? listMyProducts({ cursor: productsCursor, limit: PAGE_SIZE }) : null,
-      ]);
-      if (submissionPage) {
-        setSubmissions((prev) => [...prev, ...submissionPage.items]);
-        setSubmissionsCursor(submissionPage.nextCursor);
-      }
-      if (productPage) {
-        setProducts((prev) => [...prev, ...productPage.items]);
-        setProductsCursor(productPage.nextCursor);
-      }
+      await runLoadMore(async () => {
+        const [submissionPage, productPage] = await Promise.all([
+          submissionsCursor ? listMySubmissions({ cursor: submissionsCursor, limit: PAGE_SIZE }) : null,
+          productsCursor ? listMyProducts({ cursor: productsCursor, limit: PAGE_SIZE }) : null,
+        ]);
+        if (submissionPage) {
+          setSubmissions((prev) => [...prev, ...submissionPage.items]);
+          setSubmissionsCursor(submissionPage.nextCursor);
+        }
+        if (productPage) {
+          setProducts((prev) => [...prev, ...productPage.items]);
+          setProductsCursor(productPage.nextCursor);
+        }
+      });
     } catch (err) {
       setError(toUserMessage(err, "We couldn't load more listings right now. Please try again."));
-    } finally {
-      setIsLoadingMore(false);
     }
   };
 
@@ -224,7 +226,7 @@ export default function SellerSubmissions() {
    * @example
    * <button onClick={() => handleDeleteListing(listing)}>Delete</button>
    */
-  const handleDeleteListing = async (listing) => {
+  const handleDeleteListing = (listing) => runDelete(async () => {
     const shouldDelete = window.confirm(listing.listingType === 'product' ? 'Remove this listing from the shop?' : 'Delete this listing?');
     if (!shouldDelete) {
       return;
@@ -250,7 +252,7 @@ export default function SellerSubmissions() {
     } finally {
       setDeletingId('');
     }
-  };
+  });
 
   /**
    * Why: Live products open their storefront page; submissions open the details dialog.
@@ -278,7 +280,7 @@ export default function SellerSubmissions() {
    * @example
    * <button onClick={() => handleOpenEdit(listing)}>Edit</button>
    */
-  const handleOpenEdit = async (listing) => {
+  const handleOpenEdit = (listing) => runOpenEdit(async () => {
     if (!listing.canEdit || !config) {
       return;
     }
@@ -304,7 +306,7 @@ export default function SellerSubmissions() {
     setEditStatus('');
     setEditShowProfileLink(false);
     images.reset(source.imageItems);
-  };
+  });
 
   /**
    * Why: Closes the edit dialog and drops its in-progress state.
@@ -355,30 +357,29 @@ export default function SellerSubmissions() {
       return;
     }
 
-    setIsSavingEdit(true);
     setEditStatus('');
 
     try {
-      const payload = {
-        input: toSubmissionInput(editForm, { keepImageIds: images.keepImageIds }),
-        files: images.files,
-      };
-      if (editing.kind === 'product') {
-        await editLiveProduct(editing.listing.id, payload);
-      } else {
-        await updateSubmission(editing.listing.id, payload);
-      }
+      await runSaveEdit(async () => {
+        const payload = {
+          input: toSubmissionInput(editForm, { keepImageIds: images.keepImageIds }),
+          files: images.files,
+        };
+        if (editing.kind === 'product') {
+          await editLiveProduct(editing.listing.id, payload);
+        } else {
+          await updateSubmission(editing.listing.id, payload);
+        }
 
-      const refreshed = await loadFirstPages();
-      setSelectedSubmission((prev) => (prev ? refreshed.items.find((item) => item.id === prev.id) || null : prev));
-      handleCloseEdit();
+        const refreshed = await loadFirstPages();
+        setSelectedSubmission((prev) => (prev ? refreshed.items.find((item) => item.id === prev.id) || null : prev));
+        handleCloseEdit();
+      });
     } catch (err) {
       const failure = describeSubmissionError(err, "We couldn't save your changes right now. Please try again.");
       setEditStatus(failure.message);
       setEditFieldErrors(failure.fieldErrors);
       setEditShowProfileLink(failure.showProfileLink);
-    } finally {
-      setIsSavingEdit(false);
     }
   };
 
@@ -503,8 +504,8 @@ export default function SellerSubmissions() {
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2">
                           <button type="button" onClick={() => handleViewDetails(listing)} disabled={listing.viewType === 'disabled'} className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] ${listing.viewType === 'disabled' ? 'cursor-not-allowed bg-slate-200 text-slate-500' : 'border border-slate-300 text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]'}`}>View details</button>
-                          <button type="button" onClick={() => handleOpenEdit(listing)} disabled={!listing.canEdit || preparingEditId === listing.id} className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] ${!listing.canEdit ? 'cursor-not-allowed bg-slate-200 text-slate-500' : 'border border-slate-300 text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]'}`}>{preparingEditId === listing.id ? 'Opening...' : 'Edit'}</button>
-                          <button type="button" onClick={() => handleDeleteListing(listing)} disabled={deletingId === listing.id} className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-white hover:bg-rose-700 disabled:opacity-60">{deletingId === listing.id ? 'Deleting...' : (listing.listingType === 'product' ? 'Remove' : 'Delete')}</button>
+                          <button type="button" onClick={() => handleOpenEdit(listing)} disabled={!listing.canEdit || isPreparingEdit} className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] ${!listing.canEdit ? 'cursor-not-allowed bg-slate-200 text-slate-500' : 'border border-slate-300 text-slate-700 hover:border-[#00CED1] hover:text-[#00C5CD]'}`}>{preparingEditId === listing.id ? 'Opening...' : 'Edit'}</button>
+                          <button type="button" onClick={() => handleDeleteListing(listing)} disabled={isDeleting} className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.06em] text-white hover:bg-rose-700 disabled:opacity-60">{deletingId === listing.id ? 'Deleting...' : (listing.listingType === 'product' ? 'Remove' : 'Delete')}</button>
                         </div>
                       </td>
                     </tr>

@@ -129,6 +129,22 @@ describe('OrderDetail returns actions', () => {
     expect(screen.getByText('Completed automatically 48 hours after delivery.')).toBeInTheDocument();
   });
 
+  it('calls confirmDelivery once for two rapid clicks on the confirm button', async () => {
+    let finish;
+    vi.mocked(confirmDelivery).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    renderOrder({ canConfirmDelivery: true });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm delivery' }));
+    const confirmButton = screen.getByRole('button', { name: 'Yes, confirm delivery' });
+    fireEvent.click(confirmButton);
+    fireEvent.click(confirmButton);
+
+    expect(confirmDelivery).toHaveBeenCalledTimes(1);
+    finish({ ...BASE, status: 'completed', completedBy: 'buyer' });
+    await waitFor(() => expect(screen.getByText('You confirmed delivery.')).toBeInTheDocument());
+    expect(confirmDelivery).toHaveBeenCalledTimes(1);
+  });
+
   it('shows an error and keeps the button when confirming fails', async () => {
     vi.mocked(confirmDelivery).mockRejectedValue({ name: 'ApiProblemError', status: 409, code: 'ORDER_NOT_CONFIRMABLE', detail: 'This order can no longer be confirmed.' });
     renderOrder({ canConfirmDelivery: true });

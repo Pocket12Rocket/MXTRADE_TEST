@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { resendVerification, verifyEmail } from '../lib/api/auth';
 import { toUserMessage } from '../lib/userMessage';
+import { useSingleFlight } from '../lib/useSingleFlight';
 
 // Why: The backend answers a resend request the same way whether or not the email needs
 // verifying (no account enumeration, matching the pattern used elsewhere for auth flows), so the
@@ -23,7 +24,7 @@ export default function VerifyEmail() {
   const hasRunRef = useRef(false);
   const [status, setStatus] = useState('verifying');
   const [email, setEmail] = useState('');
-  const [resending, setResending] = useState(false);
+  const { run, pending: resending } = useSingleFlight();
   const [resendMessage, setResendMessage] = useState('');
 
   useEffect(() => {
@@ -63,16 +64,14 @@ export default function VerifyEmail() {
       return;
     }
 
-    setResending(true);
     setResendMessage('');
     try {
-      await resendVerification(email.trim().toLowerCase());
+      await run(() => resendVerification(email.trim().toLowerCase()));
     } catch (err) {
       // Why: never surface the raw error to the user here — the message is generic either way,
       // but the detail is still worth logging for debugging.
       toUserMessage(err, RESEND_GENERIC_MESSAGE);
     } finally {
-      setResending(false);
       setResendMessage(RESEND_GENERIC_MESSAGE);
     }
   };
@@ -157,7 +156,7 @@ export default function VerifyEmail() {
             disabled={resending}
             className="w-full rounded-3xl bg-[#00C5CD] px-4 py-3 font-medium text-white transition hover:bg-[#00CED1] disabled:opacity-60"
           >
-            Send a new link
+            {resending ? 'Sending...' : 'Send a new link'}
           </button>
         </form>
         {resendMessage ? <p className="mt-4 text-sm text-slate-500">{resendMessage}</p> : null}

@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import RefundRequestForm, { validateRefund } from '../../components/RefundRequestForm';
+import { requestRefund } from '../../lib/api/orders';
 
 const routerState = { push: vi.fn(), query: {} };
 vi.mock('next/router', () => ({ useRouter: () => routerState }));
+vi.mock('../../lib/api/orders', async (importOriginal) => ({ ...(await importOriginal()), requestRefund: vi.fn() }));
 vi.mock('../../lib/useAuth', () => ({ default: () => ({ user: { uid: 'u1' }, loading: false }) }));
 
 const BANK = { accountHolder: 'A Buyer', bankName: 'FNB', accountType: 'savings', branchCode: '250655', accountNumber: '62123456789' };
@@ -80,6 +82,26 @@ describe('RefundRequestForm', () => {
     expect(screen.getByText('Please choose what went wrong.')).toBeInTheDocument();
     expect(screen.getByText('Branch code must be 6 digits.')).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('sends the refund request once for two rapid submits', () => {
+    routerState.query = { type: 'never_arrived' };
+    vi.mocked(requestRefund).mockReturnValue(new Promise(() => {}));
+    const { container } = render(<RefundRequestForm orderId="o1" signedInDoneHref="/a" guestDoneHref="/b" />);
+
+    fireEvent.change(screen.getByLabelText('Describe the issue'), { target: { value: 'Still waiting' } });
+    fireEvent.change(screen.getByLabelText('Account holder'), { target: { value: BANK.accountHolder } });
+    fireEvent.change(screen.getByLabelText('Bank name'), { target: { value: BANK.bankName } });
+    fireEvent.change(screen.getByLabelText('Account type'), { target: { value: BANK.accountType } });
+    fireEvent.change(screen.getByLabelText('Branch code (6 digits)'), { target: { value: BANK.branchCode } });
+    fireEvent.change(screen.getByLabelText('Account number (6 to 16 digits)'), { target: { value: BANK.accountNumber } });
+
+    const form = container.querySelector('form');
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+
+    expect(requestRefund).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Submitting...' })).toBeDisabled();
   });
 
   it('offers only the problem types, without never_arrived', () => {

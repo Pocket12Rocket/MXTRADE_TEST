@@ -6,6 +6,7 @@ import ServiceFeeNote from '../../components/ServiceFeeNote';
 import { fetchProductById, recordProductView } from '../../lib/api/catalog';
 import { useCart } from '../../lib/cartContext';
 import { toUserMessage } from '../../lib/userMessage';
+import { useSingleFlight } from '../../lib/useSingleFlight';
 
 /**
  * Why: Product detail page (client-side fetch); errors show a friendly sentence via
@@ -27,7 +28,7 @@ export default function ProductDetail() {
   const [lightboxZoom, setLightboxZoom] = useState(1);
   const [deliveryInfoOpen, setDeliveryInfoOpen] = useState(false);
   const galleryRef = useRef(null);
-  const addToCartLockRef = useRef(false);
+  const { run: runAddToCart, pending: addingToCart } = useSingleFlight();
 
   const productImages = product?.images?.length
     ? product.images
@@ -65,27 +66,20 @@ export default function ProductDetail() {
   const isSpecialActive = Boolean(product?.isSpecialActive && Number(product?.originalPrice) > Number(product?.price));
 
   function handleAddToCart() {
-    if (addToCartLockRef.current) {
-      return;
-    }
+    return runAddToCart(async () => {
+      const added = addItem(product);
 
-    addToCartLockRef.current = true;
-    const added = addItem(product);
+      if (!added) {
+        setStockLimitError('This product is out of stock');
+        setTimeout(() => setStockLimitError(''), 3000);
+        return;
+      }
 
-    if (!added) {
-      setStockLimitError('This product is out of stock');
-      addToCartLockRef.current = false;
-      setTimeout(() => setStockLimitError(''), 3000);
-      return;
-    }
-
-    setStockLimitError('');
-    setAddedToCart(true);
-
-    setTimeout(() => {
+      setStockLimitError('');
+      setAddedToCart(true);
+      await new Promise((resolve) => setTimeout(resolve, 2000));
       setAddedToCart(false);
-      addToCartLockRef.current = false;
-    }, 2000);
+    });
   }
 
   function handleBackClick() {
@@ -368,7 +362,7 @@ export default function ProductDetail() {
           <button
             type="button"
             onClick={handleAddToCart}
-            disabled={Number(product.quantity ?? 0) === 0}
+            disabled={Number(product.quantity ?? 0) === 0 || addingToCart}
             className={`mt-2 w-full rounded-2xl px-5 py-3.5 text-sm font-bold uppercase tracking-[0.12em] transition ${
               Number(product.quantity ?? 0) === 0
                 ? 'cursor-not-allowed bg-slate-300 text-slate-500'

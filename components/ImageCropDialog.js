@@ -4,6 +4,7 @@ import Dialog from '@mui/material/Dialog';
 import Slider from '@mui/material/Slider';
 import { cropImageToFile } from '../lib/cropImage';
 import { toUserMessage } from '../lib/userMessage';
+import { useSingleFlight } from '../lib/useSingleFlight';
 
 /**
  * Why: Lets a user frame each photo at the ratio the storefront displays (4:3 listings, 1:1
@@ -41,7 +42,7 @@ export default function ImageCropDialog({
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [areaPixels, setAreaPixels] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const { run, pending: saving } = useSingleFlight();
   const [error, setError] = useState('');
 
   // Why: Each new file gets a fresh object URL and reset crop state; the URL is revoked when
@@ -71,15 +72,14 @@ export default function ImageCropDialog({
    */
   const handleConfirm = async () => {
     if (!file || !areaPixels) return;
-    setSaving(true);
     setError('');
     try {
-      const cropped = await cropImageToFile(file, areaPixels, { aspect, maxWidth });
-      onConfirm(cropped);
+      await run(async () => {
+        const cropped = await cropImageToFile(file, areaPixels, { aspect, maxWidth });
+        onConfirm(cropped);
+      });
     } catch (err) {
       setError(toUserMessage(err, "We couldn't crop this photo. Please try a JPG or PNG image."));
-    } finally {
-      setSaving(false);
     }
   };
 
