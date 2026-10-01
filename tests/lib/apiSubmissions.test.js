@@ -318,6 +318,13 @@ describe('toSellerListing', () => {
     expect(listing.createdAtMillis).toBe(Date.parse('2026-09-20T10:00:00Z'));
   });
 
+  it('maps serviceFeeWaived, defaulting to false', () => {
+    expect(toSellerListing({ ...submission, serviceFeeWaived: true }).serviceFeeWaived).toBe(true);
+    expect(toSellerListing({ ...submission, serviceFeeWaived: false }).serviceFeeWaived).toBe(false);
+    expect(toSellerListing({ id: 'p1', category: 'parts', serviceFeeWaived: true, sellerPriceCents: 100 }).serviceFeeWaived).toBe(true);
+    expect(toSellerListing(submission).serviceFeeWaived).toBe(false);
+  });
+
   it('reads fitment from a ProductDetail merged with seller fields', () => {
     const listing = toSellerListing({
       id: 'p1',

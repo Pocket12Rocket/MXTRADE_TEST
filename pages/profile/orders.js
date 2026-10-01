@@ -124,6 +124,11 @@ export default function OrdersPage() {
                   >
                     Return
                   </button>
+                  {(order.canConfirmDelivery || order.canReportNotArrived) && (
+                    <Link href={`/profile/orders/${order.id}`} className="ml-3 self-center text-xs font-semibold text-[#00C5CD] underline">
+                      {order.canConfirmDelivery ? 'Confirm delivery' : 'Report not arrived'}
+                    </Link>
+                  )}
                 </div>
               </li>
             );

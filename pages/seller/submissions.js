@@ -6,7 +6,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import useAuth from '../../lib/useAuth';
-import { fetchCatalogConfig } from '../../lib/api/catalog';
+import { SERVICE_FEE_WAIVED_LABEL, fetchCatalogConfig } from '../../lib/api/catalog';
 import {
   deleteSubmission,
   editLiveProduct,
@@ -20,6 +20,7 @@ import {
 import { toUserMessage } from '../../lib/userMessage';
 import ImageCropDialog from '../../components/ImageCropDialog';
 import ListingFormFields from '../../components/ListingFormFields';
+import ServiceFeeNote from '../../components/ServiceFeeNote';
 import { useListingImages } from '../../lib/useListingImages';
 import { LISTING_IMAGE_ASPECT, LISTING_IMAGE_OUTPUT_WIDTH } from '../../lib/cropImage';
 import {
@@ -77,6 +78,7 @@ function getDetailRows(listing) {
     ['Description', listing.description],
     ['Your price', formatRandAmount(listing.sellerPrice)],
     ['Buyers pay', formatRandAmount(listing.price)],
+    ['Service fee', listing.serviceFeeWaived ? SERVICE_FEE_WAIVED_LABEL : ''],
     ['Submitted', listing.createdAt ? new Date(listing.createdAt).toLocaleString() : ''],
   ];
   return rows.filter(([, value]) => value);
@@ -493,7 +495,10 @@ export default function SellerSubmissions() {
                 <tbody className="divide-y divide-slate-100">
                   {listings.map((listing) => (
                     <tr key={`${listing.listingType}-${listing.id}`} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 text-slate-900">{listing.productName}</td>
+                      <td className="px-4 py-3 text-slate-900">
+                        {listing.productName}
+                        <ServiceFeeNote waived={listing.item.serviceFeeWaived} />
+                      </td>
                       <td className="px-4 py-3 text-slate-700 capitalize">{listing.productStatus}</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2">
@@ -611,7 +616,7 @@ export default function SellerSubmissions() {
             ) : null}
 
             <form onSubmit={handleSaveEdit} className="mt-6 space-y-4">
-              <ListingFormFields form={editForm} onChange={handleEditFormChange} config={config} errors={editFieldErrors} />
+              <ListingFormFields form={editForm} onChange={handleEditFormChange} config={config} errors={editFieldErrors} serviceFeeWaived={editing.listing.serviceFeeWaived} />
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex items-center justify-between gap-3">

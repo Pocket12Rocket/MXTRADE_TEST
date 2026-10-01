@@ -5,10 +5,11 @@ import { confirmDelivery } from '../../lib/api/returns';
  * Why: Stubs `fetch` with a JSON response and returns the mock for assertions.
  * @param {*} body - JSON body to return.
  * @param {number} [status=200] - HTTP status.
+ * @param {string} [contentType] - Response content type (`application/problem+json` for errors).
  * @returns {import('vitest').Mock} The fetch mock.
  */
-function stubFetch(body, status = 200) {
-  const fetchMock = vi.fn(async () => new Response(JSON.stringify(body), { status }));
+function stubFetch(body, status = 200, contentType = 'application/json') {
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': contentType } }));
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
@@ -37,8 +38,8 @@ describe('confirmDelivery', () => {
   });
 
   it('rejects when the order is not confirmable (409)', async () => {
-    stubFetch({ type: 'about:blank', title: 'Conflict', status: 409, code: 'ORDER_NOT_CONFIRMABLE' }, 409);
+    stubFetch({ type: 'about:blank', title: 'Conflict', status: 409, code: 'ORDER_NOT_CONFIRMABLE' }, 409, 'application/problem+json');
 
-    await expect(confirmDelivery('o1')).rejects.toMatchObject({ status: 409 });
+    await expect(confirmDelivery('o1')).rejects.toMatchObject({ status: 409, code: 'ORDER_NOT_CONFIRMABLE' });
   });
 });

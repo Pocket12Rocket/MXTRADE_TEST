@@ -38,6 +38,34 @@ describe('OrderDetail totals', () => {
   });
 });
 
+describe('OrderDetail refund states', () => {
+  const DENIED = { id: 'r1', type: 'damaged', status: 'denied', reason: 'Cracked', adminResponse: 'Not covered', images: [], createdAt: '2026-10-01T10:00:00Z' };
+
+  it('shows a denied request and still offers the actions the flags allow', () => {
+    renderOrder({ refund: DENIED, canRequestRefund: true, canConfirmDelivery: true, refundDeadline: '2099-01-05T00:00:00Z' });
+
+    expect(screen.getByText('Denied')).toBeInTheDocument();
+    expect(screen.getByText('Our response: Not covered')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Request refund' })).toHaveAttribute('href', '/order/x/return');
+    expect(screen.getByRole('button', { name: 'Confirm delivery' })).toBeInTheDocument();
+  });
+
+  it('offers Report not arrived again after a denied never_arrived request', () => {
+    renderOrder({ status: 'shipped', refund: { ...DENIED, type: 'never_arrived' }, canReportNotArrived: true });
+
+    expect(screen.getByText('Denied')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Report not arrived' })).toBeInTheDocument();
+  });
+
+  it('keeps refund_pending before delivery on the Shipped step', () => {
+    renderOrder({ status: 'refund_pending', statusLabel: 'Refund pending', shippedAt: '2026-09-20T10:00:00Z', deliveredAt: null, refund: { ...DENIED, type: 'never_arrived', status: 'pending' } });
+
+    expect(screen.getByText('Under review')).toBeInTheDocument();
+    expect(screen.getAllByText('Current')).toHaveLength(1);
+    expect(screen.getByText('Shipped').parentElement).toHaveTextContent('Current');
+  });
+});
+
 describe('OrderDetail returns actions', () => {
   it('hides every action when no flag is set', () => {
     renderOrder();

@@ -25,6 +25,26 @@ describe('validateRefund', () => {
     ]);
   });
 
+  it('uses the exact messages for an empty reason and a short other reason, trimming first', () => {
+    const base = { bankAccount: BANK, images: [PHOTO] };
+
+    expect(validateRefund({ ...base, type: 'damaged', reason: '' })['data.reason']).toBe('Describe the problem.');
+    expect(validateRefund({ ...base, type: 'damaged', reason: '   ' })['data.reason']).toBe('Describe the problem.');
+    expect(validateRefund({ ...base, type: 'other', reason: `${'x'.repeat(10)}          ` })['data.reason']).toBe('Describe the issue (at least 20 characters)');
+  });
+
+  it('mirrors the bank field length limits', () => {
+    const errors = validateRefund({
+      type: 'damaged',
+      reason: 'Cracked',
+      bankAccount: { ...BANK, accountHolder: 'x'.repeat(101), bankName: 'y'.repeat(61) },
+      images: [PHOTO],
+    });
+
+    expect(Object.keys(errors).sort()).toEqual(['data.bankAccount.accountHolder', 'data.bankAccount.bankName']);
+    expect(validateRefund({ type: 'damaged', reason: 'Cracked', bankAccount: { ...BANK, accountHolder: 'x'.repeat(100), bankName: 'y'.repeat(60) }, images: [PHOTO] })).toEqual({});
+  });
+
   it('checks the branch code (6 digits) and account number (6 to 16 digits)', () => {
     const errors = validateRefund({ type: 'damaged', reason: 'Cracked', bankAccount: { ...BANK, branchCode: '12345', accountNumber: '12345' }, images: [PHOTO] });
 

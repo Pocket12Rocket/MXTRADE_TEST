@@ -32,8 +32,8 @@ const EMPTY_BANK_ACCOUNT = { accountHolder: '', bankName: '', accountType: '', b
 
 // Why: Free-text bank detail fields in display order, so the inputs and their validation come from one list.
 const BANK_FIELDS = [
-  { key: 'accountHolder', label: 'Account holder' },
-  { key: 'bankName', label: 'Bank name' },
+  { key: 'accountHolder', label: 'Account holder', maxLength: 100 },
+  { key: 'bankName', label: 'Bank name', maxLength: 60 },
 ];
 
 /**
@@ -47,12 +47,15 @@ const BANK_FIELDS = [
 export function validateRefund({ type, reason, bankAccount, images }) {
   const errors = {};
   const rules = getRefundRules(type);
+  const trimmedReason = String(reason || '').trim();
   if (!type) errors['data.type'] = 'Please choose what went wrong.';
-  if (reason.length < 1) errors['data.reason'] = 'Please describe the issue.';
-  else if (reason.length < rules.minReasonLength) errors['data.reason'] = `Describe the issue (at least ${rules.minReasonLength} characters)`;
-  else if (reason.length > REFUND_MAX_REASON_LENGTH) errors['data.reason'] = `Please keep this to ${REFUND_MAX_REASON_LENGTH} characters or fewer.`;
-  BANK_FIELDS.forEach(({ key, label }) => {
-    if (!bankAccount[key]) errors[`data.bankAccount.${key}`] = `${label} is required.`;
+  if (trimmedReason.length < 1) errors['data.reason'] = 'Describe the problem.';
+  else if (trimmedReason.length < rules.minReasonLength) errors['data.reason'] = `Describe the issue (at least ${rules.minReasonLength} characters)`;
+  else if (trimmedReason.length > REFUND_MAX_REASON_LENGTH) errors['data.reason'] = `Please keep this to ${REFUND_MAX_REASON_LENGTH} characters or fewer.`;
+  BANK_FIELDS.forEach(({ key, label, maxLength }) => {
+    const value = String(bankAccount[key] || '').trim();
+    if (!value) errors[`data.bankAccount.${key}`] = `${label} is required.`;
+    else if (value.length > maxLength) errors[`data.bankAccount.${key}`] = `${label} must be ${maxLength} characters or fewer.`;
   });
   if (!bankAccount.accountType) errors['data.bankAccount.accountType'] = 'Please choose an account type.';
   // Why: validate the same normalised values that are sent (spaces and dashes stripped), so
@@ -234,7 +237,7 @@ export default function RefundRequestForm({ orderId, signedInDoneHref, guestDone
         <fieldset className="space-y-3">
           <legend className="block text-sm font-medium text-slate-700 mb-1">Bank details for your refund</legend>
           <p className="text-xs text-slate-500">Your bank details are stored securely and used only to pay this refund.</p>
-          {BANK_FIELDS.map(({ key, label }) => (
+          {BANK_FIELDS.map(({ key, label, maxLength }) => (
             <div key={key}>
               <label htmlFor={`refund-${key}`} className="block text-sm text-slate-700 mb-1">{label}</label>
               <input
@@ -243,6 +246,7 @@ export default function RefundRequestForm({ orderId, signedInDoneHref, guestDone
                 value={bankAccount[key]}
                 onChange={(e) => setBankField(key, e.target.value)}
                 required
+                maxLength={maxLength}
                 className="w-full rounded border px-3 py-2"
               />
               {fieldError(`data.bankAccount.${key}`)}

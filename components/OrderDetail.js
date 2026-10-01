@@ -63,17 +63,21 @@ function getCompleteStepSublabel(completedBy) {
 }
 
 /**
- * Why: Maps the order onto the 4-step timeline. Refund statuses only occur after delivery, so
- * they show up to Delivered; statuses before payment show none.
- * @param {string} status - API order status.
+ * Why: Maps the order onto the 4-step timeline. A refund can start before delivery (parcel never
+ * arrived), so refund statuses use the order's own dates to find how far it got.
+ * @param {{status: string, shippedAt?: string|null, deliveredAt?: string|null}} order - The order.
  * @returns {number} Index of the last completed step, or -1.
  * @example
- * resolvedStepIndex('shipped'); // 1
+ * resolvedStepIndex({ status: 'refund_pending', shippedAt: '2026-01-02', deliveredAt: null }); // 1
  */
-function resolvedStepIndex(status) {
-  const s = (status || '').toLowerCase();
+function resolvedStepIndex(order) {
+  const s = (order.status || '').toLowerCase();
   if (s === 'completed') return 3;
-  if (s === 'delivered' || s === 'refund_pending' || s === 'refunded') return 2;
+  if (s === 'refund_pending' || s === 'refunded') {
+    if (order.deliveredAt) return 2;
+    return order.shippedAt ? 1 : 0;
+  }
+  if (s === 'delivered') return 2;
   if (s === 'shipped') return 1;
   if (s === 'paid' || s === 'late_payment') return 0;
   return -1;
@@ -111,7 +115,7 @@ export default function OrderDetail({ order: initialOrder, refundHref, backHref,
   // Why: a fresh `order` prop from the page supersedes the locally updated copy.
   useEffect(() => setUpdatedOrder(null), [initialOrder]);
   const order = updatedOrder || initialOrder;
-  const completedIdx = resolvedStepIndex(order.status);
+  const completedIdx = resolvedStepIndex(order);
   const refund = order.refund;
   const deadline = formatDate(order.refundDeadline);
   const timelineSteps = TIMELINE_STEPS.map((step) =>

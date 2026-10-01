@@ -99,14 +99,15 @@ function CustomTextField({ label, value, onChange, placeholder, required }) {
  * @param {object} props.form - Form state.
  * @param {(patch: object) => void} props.onChange - Merges a patch into the form state.
  * @param {Object<string, string>} props.errors - Field errors by form field name.
+ * @param {boolean} [props.serviceFeeWaived] - True on a fee-free listing (buyers pay the seller price).
  * @param {boolean} [props.showPrice] - Render price (default true).
  * @param {boolean} [props.showQuantity] - Render quantity.
  * @param {boolean} [props.showDescription] - Render description (default true).
  * @returns {JSX.Element} The fields.
  * @example
- * <CommonFields form={form} onChange={onChange} errors={errors} showQuantity />
+ * <CommonFields form={form} onChange={onChange} errors={errors} serviceFeeWaived={serviceFeeWaived} showQuantity />
  */
-function CommonFields({ form, onChange, errors, showPrice = true, showQuantity = false, showDescription = true }) {
+function CommonFields({ form, onChange, errors, serviceFeeWaived = false, showPrice = true, showQuantity = false, showDescription = true }) {
   return (
     <>
       {showDescription ? (
@@ -135,7 +136,7 @@ function CommonFields({ form, onChange, errors, showPrice = true, showQuantity =
             className={CONTROL_CLASS}
           />
           <FieldError message={errors.price} />
-          <SellingPriceInfo price={form.price} />
+          <SellingPriceInfo price={form.price} serviceFeeWaived={serviceFeeWaived} />
         </label>
       ) : null}
 
@@ -167,11 +168,12 @@ function CommonFields({ form, onChange, errors, showPrice = true, showQuantity =
  * @param {(patch: object) => void} props.onChange - Merges a patch of form fields into the state.
  * @param {object} props.config - The backend `CatalogConfig`.
  * @param {Object<string, string>} [props.errors] - Field errors by form field name.
+ * @param {boolean} [props.serviceFeeWaived] - True when editing a fee-free listing.
  * @returns {JSX.Element} The fields for `form.category`.
  * @example
  * <ListingFormFields form={form} onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))} config={config} errors={fieldErrors} />
  */
-export default function ListingFormFields({ form, onChange, config, errors = {} }) {
+export default function ListingFormFields({ form, onChange, config, errors = {}, serviceFeeWaived = false }) {
   const conditionOptions = config.conditions.map((item) => ({ value: item.key, label: item.label }));
   const brandOptions = [
     ...config.brands.map((item) => ({ value: item, label: item })),
@@ -270,7 +272,7 @@ export default function ListingFormFields({ form, onChange, config, errors = {} 
           ) : null}
         </div>
 
-        <CommonFields form={form} onChange={onChange} errors={errors} showQuantity />
+        <CommonFields form={form} onChange={onChange} errors={errors} serviceFeeWaived={serviceFeeWaived} showQuantity />
       </>
     );
   }
@@ -318,7 +320,7 @@ export default function ListingFormFields({ form, onChange, config, errors = {} 
           ) : null}
         </div>
 
-        <CommonFields form={form} onChange={onChange} errors={errors} />
+        <CommonFields form={form} onChange={onChange} errors={errors} serviceFeeWaived={serviceFeeWaived} />
       </>
     );
   }
@@ -344,7 +346,7 @@ export default function ListingFormFields({ form, onChange, config, errors = {} 
           />
           <FieldError message={errors.name} />
         </label>
-        <CommonFields form={form} onChange={onChange} errors={errors} showDescription={false} showQuantity />
+        <CommonFields form={form} onChange={onChange} errors={errors} serviceFeeWaived={serviceFeeWaived} showDescription={false} showQuantity />
         <SelectField
           label="Condition"
           value={form.condition}
@@ -443,7 +445,7 @@ export default function ListingFormFields({ form, onChange, config, errors = {} 
         ) : null}
         <FieldError message={errors.models} />
       </label>
-      <CommonFields form={form} onChange={onChange} errors={errors} showPrice={false} />
+      <CommonFields form={form} onChange={onChange} errors={errors} serviceFeeWaived={serviceFeeWaived} showPrice={false} />
     </>
   );
 }
