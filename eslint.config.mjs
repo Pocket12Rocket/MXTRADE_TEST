@@ -4,6 +4,36 @@ import prettier from 'eslint-config-prettier';
 import jsdoc from 'eslint-plugin-jsdoc';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
+import tseslint from 'typescript-eslint';
+
+// Why: Both the JS and the TS blocks enforce the same AGENTS.md rules (JSDoc on functions, no
+// rendered err.message), so they are defined once.
+const sharedRules = {
+  // Why: AGENTS.md requires JSDoc on every function, hook and component.
+  'jsdoc/require-jsdoc': [
+    'error',
+    {
+      publicOnly: false,
+      require: {
+        FunctionDeclaration: true,
+        ClassDeclaration: true,
+        MethodDefinition: true,
+        ArrowFunctionExpression: false,
+      },
+      contexts: ['VariableDeclaration > VariableDeclarator > ArrowFunctionExpression'],
+      checkConstructors: false,
+    },
+  ],
+  // Why: AGENTS.md bans rendering raw error text; route errors through toUserMessage().
+  'no-restricted-syntax': [
+    'error',
+    {
+      selector:
+        "JSXExpressionContainer MemberExpression[property.name='message'][object.name=/^(err|error|e)$/]",
+      message: 'Never render err.message. Use toUserMessage(err, fallback).',
+    },
+  ],
+};
 
 export default [
   {
@@ -18,6 +48,7 @@ export default [
       '.playwright-mcp',
       '.playwright-ui-review',
       'MXTRADE_TEST',
+      'src/lib/api/schema.d.ts',
     ],
   },
   js.configs.recommended,
@@ -37,30 +68,22 @@ export default [
       // Why: Existing pages load data by calling setState in mount effects; moving that to
       // TanStack Query is the planned fix, so it is reported as a warning until then.
       'react-hooks/set-state-in-effect': 'warn',
-      // Why: AGENTS.md requires JSDoc on every function, hook and component.
-      'jsdoc/require-jsdoc': [
+      ...sharedRules,
+    },
+  },
+  ...tseslint.configs.recommended.map((config) => ({ ...config, files: ['**/*.{ts,tsx}'] })),
+  {
+    files: ['**/*.{ts,tsx}'],
+    languageOptions: { globals: { ...globals.browser, process: 'readonly' } },
+    plugins: { 'react-hooks': reactHooks, jsdoc },
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      'react-hooks/set-state-in-effect': 'warn',
+      '@typescript-eslint/no-unused-vars': [
         'error',
-        {
-          publicOnly: false,
-          require: {
-            FunctionDeclaration: true,
-            ClassDeclaration: true,
-            MethodDefinition: true,
-            ArrowFunctionExpression: false,
-          },
-          contexts: ['VariableDeclaration > VariableDeclarator > ArrowFunctionExpression'],
-          checkConstructors: false,
-        },
+        { argsIgnorePattern: '^_', ignoreRestSiblings: true },
       ],
-      // Why: AGENTS.md bans rendering raw error text; route errors through toUserMessage().
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector:
-            "JSXExpressionContainer MemberExpression[property.name='message'][object.name=/^(err|error|e)$/]",
-          message: 'Never render err.message. Use toUserMessage(err, fallback).',
-        },
-      ],
+      ...sharedRules,
     },
   },
   {

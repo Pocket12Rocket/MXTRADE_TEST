@@ -11,3 +11,4 @@ public
 .playwright-ui-review
 MXTRADE_TEST
 skills-lock.json
+src/lib/api/schema.d.ts

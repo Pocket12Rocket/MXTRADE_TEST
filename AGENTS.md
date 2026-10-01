@@ -79,7 +79,8 @@ session:
   - Production hosts: `fastsport.co.za` (client), `admin.fastsport.co.za`,
     `api.fastsport.co.za`.
   - Local ports: client 3000, admin 3001, API 4000.
-- **Tests:** Vitest with jsdom and React Testing Library (`*.test.js` next to the code). Playwright (MCP) is used for
+- **Language:** TypeScript (strict) alongside existing JavaScript, being converted.
+- **Tests:** Vitest with jsdom and React Testing Library (`*.test.ts(x)` next to the code). Playwright (MCP) is used for
   in-browser checks.
 
 ## Repo structure
@@ -131,7 +132,7 @@ Dockerfile, .dockerignore   Standalone image for later deployment (not used loca
 
 Tests live next to the code they cover as `*.test.js` (for example
 `src/features/auth/LoginPage.test.js`). Imports that cross folders use the `@/` alias for `src/`
-(`jsconfig.json`, Vitest alias); imports within one folder stay relative (`./Foo`).
+(`tsconfig.json`, Vitest alias); imports within one folder stay relative (`./Foo`).
 
 **Oddities:** `MXTRADE_TEST/` at the root is an empty, orphaned gitlink (TECH_DEBT DX-05); leave
 it alone. `.agents/` and `skills-lock.json` are tool reference docs, not app code.
@@ -140,17 +141,20 @@ in AUDIT.md.
 
 ## Commands and setup
 
-| Command                | What it does                                         |
-| ---------------------- | ---------------------------------------------------- |
-| `npm run dev`          | Next.js dev server on :3000                          |
-| `npm run build`        | Production (standalone) build                        |
-| `npm test`             | Vitest, run once                                     |
-| `npm run test:watch`   | Vitest in watch mode                                 |
-| `npm run lint`         | ESLint over the repo                                 |
-| `npm run lint:fix`     | ESLint with autofix                                  |
-| `npm run format`       | Prettier, write                                      |
-| `npm run format:check` | Prettier, check only                                 |
-| `npm run check`        | Lint, format check and tests (run before committing) |
+| Command                  | What it does                                                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`            | Next.js dev server on :3000                                                                                         |
+| `npm run build`          | Production (standalone) build                                                                                       |
+| `npm test`               | Vitest, run once                                                                                                    |
+| `npm run test:watch`     | Vitest in watch mode                                                                                                |
+| `npm run lint`           | ESLint over the repo                                                                                                |
+| `npm run lint:fix`       | ESLint with autofix                                                                                                 |
+| `npm run format`         | Prettier, write                                                                                                     |
+| `npm run format:check`   | Prettier, check only                                                                                                |
+| `npm run typecheck`      | TypeScript check, no emit (`tsc --noEmit`)                                                                          |
+| `npm run api:types`      | Regenerate `src/lib/api/schema.d.ts` from the sibling backend repo file `../FastSport_BackEnd/openapi/openapi.json` |
+| `npm run api:types:live` | Same, from `$OPENAPI_URL` (default `http://localhost:4000/v1/openapi.json`)                                         |
+| `npm run check`          | Typecheck, lint, format check and tests (run before committing)                                                     |
 
 **Environment:** copy `.env.example` to `.env.local`. The client needs only
 `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_BRAND_LOGO` and
@@ -199,7 +203,8 @@ Every new or modified function, hook and component must have a JSDoc block:
 
 ### Style: match what's already here
 
-- Plain JavaScript for now (TypeScript is a later phase). React function components with hooks.
+- The client is moving to TypeScript: **new files are `.ts`/`.tsx`**, and existing `.js` files are converted over time (`allowJs` is on, `checkJs` is off, so JS and TS mix). Use React function components with hooks.
+- **API types come from the generated schema, never by hand.** Import the aliases in `src/lib/api/types.ts` (for example `Me`, `ProductDetail`, `Checkout`); add an alias there when you need a new schema. Do not hand-write types for API payloads, and do not edit `src/lib/api/schema.d.ts`; regenerate it with `npm run api:types`.
 - ESLint (flat config, `eslint.config.mjs`) and Prettier (`.prettierrc.json`, 100 columns) are enforced. Run `npm run lint` and `npm run format` (or `npm run check`) before committing. Don't disable a lint rule to get past it; fix the code, or report the rule if it fires on many legitimate cases.
 - New route files in `src/pages/` stay thin: put the page component in a feature folder and re-export it as default.
 - Tailwind for layout. MUI for complex, accessible controls (dialogs, drawers, sliders), imported
@@ -239,7 +244,7 @@ logic, don't restyle.
 ### Tests
 
 Add or update Vitest tests with every logic change (next to the code, as `*.test.js`). Mock `next/router` and `lib/api/*` in page tests. Stub `fetch` for `lib/api` and
-`apiClient` tests. `npm run check` (lint, format check, tests) and `npm run build` must pass before you commit.
+`apiClient` tests. `npm run check` (typecheck, lint, format check, tests) and `npm run build` must pass before you commit.
 
 ## Backend API rules for agents
 

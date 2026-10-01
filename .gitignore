@@ -12,3 +12,5 @@ firebase-debug.log
 /.idea
 /.playwright-mcp
 /.playwright-ui-review
+*.tsbuildinfo
+next-env.d.ts
