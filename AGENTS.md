@@ -50,6 +50,9 @@ session:
   `getServerSideProps`/`getStaticProps`). `output: 'standalone'` is set for Docker.
 - **UI:** React 19 function components, Tailwind CSS 3 plus a shared MUI theme
   (`src/theme/muiTheme.js`, `src/theme/tokens.js`). Image cropping uses `react-easy-crop`.
+- **Data loading:** TanStack Query 5 (`@tanstack/react-query`), client-side only (no SSR
+  hydration). The client comes from `makeQueryClient()` in `src/lib/queryClient.ts` and is
+  provided in `_app.tsx`. Keys live in `src/lib/queryKeys.ts`, hooks in `src/lib/queries/*`.
 - **Backend:** the FastSport API (`FastSport_BackEnd`), reached at `NEXT_PUBLIC_API_URL`, which
   includes the version prefix (for example `http://localhost:4000/v1`).
   - The contract is OpenAPI, generated from Zod: `GET /v1/openapi.json`, with a copy at
@@ -115,6 +118,8 @@ src/
     api/                    One module per backend domain: auth, catalog (plus toClientProduct()),
                             profile, seller, submissions (plus toSellerListing()), checkouts,
                             orders, returns, contact
+    queryClient.ts, queryKeys.ts, queries/   TanStack Query client factory, the one key factory,
+                            and the query/mutation hooks per domain
     AuthContext.js, useAuth.js   Shared session state from GET /me (user, profile, signOut, ...)
     userMessage.js          toUserMessage() and UserFacingError; the only way errors reach the UI
     useSingleFlight.js      Double-submit guard for every backend action
@@ -225,12 +230,28 @@ Never render `err.message`, error codes, stack text or URLs. Use
 says it's safe to show users) and a generic sentence for 5xx. Show per-field validation errors
 with `getFieldErrors(err)` from `src/lib/apiClient.js`. Never log user or profile objects.
 
+### Data loading
+
+- All server data goes through the hooks in `src/lib/queries/*` (TanStack Query). Never load data
+  with `useEffect` plus `fetch`/`lib/api/*` in a component.
+- Every query key comes from `src/lib/queryKeys.ts`; never write a key array inline. A new
+  domain adds its keys there and its hooks to `src/lib/queries/<domain>.ts`, which wrap the
+  functions in `src/lib/api/*`.
+- Every write is a `useMutation` hook that updates or invalidates the keys it affects. Mutation
+  errors still go through `toUserMessage`.
+- Tests wrap components with `renderWithQueryClient` from `src/test/`.
+- Auth stays in `AuthContext` (`useAuth`); the account mutations keep it and the `me` key in sync.
+
 ### No double submits
 
 - Every button or form that calls the backend, or changes important state, goes through `useSingleFlight` (`src/lib/useSingleFlight.js`).
   - It blocks a second click synchronously, before React re-renders.
   - It exposes `pending`, so the button can be disabled and show a busy label.
   - Use `holdOnSuccess` for actions that navigate away (login, the PayFast hand-off).
+- Mutations are guarded by `useSingleFlight` too: the button runs the mutation inside `run()` and
+  `pending` disables it, for example
+  `run(() => mutateAsync(args))`. `run` blocks the second click before React re-renders, which
+  `mutation.isPending` alone can't; use `mutateAsync` so `run` sees the promise.
 - Effects that send a request on mount need a ref guard, so they fire once under StrictMode.
 - New actions need a test that triggers them twice quickly and asserts one API call.
 
