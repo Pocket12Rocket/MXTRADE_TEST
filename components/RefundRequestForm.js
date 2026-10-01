@@ -3,21 +3,76 @@ import { useRouter } from 'next/router';
 import useAuth from '../lib/useAuth';
 import {
   REFUND_IMAGE_TYPES,
-  REFUND_MAX_IMAGES,
   REFUND_MAX_IMAGE_BYTES,
-  REFUND_MIN_IMAGES,
+  REFUND_MAX_REASON_LENGTH,
+  REFUND_TYPES,
   getOrderToken,
+  getRefundRules,
   requestRefund,
 } from '../lib/api/orders';
+import { ACCOUNT_TYPE_OPTIONS } from '../lib/api/seller';
 import { getFieldErrors } from '../lib/apiClient';
 import { toUserMessage } from '../lib/userMessage';
 
 /**
+ * Why: Buyers often type bank numbers with spaces or dashes; strip them once, so validation and
+ * the request use the same digits.
+ * @param {string} [value] - Raw input.
+ * @returns {string} The value with whitespace and dashes removed.
+ * @example
+ * stripDigitSeparators('1234 5678-90'); // '1234567890'
+ */
+function stripDigitSeparators(value) {
+  return String(value || '').replace(/[\s-]/g, '');
+}
+
+const EMPTY_BANK_ACCOUNT = { accountHolder: '', bankName: '', accountType: '', branchCode: '', accountNumber: '' };
+
+// Why: Free-text bank detail fields in display order, so the inputs and their validation come from one list.
+const BANK_FIELDS = [
+  { key: 'accountHolder', label: 'Account holder' },
+  { key: 'bankName', label: 'Bank name' },
+];
+
+/**
+ * Why: Validates the form before upload with the same rules as the backend (D-22 bank details,
+ * per-type photos and reason), returning errors keyed by the backend's 422 paths so client and
+ * server messages render in the same places.
+ * @param {{type: string, reason: string, bankAccount: object, images: File[]}} values - Form values.
+ * @returns {Object<string, string>} Message per field path; empty when the form is valid.
+ * @example
+ * validateRefund({ type: '', reason: '', bankAccount: {}, images: [] })['data.type']; // 'Please choose what went wrong.'
+ */
+export function validateRefund({ type, reason, bankAccount, images }) {
+  const errors = {};
+  const rules = getRefundRules(type);
+  if (!type) errors['data.type'] = 'Please choose what went wrong.';
+  if (reason.length < 1) errors['data.reason'] = 'Please describe the issue.';
+  else if (reason.length < rules.minReasonLength) errors['data.reason'] = `Describe the issue (at least ${rules.minReasonLength} characters)`;
+  else if (reason.length > REFUND_MAX_REASON_LENGTH) errors['data.reason'] = `Please keep this to ${REFUND_MAX_REASON_LENGTH} characters or fewer.`;
+  BANK_FIELDS.forEach(({ key, label }) => {
+    if (!bankAccount[key]) errors[`data.bankAccount.${key}`] = `${label} is required.`;
+  });
+  if (!bankAccount.accountType) errors['data.bankAccount.accountType'] = 'Please choose an account type.';
+  // Why: validate the same normalised values that are sent (spaces and dashes stripped), so
+  // "1234 5678 90" isn't rejected here when the backend would accept it.
+  if (!/^\d{6}$/.test(stripDigitSeparators(bankAccount.branchCode))) errors['data.bankAccount.branchCode'] = 'Branch code must be 6 digits.';
+  if (!/^\d{6,16}$/.test(stripDigitSeparators(bankAccount.accountNumber))) errors['data.bankAccount.accountNumber'] = 'Account number must be 6 to 16 digits.';
+  if (images.length < rules.minImages) errors.images = 'Please add at least one photo of the problem.';
+  else if (images.length > rules.maxImages) errors.images = `You can upload up to ${rules.maxImages} photos. Please remove some.`;
+  else if (images.some((file) => !REFUND_IMAGE_TYPES.includes(file.type))) errors.images = 'Photos must be JPEG, PNG or WebP images.';
+  else if (images.some((file) => file.size > REFUND_MAX_IMAGE_BYTES)) errors.images = 'Each photo must be 10 MB or smaller.';
+  return errors;
+}
+
+/**
  * Why: Refund request form (`POST /orders/{id}/refund-request`) shared by the signed-in and guest
- * return pages. Photos are required (1-5, D-08) and sent uncropped as chosen; the backend's 409
- * `REFUND_WINDOW_CLOSED` / `ORDER_NOT_REFUNDABLE` messages are shown through `toUserMessage()`.
- * Guests are authorised by their stored order token, which is sent with the request. No bank
- * details are collected (open decision D-22).
+ * return pages. The buyer picks a refund type (no default); photos are required (1-5, D-08) except
+ * for `never_arrived`, and sent uncropped as chosen. The buyer also gives the bank account for the
+ * refund EFT (D-22). 422 field errors show under their fields (`data.type`, `data.reason`,
+ * `data.bankAccount.*`, `images`); the backend's 409 `REFUND_WINDOW_CLOSED`,
+ * `NOT_ARRIVED_TOO_EARLY` and `ORDER_NOT_REFUNDABLE` messages are shown through `toUserMessage()`.
+ * Guests are authorised by their stored order token, which is sent with the request.
  * @param {object} props - Component props.
  * @param {string} props.orderId - Order UUID.
  * @param {string} props.signedInDoneHref - Where a signed-in buyer goes after success.
@@ -29,11 +84,23 @@ import { toUserMessage } from '../lib/userMessage';
 export default function RefundRequestForm({ orderId, signedInDoneHref, guestDoneHref }) {
   const router = useRouter();
   const { user, loading } = useAuth();
+  const [type, setType] = useState('');
   const [reason, setReason] = useState('');
+  const [bankAccount, setBankAccount] = useState(EMPTY_BANK_ACCOUNT);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [images, setImages] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+
+  const rules = getRefundRules(type);
+  const setBankField = (key, value) => setBankAccount((prev) => ({ ...prev, [key]: value }));
+  // Why: shows the message for a field path (and `images.N` under the photos) in one place.
+  const fieldError = (path) => {
+    const message = fieldErrors[path]
+      || (path === 'images' ? Object.entries(fieldErrors).find(([key]) => key.startsWith('images.'))?.[1] : '');
+    return message ? <p className="mt-1 text-sm text-red-600">{message}</p> : null;
+  };
 
   const handleImageChange = (e) => {
     const incomingFiles = Array.from(e.target.files || []);
@@ -80,31 +147,26 @@ export default function RefundRequestForm({ orderId, signedInDoneHref, guestDone
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (images.length < REFUND_MIN_IMAGES) {
-      setError('Please add at least one photo of the problem.');
-      return;
-    }
-    if (images.length > REFUND_MAX_IMAGES) {
-      setError(`You can upload up to ${REFUND_MAX_IMAGES} photos. Please remove some.`);
-      return;
-    }
-    if (images.some((file) => !REFUND_IMAGE_TYPES.includes(file.type))) {
-      setError('Photos must be JPEG, PNG or WebP images.');
-      return;
-    }
-    if (images.some((file) => file.size > REFUND_MAX_IMAGE_BYTES)) {
-      setError('Each photo must be 10 MB or smaller.');
-      return;
-    }
+    const cleanBank = {
+      ...Object.fromEntries(Object.entries(bankAccount).map(([key, value]) => [key, value.trim()])),
+      accountNumber: stripDigitSeparators(bankAccount.accountNumber),
+    };
+    const values = { type, reason: reason.trim(), bankAccount: cleanBank, images };
+    const errors = validateRefund(values);
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     setSubmitting(true);
     try {
-      await requestRefund(orderId, { reason: reason.trim(), files: images }, getOrderToken(orderId));
+      await requestRefund(orderId, { type, reason: values.reason, bankAccount: cleanBank, files: images }, getOrderToken(orderId));
       setSuccess(true);
       setTimeout(() => router.push(user ? signedInDoneHref : guestDoneHref), 2000);
     } catch (err) {
-      // 422 paths: `data.reason`, `images`, `images.N`; the first field message is the most specific.
-      const [fieldMessage] = Object.values(getFieldErrors(err));
-      setError(fieldMessage || toUserMessage(err, "We couldn't submit your refund request. Please try again."));
+      // 422 paths map to the fields; anything else (409 codes, 413, ...) goes through toUserMessage.
+      const serverErrors = getFieldErrors(err);
+      setFieldErrors(serverErrors);
+      if (Object.keys(serverErrors).length === 0) {
+        setError(toUserMessage(err, "We couldn't submit your refund request. Please try again."));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -134,19 +196,102 @@ export default function RefundRequestForm({ orderId, signedInDoneHref, guestDone
       <h1 className="text-2xl font-semibold mb-6">Submit Refund Request</h1>
       {error && <p className="text-red-600 mb-4">{error}</p>}
       <form onSubmit={handleSubmit} className="space-y-4">
+        <fieldset>
+          <legend className="block text-sm font-medium text-slate-700 mb-1">What went wrong?</legend>
+          {REFUND_TYPES.map((option) => (
+            <label key={option.value} className="flex items-center gap-2 py-1 text-sm text-slate-700">
+              <input
+                type="radio"
+                name="refundType"
+                value={option.value}
+                checked={type === option.value}
+                onChange={() => setType(option.value)}
+              />
+              {option.label}
+            </label>
+          ))}
+          {fieldError('data.type')}
+        </fieldset>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Reason for refund</label>
+          <label htmlFor="refund-reason" className="block text-sm font-medium text-slate-700 mb-1">Describe the issue</label>
           <textarea
+            id="refund-reason"
             value={reason}
             onChange={e => setReason(e.target.value)}
             required
             rows={3}
+            maxLength={REFUND_MAX_REASON_LENGTH}
             className="w-full rounded border px-3 py-2"
             placeholder="Describe the issue with your order..."
           />
+          {rules.minReasonLength > 1 && (
+            <p className="mt-1 text-xs text-slate-500">Please give at least {rules.minReasonLength} characters so we can understand the issue.</p>
+          )}
+          {fieldError('data.reason')}
         </div>
+        <fieldset className="space-y-3">
+          <legend className="block text-sm font-medium text-slate-700 mb-1">Bank details for your refund</legend>
+          <p className="text-xs text-slate-500">Your bank details are stored securely and used only to pay this refund.</p>
+          {BANK_FIELDS.map(({ key, label }) => (
+            <div key={key}>
+              <label htmlFor={`refund-${key}`} className="block text-sm text-slate-700 mb-1">{label}</label>
+              <input
+                id={`refund-${key}`}
+                type="text"
+                value={bankAccount[key]}
+                onChange={(e) => setBankField(key, e.target.value)}
+                required
+                className="w-full rounded border px-3 py-2"
+              />
+              {fieldError(`data.bankAccount.${key}`)}
+            </div>
+          ))}
+          <div>
+            <label htmlFor="refund-accountType" className="block text-sm text-slate-700 mb-1">Account type</label>
+            <select
+              id="refund-accountType"
+              value={bankAccount.accountType}
+              onChange={(e) => setBankField('accountType', e.target.value)}
+              required
+              className="w-full rounded border px-3 py-2"
+            >
+              <option value="">Select account type</option>
+              {ACCOUNT_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            {fieldError('data.bankAccount.accountType')}
+          </div>
+          <div>
+            <label htmlFor="refund-branchCode" className="block text-sm text-slate-700 mb-1">Branch code (6 digits)</label>
+            <input
+              id="refund-branchCode"
+              type="text"
+              inputMode="numeric"
+              value={bankAccount.branchCode}
+              onChange={(e) => setBankField('branchCode', e.target.value.replace(/\D/g, ''))}
+              required
+              className="w-full rounded border px-3 py-2"
+            />
+            {fieldError('data.bankAccount.branchCode')}
+          </div>
+          <div>
+            <label htmlFor="refund-accountNumber" className="block text-sm text-slate-700 mb-1">Account number (6 to 16 digits)</label>
+            <input
+              id="refund-accountNumber"
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              value={bankAccount.accountNumber}
+              onChange={(e) => setBankField('accountNumber', e.target.value)}
+              required
+              className="w-full rounded border px-3 py-2"
+            />
+            {fieldError('data.bankAccount.accountNumber')}
+          </div>
+        </fieldset>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Upload images (required, 1 to 5, JPEG/PNG/WebP, 10 MB each)</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Upload images ({rules.minImages > 0 ? 'required, 1 to 5' : 'optional, up to 5'}, JPEG/PNG/WebP, 10 MB each)</label>
           <input
             type="file"
             accept={REFUND_IMAGE_TYPES.join(',')}
@@ -180,9 +325,10 @@ export default function RefundRequestForm({ orderId, signedInDoneHref, guestDone
                 ))}
               </div>
             ) : (
-              <p className="mt-2 text-sm text-slate-600">No images selected yet. At least one photo is required.</p>
+              <p className="mt-2 text-sm text-slate-600">{rules.minImages > 0 ? 'No images selected yet. At least one photo is required.' : 'No images selected yet. Photos are optional for items that never arrived.'}</p>
             )}
           </div>
+          {fieldError('images')}
         </div>
         <button
           type="submit"

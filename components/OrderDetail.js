@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import PrivateImage from './PrivateImage';
-import { formatRands, getOrderToken, getPaymentStepCopy, getRefundStatusLabel } from '../lib/api/orders';
+import { formatRands, getOrderToken, getPaymentStepCopy, getRefundStatusLabel, getRefundTypeLabel } from '../lib/api/orders';
 
 function formatDate(ts) {
   if (!ts) return null;
@@ -223,8 +223,10 @@ export default function OrderDetail({ order, refundHref, backHref, backLabel }) 
         <div className="space-y-3 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-base font-semibold text-slate-900">Refund request</h2>
           <p className="text-sm font-semibold text-slate-700">{getRefundStatusLabel(refund.status)}</p>
+          {refund.type && <p className="text-sm text-slate-600">Type: {getRefundTypeLabel(refund.type)}</p>}
           {refund.reason && <p className="text-sm text-slate-600">Your reason: {refund.reason}</p>}
-          {refund.adminResponse && <p className="text-sm text-slate-600">Our response: {refund.adminResponse}</p>}
+          {refund.bankAccount?.accountLast4 && <p className="text-sm text-slate-600">Refund to account ending in {refund.bankAccount.accountLast4}</p>}
+          {refund.adminResponse &&<p className="text-sm text-slate-600">Our response: {refund.adminResponse}</p>}
           {refund.eftReference && <p className="text-xs text-slate-500">EFT reference: {refund.eftReference}</p>}
           {formatDate(refund.createdAt) && <p className="text-xs text-slate-500">Requested {formatDate(refund.createdAt)}</p>}
           {Array.isArray(refund.images) && refund.images.length > 0 && (
@@ -241,7 +243,7 @@ export default function OrderDetail({ order, refundHref, backHref, backLabel }) 
       {/* Refund CTA, only when the API says the order can be refunded */}
       {order.canRequestRefund && (
         <div className="flex flex-col items-end gap-2">
-          {deadline && <p className="text-xs text-slate-500">You can request a refund until {deadline} (24 hours after delivery).</p>}
+          {deadline && <p className="text-xs text-slate-500">You can request a refund until {deadline} (48 hours after delivery).</p>}
           <Link
             href={refundHref}
             className="rounded-full bg-rose-600 px-6 py-3 text-sm font-semibold text-white hover:bg-rose-700"

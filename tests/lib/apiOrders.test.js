@@ -8,7 +8,10 @@ import {
   getOrder,
   getOrderToken,
   getPaymentStepCopy,
+  getRefundRules,
   getRefundStatusLabel,
+  getRefundTypeLabel,
+  REFUND_TYPES,
   getQuoteLineIssue,
   ORDER_STATUSES,
   orderStatusColour,
@@ -131,7 +134,7 @@ describe('orderStatusColour', () => {
 
 describe('getPaymentStepCopy', () => {
   it('describes a late payment as under review and everything else as confirmed', () => {
-    expect(getPaymentStepCopy('late_payment').label).toBe('Payment received, being reviewed');
+    expect(getPaymentStepCopy('late_payment').label).toBe('Payment under review');
     expect(getPaymentStepCopy('late_payment').sublabel).toContain('Our team will contact you');
     expect(getPaymentStepCopy('paid').label).toBe('Payment Confirmed');
     expect(getPaymentStepCopy(undefined).label).toBe('Payment Confirmed');
@@ -163,27 +166,55 @@ describe('startPayfast errors', () => {
   });
 });
 
+const BANK = { accountHolder: 'A Buyer', bankName: 'FNB', accountType: 'savings', branchCode: '250655', accountNumber: '62123456789' };
+
 describe('refund request', () => {
   it('builds multipart with JSON data and images', () => {
     const files = [new File(['a'], 'a.png', { type: 'image/png' }), new File(['b'], 'b.png', { type: 'image/png' })];
 
-    const form = buildRefundFormData({ reason: 'Damaged', files });
+    const form = buildRefundFormData({ type: 'damaged', reason: 'Damaged', bankAccount: BANK, files });
 
-    expect(JSON.parse(form.get('data'))).toEqual({ reason: 'Damaged' });
+    expect(JSON.parse(form.get('data'))).toEqual({ type: 'damaged', reason: 'Damaged', bankAccount: BANK });
     expect(form.getAll('images')).toHaveLength(2);
+  });
+
+  it.each(REFUND_TYPES.map((item) => item.value))('puts type %s in the data JSON', (type) => {
+    const form = buildRefundFormData({ type, reason: 'Reason', bankAccount: BANK, files: [] });
+
+    expect(JSON.parse(form.get('data')).type).toBe(type);
+    expect(form.getAll('images')).toHaveLength(0);
   });
 
   it('posts FormData to the refund endpoint with the order token', async () => {
     const fetchMock = stubFetch({ id: 'o1', status: 'refund_pending' }, 201);
     const file = new File(['a'], 'a.png', { type: 'image/png' });
 
-    await requestRefund('o1', { reason: 'Damaged', files: [file] }, 'secret');
+    await requestRefund('o1', { type: 'damaged', reason: 'Damaged', bankAccount: BANK, files: [file] }, 'secret');
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toMatch(/\/orders\/o1\/refund-request$/);
     expect(init.body).toBeInstanceOf(FormData);
     expect(init.headers['Content-Type']).toBeUndefined();
     expect(init.headers['X-Order-Token']).toBe('secret');
+  });
+});
+
+describe('refund types', () => {
+  it('labels every type and passes unknown values through', () => {
+    expect(getRefundTypeLabel('damaged')).toBe('Item arrived damaged');
+    expect(getRefundTypeLabel('not_as_described')).toBe('Not as described');
+    expect(getRefundTypeLabel('never_arrived')).toBe('Never arrived');
+    expect(getRefundTypeLabel('other')).toBe('Other issue');
+    expect(getRefundTypeLabel('mystery')).toBe('mystery');
+    expect(getRefundTypeLabel(undefined)).toBe('');
+  });
+
+  it('requires photos except for never_arrived, and 20 characters for other', () => {
+    expect(getRefundRules('damaged')).toEqual({ minImages: 1, maxImages: 5, minReasonLength: 1 });
+    expect(getRefundRules('not_as_described').minImages).toBe(1);
+    expect(getRefundRules('never_arrived')).toEqual({ minImages: 0, maxImages: 5, minReasonLength: 1 });
+    expect(getRefundRules('other')).toEqual({ minImages: 1, maxImages: 5, minReasonLength: 20 });
+    expect(getRefundRules('').minImages).toBe(1);
   });
 });
 
