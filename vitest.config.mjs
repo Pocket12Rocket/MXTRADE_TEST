@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
@@ -5,6 +6,9 @@ import react from '@vitejs/plugin-react';
 // files, so the JSX transform is widened to .js.
 export default defineConfig({
   plugins: [react({ include: /\.(js|jsx)$/ })],
+  resolve: {
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+  },
   oxc: {
     include: /\.(js|jsx)$/,
     exclude: [],
@@ -13,8 +17,8 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: false,
-    setupFiles: ['./tests/setup.js'],
-    include: ['tests/**/*.test.js'],
+    setupFiles: ['./src/test/setup.js'],
+    include: ['src/**/*.test.{js,jsx,ts,tsx}'],
     css: false,
   },
 });

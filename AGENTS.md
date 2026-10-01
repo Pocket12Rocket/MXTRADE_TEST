@@ -9,11 +9,11 @@ this whole document before making changes.
 The app is **not live** and is being split into three repos, each owned by its own Claude
 session:
 
-| Repo | Owner session | Role |
-|---|---|---|
-| `MXTRADE_TEST` (this repo) | client | Buyer and seller storefront only (Next.js) |
-| `FastSport_Admin` | admin | All admin screens (Vite, React and MUI) |
-| `FastSport_BackEnd` | backend | Express, TypeScript and PostgreSQL API. It owns auth, business logic, files, email and the API contract |
+| Repo                       | Owner session | Role                                                                                                    |
+| -------------------------- | ------------- | ------------------------------------------------------------------------------------------------------- |
+| `MXTRADE_TEST` (this repo) | client        | Buyer and seller storefront only (Next.js)                                                              |
+| `FastSport_Admin`          | admin         | All admin screens (Vite, React and MUI)                                                                 |
+| `FastSport_BackEnd`        | backend       | Express, TypeScript and PostgreSQL API. It owns auth, business logic, files, email and the API contract |
 
 - **The plan and progress:** [docs/expansion/PLAN.md](docs/expansion/PLAN.md) and
   [docs/expansion/AUDIT.md](docs/expansion/AUDIT.md). Update AUDIT.md whenever a step moves.
@@ -23,21 +23,21 @@ session:
   - Migration work happens on **`dev`**.
   - `master` still runs the old Firebase app, and stays that way until `dev` reaches parity.
   - On `dev`, **all Firebase code has been removed**: every page uses the backend API through
-    `lib/api/*`. Some pages (orders, refunds) are built against the backend's draft contract
+    `src/lib/api/*`. Some pages (orders, refunds) are built against the backend's draft contract
     (`FastSport_BackEnd/docs/CONTRACT_DRAFTS.md`) until those endpoints land in `openapi.json`.
 - **Admin code does not belong here.** Every admin feature lives in `FastSport_Admin`. Don't add
   admin screens, admin routes or role bypasses to this repo.
 - PayFast is sandbox-only and test data can be reset at any time. Don't treat anything you read
   as real orders, payments or customers.
-- **Concurrent editors:** a separate Codex session owns UI *styling* (Tailwind classNames,
-  layout, sizing) in `components/` and `pages/`. Claude sessions own *logic*.
+- **Concurrent editors:** a separate Codex session owns UI _styling_ (Tailwind classNames,
+  layout, sizing) in `src/components/` and `src/features/`. Claude sessions own _logic_.
   - Never revert or "fix" styling-only diffs you didn't make.
   - Re-read a file right before editing it, and make small targeted edits.
   - `.playwright-ui-review/` is that session's screenshot output; leave it alone.
 
 ## Priorities
 
-1. Complete the storefront against the backend API (`lib/api/*`), reconciling pages built on
+1. Complete the storefront against the backend API (`src/lib/api/*`), reconciling pages built on
    draft contracts with `openapi.json` as each endpoint lands, then run the full end-to-end test
    pass (Taylor: implement everything first, test afterwards).
 2. Performance (page load, time-to-content). Let the backend's HTTP caching (`Cache-Control` and
@@ -49,7 +49,7 @@ session:
 - **Framework:** Next.js 16 (Pages Router, Turbopack), fully client-rendered (no
   `getServerSideProps`/`getStaticProps`). `output: 'standalone'` is set for Docker.
 - **UI:** React 19 function components, Tailwind CSS 3 plus a shared MUI theme
-  (`themes/muiTheme.js`, `themes/tokens.js`). Image cropping uses `react-easy-crop`.
+  (`src/theme/muiTheme.js`, `src/theme/tokens.js`). Image cropping uses `react-easy-crop`.
 - **Backend:** the FastSport API (`FastSport_BackEnd`), reached at `NEXT_PUBLIC_API_URL`, which
   includes the version prefix (for example `http://localhost:4000/v1`).
   - The contract is OpenAPI, generated from Zod: `GET /v1/openapi.json`, with a copy at
@@ -79,59 +79,59 @@ session:
   - Production hosts: `fastsport.co.za` (client), `admin.fastsport.co.za`,
     `api.fastsport.co.za`.
   - Local ports: client 3000, admin 3001, API 4000.
-- **Tests:** Vitest with jsdom and React Testing Library (`tests/`). Playwright (MCP) is used for
+- **Tests:** Vitest with jsdom and React Testing Library (`*.test.js` next to the code). Playwright (MCP) is used for
   in-browser checks.
 
 ## Repo structure
 
 ```
-pages/                      Next.js Pages Router; every file is a route (client-rendered)
-  _app.js, _document.js     App shell: MUI theme, AuthProvider, CartProvider, Layout
-  index.js                  Home carousels: GET /products/popular and /products/new?category=
-  shop/catalog.js           Search and browse: server-side filters, sort and cursor "Load more"
-  shop.js, shop/*.js        Shop landing and thin redirects to the catalog
-  product/[id].js           Product detail and view tracking
-  login.js                  Login, register, Google redirect, forgot password, resend verification
-  verify-email.js           Landing page for the email verification link
-  reset-password.js         Landing page for the password reset link
-  profile.js                Profile details, avatar (square crop), terms, seller application (D-03)
-  profile/orders.js         Signed-in buyer's orders (cursor "Load more")
-  profile/orders/[orderId]/index.js, return.js   Order detail and refund request (signed in)
-  order/[orderId].js, order/[orderId]/return.js  Guest order and refund via the email link (?token=)
-  order/confirmation.js     PayFast return and cancel landing
-  checkout.js               Backend quote, guest or signed-in order, PayFast form post
-  seller/dashboard.js, submit.js, submissions.js  Seller listings: submit, edit, resubmit, live edit
-  about.js, faq.js, contact.js                  Content pages and the contact form
-components/
-  Header.js, Layout.js, MobileNavigationDrawer.js, CartDrawer.js, ProductCard.js,
-  CarouselControl.js, CategoryTabs.js, TermsAndConditionsModal.js
-  ImageCropDialog.js        react-easy-crop dialog used for every image upload
-  ListingFormFields.js, SellingPriceInfo.js     Shared seller listing form fields and buyer-price preview
-  OrderDetail.js, RefundRequestForm.js          Shared order view and refund form (signed-in and guest pages)
-  TermsReacceptGate.js      Blocks the site until changed terms are re-accepted (/me flag)
-lib/
-  apiClient.js              THE only place that calls the backend with fetch: cookies, CSRF
+src/
+  pages/                    THIN Next.js Pages Router files only: each re-exports its page
+                            component from a feature (export { default } from '@/features/...')
+    _app.js, _document.js   App shell: MUI theme, AuthProvider, CartProvider, Layout
+  features/                 One folder per feature: its pages, components, hooks and tests
+    auth/                   LoginPage, VerifyEmailPage, ResetPasswordPage, TermsReacceptGate,
+                            TermsAndConditionsModal, termsVersions.js
+    catalog/                HomePage (carousels), ShopPage, CatalogPage (server-side filters, sort,
+                            cursor "Load more"), the /shop/<category> redirects, ProductCard
+    product/                ProductPage: detail and view tracking
+    cart/                   cartContext (cart in localStorage, keyed per user id), CartDrawer
+    checkout/               CheckoutPage (quote, order, PayFast form post), OrderConfirmationPage
+                            (PayFast return and cancel), useOrderStatusPoll
+    orders/                 OrdersPage, OrderDetailPage, ReturnOrderPage (signed in),
+                            GuestOrderPage, GuestReturnOrderPage (email link, ?token=),
+                            OrderDetail, RefundRequestForm, PrivateImage, usePrivateImageUrl
+    seller/                 SellerDashboardPage, SellerSubmitPage, SellerSubmissionsPage,
+                            ListingFormFields, SellingPriceInfo, useListingImages,
+                            useServiceFeeQuote
+    profile/                ProfilePage: details, avatar (square crop), terms, seller application
+    content/                AboutPage, FaqPage, ContactPage
+  components/               Shared UI: Header, Layout, MobileNavigationDrawer, CategoryTabs,
+                            CarouselControl, ServiceFeeNote, ImageCropDialog (every image upload)
+  lib/                      Shared logic
+    apiClient.js            THE only place that calls the backend with fetch: cookies, CSRF
                             header, refresh on AUTH_TOKEN_EXPIRED, RFC 9457 parsing
-  api/auth.js               Auth endpoints and /me
-  api/catalog.js            Catalog and content endpoints, plus toClientProduct() (the adapter
-                            from the API shape to the page shape)
-  api/profile.js, seller.js Profile (PATCH /me, photo) and seller application
-  api/submissions.js        Seller submissions and products, multipart builder, toSellerListing()
-  api/checkouts.js          Checkout quote (per seller), create, PayFast start, cancel, get (D-25)
-  api/orders.js             Orders, guest tokens (per checkout and order), PayFast form post, refunds
-  api/contact.js            Contact form
-  listingForm.js, useListingImages.js, useMarkupQuote.js   Shared listing form logic, photos, price preview
-  AuthContext.js, useAuth.js  Shared session state from GET /me (user, profile, signOut, ...)
-  userMessage.js            toUserMessage() and UserFacingError; the only way errors reach the UI
-  cropImage.js, useImageCropQueue.js   Crop maths and encoding, and the multi-file crop queue
-  termsVersions.js          Terms versions the modal displays (must match the backend)
-  cartContext.js            Cart in localStorage, keyed per user id
-  dirtBikeCategories.js     Header mega-menu category list (the forms use /catalog/config)
-tests/                      Vitest suites (lib/, components/, pages/) and setup.js
+    api/                    One module per backend domain: auth, catalog (plus toClientProduct()),
+                            profile, seller, submissions (plus toSellerListing()), checkouts,
+                            orders, returns, contact
+    AuthContext.js, useAuth.js   Shared session state from GET /me (user, profile, signOut, ...)
+    userMessage.js          toUserMessage() and UserFacingError; the only way errors reach the UI
+    useSingleFlight.js      Double-submit guard for every backend action
+    cropImage.js, useImageCropQueue.js   Crop maths and encoding, and the multi-file crop queue
+    listingForm.js          Listing form logic shared by the seller pages and lib/api/submissions
+    dirtBikeCategories.js   Header mega-menu category list (the forms use /catalog/config)
+  theme/                    muiTheme.js and tokens.js
+  styles/globals.css        Tailwind layers and global CSS
+  test/setup.js             Vitest setup (jest-dom matchers, cleanup)
+public/                     Static assets
 docs/expansion/             Cross-repo plan and progress audit
 docs/TECH_DEBT.md           Issue register (read before starting work)
 Dockerfile, .dockerignore   Standalone image for later deployment (not used locally)
 ```
+
+Tests live next to the code they cover as `*.test.js` (for example
+`src/features/auth/LoginPage.test.js`). Imports that cross folders use the `@/` alias for `src/`
+(`jsconfig.json`, Vitest alias); imports within one folder stay relative (`./Foo`).
 
 **Oddities:** `MXTRADE_TEST/` at the root is an empty, orphaned gitlink (TECH_DEBT DX-05); leave
 it alone. `.agents/` and `skills-lock.json` are tool reference docs, not app code.
@@ -140,12 +140,17 @@ in AUDIT.md.
 
 ## Commands and setup
 
-| Command | What it does |
-|---|---|
-| `npm run dev` | Next.js dev server on :3000 |
-| `npm run build` | Production (standalone) build |
-| `npm test` | Vitest, run once |
-| `npm run test:watch` | Vitest in watch mode |
+| Command                | What it does                                         |
+| ---------------------- | ---------------------------------------------------- |
+| `npm run dev`          | Next.js dev server on :3000                          |
+| `npm run build`        | Production (standalone) build                        |
+| `npm test`             | Vitest, run once                                     |
+| `npm run test:watch`   | Vitest in watch mode                                 |
+| `npm run lint`         | ESLint over the repo                                 |
+| `npm run lint:fix`     | ESLint with autofix                                  |
+| `npm run format`       | Prettier, write                                      |
+| `npm run format:check` | Prettier, check only                                 |
+| `npm run check`        | Lint, format check and tests (run before committing) |
 
 **Environment:** copy `.env.example` to `.env.local`. The client needs only
 `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_BRAND_LOGO` and
@@ -194,11 +199,14 @@ Every new or modified function, hook and component must have a JSDoc block:
 
 ### Style: match what's already here
 
-- Plain JavaScript (no TypeScript). React function components with hooks.
+- Plain JavaScript for now (TypeScript is a later phase). React function components with hooks.
+- ESLint (flat config, `eslint.config.mjs`) and Prettier (`.prettierrc.json`, 100 columns) are enforced. Run `npm run lint` and `npm run format` (or `npm run check`) before committing. Don't disable a lint rule to get past it; fix the code, or report the rule if it fires on many legitimate cases.
+- New route files in `src/pages/` stay thin: put the page component in a feature folder and re-export it as default.
 - Tailwind for layout. MUI for complex, accessible controls (dialogs, drawers, sliders), imported
-  per module by path, using the shared theme. Reuse `themes/tokens.js`; no CSS Modules or
+  per module by path, using the shared theme. Reuse `src/theme/tokens.js`; no CSS Modules or
   styled-components.
-- 2-space indentation, single quotes, semicolons.
+- 2-space indentation, single quotes, semicolons (Prettier does this).
+- Dependencies are pinned to exact versions (no `^`); `.nvmrc` and `engines` set Node 24.
 
 ### Dependencies
 
@@ -210,11 +218,11 @@ version online. Flag any major-version upgrade before doing it.
 Never render `err.message`, error codes, stack text or URLs. Use
 `toUserMessage(err, fallback)`. It shows the backend's `detail` for 4xx problems (the contract
 says it's safe to show users) and a generic sentence for 5xx. Show per-field validation errors
-with `getFieldErrors(err)` from `lib/apiClient.js`. Never log user or profile objects.
+with `getFieldErrors(err)` from `src/lib/apiClient.js`. Never log user or profile objects.
 
 ### No double submits
 
-- Every button or form that calls the backend, or changes important state, goes through `useSingleFlight` (`lib/useSingleFlight.js`).
+- Every button or form that calls the backend, or changes important state, goes through `useSingleFlight` (`src/lib/useSingleFlight.js`).
   - It blocks a second click synchronously, before React re-renders.
   - It exposes `pending`, so the button can be disabled and show a busy label.
   - Use `holdOnSuccess` for actions that navigate away (login, the PayFast hand-off).
@@ -224,23 +232,22 @@ with `getFieldErrors(err)` from `lib/apiClient.js`. Never log user or profile ob
 ### No duplicate code
 
 Before writing a helper, constant, status map or component, grep for an existing one and reuse
-it. When two places share logic, extract one module (`lib/` for logic, `components/` for UI) and
+it. When two places share logic, extract one module (`src/lib/` for shared logic, `src/components/` for shared UI, or the feature folder when only one feature uses it) and
 make both use it. UI component dedupe is coordinated with the Codex styling session: extract the
 logic, don't restyle.
 
 ### Tests
 
-Add or update Vitest tests with every logic change (`tests/lib`, `tests/components`,
-`tests/pages`). Mock `next/router` and `lib/api/*` in page tests. Stub `fetch` for `lib/api` and
-`apiClient` tests. `npm test` and `npm run build` must pass before you commit.
+Add or update Vitest tests with every logic change (next to the code, as `*.test.js`). Mock `next/router` and `lib/api/*` in page tests. Stub `fetch` for `lib/api` and
+`apiClient` tests. `npm run check` (lint, format check, tests) and `npm run build` must pass before you commit.
 
 ## Backend API rules for agents
 
-- **All backend calls go through `lib/apiClient.js` → `lib/api/<domain>.js`.** Pages and
+- **All backend calls go through `src/lib/apiClient.js` → `src/lib/api/<domain>.js`.** Pages and
   components never call `fetch` against the API directly, and never import `firebase/*` in new
   code.
 - Keep the export names and return shapes that pages already use when you port a
-  `firestoreHelpers` function; adapt the API shape in `lib/api/*` (see `toClientProduct`).
+  `firestoreHelpers` function; adapt the API shape in `src/lib/api/*` (see `toClientProduct`).
 - The backend is authoritative for money, stock, status, roles and approvals. The client only
   displays values the API returns (for example `effectivePriceCents`) and never computes prices
   or totals to send to the server.
@@ -299,13 +306,13 @@ Add or update Vitest tests with every logic change (`tests/lib`, `tests/componen
    ticket numbers. Examples: `Catalog reads from FastSport backend: ...`, `Quantity fix`.
 6. Coordinate with the other sessions through messages. Each session edits only its own repo.
    Relay the user's cross-repo requirements to the others.
-7. Subagents: this session may use up to 2 Sonnet subagents.
+7. Subagents: this session may use up to 3 Sonnet subagents.
 
 ## Domain glossary (backend contract)
 
 - **Categories:** API keys are `gear`, `parts` and `accessories`. Labels, URLs and filters use
   `Gear`, `Parts` and `Accessories`. `CATEGORY_LABELS` and `toCategoryKey` in
-  `lib/api/catalog.js` convert between them.
+  `src/lib/api/catalog.js` convert between them.
 - **Conditions:** `new_in_packaging`, `lightly_used`, `used_good`, `used`. Display labels come
   from `conditionLabel` or `/catalog/config`.
 - **Product statuses:** `listed`, `pending_review`, `sold_out` and `removed`. Public endpoints
@@ -317,7 +324,7 @@ Add or update Vitest tests with every logic change (`tests/lib`, `tests/componen
   which only the backend sets (D-03). Admins follow normal buyer and seller rules in the shop
   (D-02).
 - **Terms:** `/me` reports `termsReacceptRequired` and `sellerTermsReacceptRequired`. Accept with
-  the versions in `lib/termsVersions.js`.
+  the versions in `src/features/auth/termsVersions.js`.
 
 ## Pointers
 

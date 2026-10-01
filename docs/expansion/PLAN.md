@@ -3,26 +3,31 @@
 **Status tracking:** see [AUDIT.md](./AUDIT.md). **Business decisions:** see `FastSport_BackEnd/docs/DECISIONS.md` (D-01 to D-20).
 
 ## Why
+
 The original app is a single Next.js 15 app (pages router) that talks straight to Firebase (Auth, Firestore and Storage):
+
 - Most business logic runs in the browser, in `lib/firestoreHelpers.js`.
 - Authorisation is enforced only by `firestore.rules` and `storage.rules`.
 - Admin and shopper code live in the same bundle.
 
 We are splitting the app into three repos, with a real backend on PostgreSQL. The goals:
+
 - Money, stock, status and role decisions are made on the server.
 - The admin tools become a separate app.
 - The Firebase lock-in and its read-based billing go away.
 
 ## Repos and owners
+
 Each repo is owned by one Claude session. Each session edits only its own repo, and the sessions coordinate with each other through messages.
 
-| Repo | Session | Stack | Responsibility |
-|---|---|---|---|
-| `MXTRADE_TEST` | client | Next.js (pages router), Tailwind with some MUI, Vitest | Buyer and seller UI only |
-| `FastSport_Admin` | admin | Vite, React and MUI SPA; Vitest and Playwright | All admin features |
+| Repo                | Session | Stack                                                                                        | Responsibility                                                 |
+| ------------------- | ------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `MXTRADE_TEST`      | client  | Next.js (pages router), Tailwind with some MUI, Vitest                                       | Buyer and seller UI only                                       |
+| `FastSport_Admin`   | admin   | Vite, React and MUI SPA; Vitest and Playwright                                               | All admin features                                             |
 | `FastSport_BackEnd` | backend | Node LTS, Express, TypeScript, PostgreSQL, Zod with `@asteasolutions/zod-to-openapi`, Vitest | Auth, business logic, files, the API contract and the database |
 
 ## Decisions (made by Taylor)
+
 - **Backend:** Node/Express with TypeScript, on PostgreSQL. The C# option was rejected.
 - **API contract:** owned by the backend and generated from Zod schemas.
   - Served at `GET /v1/openapi.json`, with a copy committed at `FastSport_BackEnd/openapi/openapi.json`.
@@ -56,18 +61,20 @@ Each repo is owned by one Claude session. Each session edits only its own repo, 
 - **Subagents (Sonnet):** client: up to 2. Admin: up to 3. Backend: up to 3.
 
 ## Database (PostgreSQL)
+
 The backend owns the schema, and its source of truth will be `FastSport_BackEnd/docs/DATABASE.md` together with the migrations. The proposed starting shape comes from the Firestore investigation:
 
-| Area | Tables |
-|---|---|
-| Identity | `users` (role, `can_sell`, terms versions), `auth_identities` (password or Google), `auth_sessions` (refresh token families), `auth_tokens` (email verification and password reset) |
-| Sellers | `seller_profiles` (ID and account number encrypted, approval status per D-03), payout ledger (D-06) |
-| Catalog | `product_submissions` (`attributes` jsonb for the category-specific fields), `products` (`base_price_cents`, `special_*` fields, `quantity >= 0`), `product_images`, `product_fitments`, `gear_brands`, `bike_models`, `subcategories` |
-| Orders | `orders`, `order_items` (price, name and image snapshots), `inventory_reservations`, `order_status_history`, `payfast_itn_events` |
-| Refunds | `refund_requests`, `refund_request_images` |
-| Content and ops | `faqs`, `site_content`, `admin_notifications`, `product_daily_views` |
+| Area            | Tables                                                                                                                                                                                                                                 |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity        | `users` (role, `can_sell`, terms versions), `auth_identities` (password or Google), `auth_sessions` (refresh token families), `auth_tokens` (email verification and password reset)                                                    |
+| Sellers         | `seller_profiles` (ID and account number encrypted, approval status per D-03), payout ledger (D-06)                                                                                                                                    |
+| Catalog         | `product_submissions` (`attributes` jsonb for the category-specific fields), `products` (`base_price_cents`, `special_*` fields, `quantity >= 0`), `product_images`, `product_fitments`, `gear_brands`, `bike_models`, `subcategories` |
+| Orders          | `orders`, `order_items` (price, name and image snapshots), `inventory_reservations`, `order_status_history`, `payfast_itn_events`                                                                                                      |
+| Refunds         | `refund_requests`, `refund_request_images`                                                                                                                                                                                             |
+| Content and ops | `faqs`, `site_content`, `admin_notifications`, `product_daily_views`                                                                                                                                                                   |
 
 ## Client repo steps (this repo)
+
 0. **Coordination.**
    - The decisions doc goes to the backend, the client's API needs go to the backend, and the admin handover goes to the admin session.
    - Source drafts for these are listed in AUDIT.md.
@@ -92,9 +99,11 @@ The backend owns the schema, and its source of truth will be `FastSport_BackEnd/
 4. **Docs.** Update `AGENTS.md`, `CLAUDE.md` and `README.md` for the new architecture and commit rule, and retire the Firestore-specific entries in TECH_DEBT and FIRESTORE_TODO.
 
 ## Step 5: Restructure to production standard (after the full test pass)
+
 Taylor decided on 2026-09-29 to bring the client in line with `FastSport_Admin`. **Brought forward on 2026-10-01: start it now**, right after the terms-after-registration change and before the browser test pass.
 
 **Split (Taylor, 2026-10-01):**
+
 - **Claude (client session)** does the structural move: TypeScript, `src/` with feature folders, generated API types, ESLint, Prettier and `check`, and TanStack Query. The UI markup and Tailwind classes are kept as they are.
 - **Codex then converts the whole UI to Material UI** using the shared FastSport theme (the same tokens as admin) and **removes Tailwind entirely**.
 - Codex pauses on this repo during Claude's move.
@@ -105,6 +114,7 @@ Taylor decided on 2026-09-29 to bring the client in line with `FastSport_Admin`.
 - **Coordination:** pause the Codex styling session during the move, then update AGENTS.md for the new layout.
 
 ## Verification
+
 - `npm test` (Vitest) and `npm run build` pass.
 - `docker build` succeeds.
 - Playwright end-to-end against the backend's `docker compose`:
