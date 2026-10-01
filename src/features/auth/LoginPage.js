@@ -8,7 +8,6 @@ import {
   resendVerification,
 } from '@/lib/api/auth';
 import { useAuthContext } from '@/lib/AuthContext';
-import TermsAndConditionsModal from './TermsAndConditionsModal';
 import { toUserMessage } from '@/lib/userMessage';
 import { useSingleFlight } from '@/lib/useSingleFlight';
 
@@ -70,8 +69,6 @@ export default function Login() {
   const [pendingVerification, setPendingVerification] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [passwordMismatchError, setPasswordMismatchError] = useState('');
-  const [showTermsModal, setShowTermsModal] = useState(false);
-  const [hasAcceptedTerms, setHasAcceptedTerms] = useState(false);
   const { run, pending } = useSingleFlight();
 
   const countryCodes = [
@@ -151,13 +148,10 @@ export default function Login() {
   };
 
   /**
-   * Why: Registers the account after the user accepts the terms in the modal.
+   * Why: Creates the account; the terms are accepted after the first sign-in so the agreement is
+   * recorded against the account.
    */
-  const handleRegisterWithAcceptedTerms = async () => {
-    if (!hasAcceptedTerms) {
-      return;
-    }
-
+  const handleRegister = async () => {
     setMessage('');
     try {
       await run(async () => {
@@ -170,7 +164,6 @@ export default function Login() {
           countryCode,
         });
         setPendingVerification(true);
-        setShowTermsModal(false);
       });
     } catch (error) {
       handleAuthError(error);
@@ -210,9 +203,7 @@ export default function Login() {
       return;
     }
 
-    setMessage('');
-    setHasAcceptedTerms(false);
-    setShowTermsModal(true);
+    await handleRegister();
   };
 
   /**
@@ -579,7 +570,9 @@ export default function Login() {
           disabled={pending}
           className="w-full rounded-3xl bg-slate-900 px-4 py-3 text-white hover:bg-slate-800 disabled:opacity-60"
         >
-          {pending && mode === 'login' ? 'Signing in...' : mode === 'login' ? 'Log in' : 'Register'}
+          {pending && mode === 'login' && 'Signing in...'}
+          {pending && mode !== 'login' && 'Creating account...'}
+          {!pending && (mode === 'login' ? 'Log in' : 'Register')}
         </button>
         <button
           type="button"
@@ -605,20 +598,6 @@ export default function Login() {
         </p>
       </form>
       <p className="text-sm text-slate-500">{message}</p>
-
-      <TermsAndConditionsModal
-        isOpen={showTermsModal}
-        onClose={() => {
-          if (pending) return;
-          setShowTermsModal(false);
-          setHasAcceptedTerms(false);
-        }}
-        onConfirm={handleRegisterWithAcceptedTerms}
-        isChecked={hasAcceptedTerms}
-        onCheckedChange={setHasAcceptedTerms}
-        isSubmitting={pending}
-        confirmLabel="I agree and create profile"
-      />
     </div>
   );
 }

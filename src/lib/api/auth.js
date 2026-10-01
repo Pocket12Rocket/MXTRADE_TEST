@@ -32,7 +32,6 @@ export function register({ email, password, firstName, lastName, phone, countryC
       lastName,
       ...(phone ? { phone } : {}),
       ...(countryCode ? { countryCode } : {}),
-      acceptTerms: true,
     },
     ...NO_REFRESH,
   });

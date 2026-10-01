@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Login from './LoginPage';
-import { login } from '@/lib/api/auth';
+import { login, register } from '@/lib/api/auth';
 
 const push = vi.fn();
 
@@ -33,5 +33,26 @@ describe('Login double submit', () => {
 
     expect(login).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: 'Signing in...' })).toBeDisabled();
+  });
+});
+
+describe('Login register', () => {
+  it('registers straight away without a terms step or acceptTerms', async () => {
+    register.mockReset().mockResolvedValue({ message: 'ok' });
+    const { container } = render(<Login />);
+    fireEvent.click(screen.getByRole('button', { name: 'Register' }));
+
+    const inputs = container.querySelectorAll('input');
+    fireEvent.change(inputs[0], { target: { value: 'sam@example.com' } });
+    fireEvent.change(inputs[1], { target: { value: 'secret-pass' } });
+    fireEvent.change(inputs[2], { target: { value: 'secret-pass' } });
+    fireEvent.change(inputs[3], { target: { value: 'Sam' } });
+    fireEvent.change(inputs[4], { target: { value: 'Rider' } });
+    fireEvent.submit(container.querySelector('form'));
+
+    expect(register).toHaveBeenCalledTimes(1);
+    expect(register.mock.calls[0][0]).not.toHaveProperty('acceptTerms');
+    expect(await screen.findByText(/Check your email/i)).toBeInTheDocument();
+    expect(screen.queryByText(/I agree and create profile/i)).not.toBeInTheDocument();
   });
 });
