@@ -80,6 +80,18 @@ Status as of end of day 2026-09-27. `main` is clean. It's pushed up to `50d53d1`
 - D-17: demo products are removed, so there is no product data until submissions land.
 - D-18: 10 MB per image.
 
+## Phase 2: business decisions D-22 to D-27 (approved by Taylor on 2026-10-01)
+The backend's cross-repo plan is approved. The Recommended option is built for Tyron's open questions (a)–(j) until he answers.
+
+| Order | Work | Client | Backend | Admin |
+|---|---|---|---|---|
+| 1 | **D-22** refund bank details; refund `type` (damaged, not as described, never arrived, other; **other** needs a description of at least 20 characters, Taylor); **D-23** "Payment under review" | Refund form: type picker, bank fields, photo rule per type; in progress | Bank details done (Tyron `6568b52`); the `type` field is part of D-26 | Masked bank details plus audited reveal; type shown |
+| 2 | **D-27** service fee, shown all-in on listings ("incl. R… service fee") and as its own line in checkout, orders and emails | After the backend contract | `serviceFeeCents`, `itemsCents`, `sellerUnitPriceCents`, `/pricing/service-fee-quote` | Show it on orders |
+| 3 | **D-25** one order per seller under one checkout, paid with one PayFast payment | Checkout rewrite against the draft (`/checkouts`), grouped by seller | Contract draft first, then build plus money-path integration tests | Per-seller orders, `checkoutId`, DuplicatePayment changes |
+| 4 | **D-26** returns: the `completed` status (buyer confirms delivery, or automatically after 48 hours), problem refunds within 48 hours, never arrived from 10 business days, payouts once complete, fee-free resale, refund paid within 48 hours | "Confirm delivery" button, never-arrived option, `completed` status | Status, confirm, job, holiday calendar, waiver, payBy | Complete column, waiver on approve, holidays screen, overdue badges |
+
+Also pending: return-policy and terms pages, once business supplies the copy (question j; draft at `FastSport_BackEnd/docs/RETURN_POLICY.md`).
+
 ## Open questions and waiting items
 **Taylor**
 - Push the unpushed commits: backend `22fd418` and admin `5bd02ab`. (The client `dev` branch is fully pushed.)
