@@ -301,6 +301,9 @@ export default function CheckoutPage() {
         <div className="flex-1 min-w-0">
           <p className="truncate text-sm font-semibold text-slate-900">{item.name}</p>
           {item.quantity > 1 && <p className="text-xs text-slate-500">Qty: {item.quantity}</p>}
+          {fromQuote && item.sellerUnitPriceCents != null ? (
+            <p className="text-xs text-slate-500">{formatRands(item.unitPriceCents)} each, seller price {formatRands(item.sellerUnitPriceCents)}</p>
+          ) : null}
           {isFlagged ? (
             <p className="text-xs text-red-500">
               {issue === 'reduced'
@@ -412,18 +415,13 @@ export default function CheckoutPage() {
               <h2 className="text-base font-semibold text-slate-900">Order summary</h2>
               {quote ? (
                 <>
-                  {quote.unassignedItems.length > 0 ? (
-                    <ul className="mt-4 space-y-3">{quote.unassignedItems.map(renderQuoteLine)}</ul>
-                  ) : null}
                   {quote.sellers.map((group) => (
                     <div key={group.seller.id} className="mt-4 border-t border-slate-200 pt-4">
                       <p className="text-sm font-semibold text-slate-900">Seller: {group.seller.name}</p>
                       <ul className="mt-3 space-y-3">{group.items.map(renderQuoteLine)}</ul>
                       <div className="mt-3 space-y-1 text-sm text-slate-700">
                         <div className="flex justify-between"><span>Items</span><span>{formatRands(group.itemsCents)}</span></div>
-                        {group.serviceFeeCents != null ? (
-                          <div className="flex justify-between"><span>Service fee</span><span>{formatRands(group.serviceFeeCents)}</span></div>
-                        ) : null}
+                        <div className="flex justify-between"><span>Service fee</span><span>{formatRands(group.serviceFeeCents)}</span></div>
                         <div className="flex justify-between"><span>Delivery</span><span>{formatRands(group.deliveryFeeCents)}</span></div>
                         <div className="flex justify-between font-semibold text-slate-900"><span>Seller total</span><span>{formatRands(group.totalCents)}</span></div>
                       </div>
@@ -436,15 +434,13 @@ export default function CheckoutPage() {
               {quoteError ? <p className="mt-3 text-xs text-red-500">{quoteError}</p> : null}
               <div className="mt-4 border-t border-slate-200 pt-4 space-y-2">
                 <div className="flex justify-between text-base">
-                  <span>Subtotal</span>
-                  <span>{quote ? formatRands(quote.subtotalCents) : '…'}</span>
+                  <span>Items</span>
+                  <span>{quote ? formatRands(quote.itemsCents) : '…'}</span>
                 </div>
-                {quote?.serviceFeeCents != null ? (
-                  <div className="flex justify-between text-base">
-                    <span>Service fee</span>
-                    <span>{formatRands(quote.serviceFeeCents)}</span>
-                  </div>
-                ) : null}
+                <div className="flex justify-between text-base">
+                  <span>Service fee</span>
+                  <span>{quote ? formatRands(quote.serviceFeeCents) : '…'}</span>
+                </div>
                 <div className="flex justify-between text-base">
                     <span>Delivery{quote ? ` (${quote.sellerCount} seller${quote.sellerCount === 1 ? '' : 's'})` : ''}</span>
                     <span>{quote ? formatRands(quote.deliveryFeeCents) : 'Calculating...'}</span>

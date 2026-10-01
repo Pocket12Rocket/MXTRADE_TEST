@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import CarouselControl from '../../components/CarouselControl';
+import ServiceFeeNote from '../../components/ServiceFeeNote';
 import { fetchProductById, recordProductView } from '../../lib/api/catalog';
 import { useCart } from '../../lib/cartContext';
 import { toUserMessage } from '../../lib/userMessage';
@@ -302,6 +303,7 @@ export default function ProductDetail() {
 
           <div className="border-y border-slate-100 py-4">
             <p className="text-4xl font-semibold tracking-[-0.04em] text-slate-900">R{Number(product.price).toFixed(2)}</p>
+            <ServiceFeeNote serviceFee={product.serviceFee} className="text-sm text-slate-500" />
             {isSpecialActive ? (
               <div className="mt-2 flex items-center gap-2">
                 <p className="text-sm text-slate-500 line-through">R{Number(product.originalPrice).toFixed(2)}</p>

@@ -4,7 +4,7 @@ import {
   createSubmission,
   deleteSubmission,
   editLiveProduct,
-  fetchMarkupQuote,
+  fetchServiceFeeQuote,
   fetchProductForEdit,
   listMyProducts,
   listMySubmissions,
@@ -366,17 +366,18 @@ describe('fetchProductForEdit', () => {
   });
 });
 
-describe('fetchMarkupQuote', () => {
+describe('fetchServiceFeeQuote', () => {
   it('asks the backend for the quote with integer cents in the query', async () => {
-    const fetchMock = stubJson({ sellerPriceCents: 45000, listPriceCents: 54000, markupPercent: 20 });
+    const fetchMock = stubJson({ sellerPriceCents: 45000, serviceFeeCents: 9000, listPriceCents: 54000, markupPercent: 20 });
 
-    const quote = await fetchMarkupQuote(45000);
+    const quote = await fetchServiceFeeQuote(45000);
 
     const url = new URL(fetchMock.mock.calls[0][0], 'http://localhost');
-    expect(url.pathname).toMatch(/\/pricing\/markup-quote$/);
+    expect(url.pathname).toMatch(/\/pricing\/service-fee-quote$/);
     expect(url.searchParams.get('sellerPriceCents')).toBe('45000');
     expect(fetchMock.mock.calls[0][1].method).toBe('GET');
     expect(quote.listPriceCents).toBe(54000);
+    expect(quote.serviceFeeCents).toBe(9000);
   });
 });
 

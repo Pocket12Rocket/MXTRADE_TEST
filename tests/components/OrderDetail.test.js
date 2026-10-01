@@ -10,6 +10,8 @@ const BASE = {
   status: 'delivered',
   statusLabel: 'Delivered',
   items: [{ name: 'Trail Shoes', quantity: 1, unitPriceCents: 129950, lineTotalCents: 129950 }],
+  itemsCents: 119950,
+  serviceFeeCents: 10000,
   subtotalCents: 129950,
   deliveryFeeCents: 0,
   totalCents: 129950,
@@ -23,6 +25,17 @@ const renderOrder = (overrides) => render(<OrderDetail order={{ ...BASE, ...over
 
 beforeEach(() => {
   vi.mocked(confirmDelivery).mockReset();
+});
+
+describe('OrderDetail totals', () => {
+  it('shows items, service fee, delivery and total as separate lines', () => {
+    renderOrder({ deliveryFeeCents: 5000, totalCents: 134950 });
+
+    expect(screen.getByText('Items R1199.50')).toBeTruthy();
+    expect(screen.getByText('Service fee R100.00')).toBeTruthy();
+    expect(screen.getByText('Delivery R50.00')).toBeTruthy();
+    expect(screen.getByText('R1349.50')).toBeTruthy();
+  });
 });
 
 describe('OrderDetail returns actions', () => {

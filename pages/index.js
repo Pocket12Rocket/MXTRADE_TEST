@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import ProductCard from '../components/ProductCard';
 import CarouselControl from '../components/CarouselControl';
+import ServiceFeeNote from '../components/ServiceFeeNote';
 import { fetchNewProducts, fetchPopularProducts } from '../lib/api/catalog';
 import { reportError } from '../lib/userMessage';
 
@@ -230,6 +231,7 @@ export default function Home() {
                     {product.category} {product.subcategory ? `• ${product.subcategory}` : ''}
                   </p>
                   <p className="mt-2 text-sm font-semibold text-[#40E0D0]">R{Number(product.price).toFixed(2)}</p>
+                  <ServiceFeeNote serviceFee={product.serviceFee} className="text-xs text-slate-300" />
                   {product.isSpecialActive && Number(product.originalPrice) > Number(product.price) ? (
                     <p className="text-xs text-slate-300 line-through">R{Number(product.originalPrice).toFixed(2)}</p>
                   ) : null}
@@ -269,6 +271,7 @@ export default function Home() {
                         {product.category} {product.subcategory ? `• ${product.subcategory}` : ''}
                       </p>
                       <p className="mt-2 text-sm font-semibold text-[#40E0D0]">R{Number(product.price).toFixed(2)}</p>
+                      <ServiceFeeNote serviceFee={product.serviceFee} className="text-xs text-slate-300" />
                       {product.isSpecialActive && Number(product.originalPrice) > Number(product.price) ? (
                         <p className="text-xs text-slate-300 line-through">R{Number(product.originalPrice).toFixed(2)}</p>
                       ) : null}
@@ -325,6 +328,7 @@ export default function Home() {
                     {product.category} {product.subcategory ? `• ${product.subcategory}` : ''}
                   </p>
                   <p className="mt-2 text-sm font-semibold text-[#40E0D0]">R{Number(product.price).toFixed(2)}</p>
+                  <ServiceFeeNote serviceFee={product.serviceFee} className="text-xs text-slate-300" />
                   {product.isSpecialActive && Number(product.originalPrice) > Number(product.price) ? (
                     <p className="text-xs text-slate-300 line-through">R{Number(product.originalPrice).toFixed(2)}</p>
                   ) : null}
@@ -364,6 +368,7 @@ export default function Home() {
                         {product.category} {product.subcategory ? `• ${product.subcategory}` : ''}
                       </p>
                       <p className="mt-2 text-sm font-semibold text-[#40E0D0]">R{Number(product.price).toFixed(2)}</p>
+                      <ServiceFeeNote serviceFee={product.serviceFee} className="text-xs text-slate-300" />
                       {product.isSpecialActive && Number(product.originalPrice) > Number(product.price) ? (
                         <p className="text-xs text-slate-300 line-through">R{Number(product.originalPrice).toFixed(2)}</p>
                       ) : null}
@@ -420,6 +425,7 @@ export default function Home() {
                     {product.category} {product.subcategory ? `• ${product.subcategory}` : ''}
                   </p>
                   <p className="mt-2 text-sm font-semibold text-[#40E0D0]">R{Number(product.price).toFixed(2)}</p>
+                  <ServiceFeeNote serviceFee={product.serviceFee} className="text-xs text-slate-300" />
                   {product.isSpecialActive && Number(product.originalPrice) > Number(product.price) ? (
                     <p className="text-xs text-slate-300 line-through">R{Number(product.originalPrice).toFixed(2)}</p>
                   ) : null}
@@ -459,6 +465,7 @@ export default function Home() {
                         {product.category} {product.subcategory ? `• ${product.subcategory}` : ''}
                       </p>
                       <p className="mt-2 text-sm font-semibold text-[#40E0D0]">R{Number(product.price).toFixed(2)}</p>
+                      <ServiceFeeNote serviceFee={product.serviceFee} className="text-xs text-slate-300" />
                       {product.isSpecialActive && Number(product.originalPrice) > Number(product.price) ? (
                         <p className="text-xs text-slate-300 line-through">R{Number(product.originalPrice).toFixed(2)}</p>
                       ) : null}

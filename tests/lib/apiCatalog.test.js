@@ -5,6 +5,7 @@ import {
   fetchProducts,
   recordProductView,
   toCategoryKey,
+  formatServiceFeeLabel,
   toClientProduct,
 } from '../../lib/api/catalog';
 
@@ -18,6 +19,7 @@ const summary = {
   primaryImageUrl: 'http://localhost:4000/files/p1.webp',
   basePriceCents: 150000,
   effectivePriceCents: 120000,
+  serviceFeeCents: 11000,
   isSpecialActive: true,
   specialLabel: 'Winter sale',
   seller: { suburb: 'Sea Point', city: 'Cape Town' },
@@ -52,6 +54,7 @@ describe('toClientProduct', () => {
       categoryKey: 'gear',
       price: 1200,
       basePrice: 1500,
+      serviceFee: 110,
       originalPrice: 1500,
       specialLabel: 'Winter sale',
       primaryImage: summary.primaryImageUrl,
@@ -80,6 +83,19 @@ describe('toClientProduct', () => {
     expect(product.specialLabel).toBe('');
     expect(product.quantity).toBe(0);
     expect(product.gearSize).toBe('Shirt M / Pants 32');
+  });
+});
+
+describe('service fee', () => {
+  it('maps a missing serviceFeeCents to a zero fee', () => {
+    expect(toClientProduct({ ...summary, serviceFeeCents: undefined }).serviceFee).toBe(0);
+  });
+
+  it('labels a fee and gives no label for zero or missing', () => {
+    expect(formatServiceFeeLabel(110)).toBe('incl. R110.00 service fee');
+    expect(formatServiceFeeLabel(0)).toBe('');
+    expect(formatServiceFeeLabel(-5)).toBe('');
+    expect(formatServiceFeeLabel(undefined)).toBe('');
   });
 });
 

@@ -55,21 +55,23 @@ describe('checkout paths and token header', () => {
 });
 
 describe('quoteCheckout', () => {
-  const helmet = { productId: 'p1', name: 'Helmet', unitPriceCents: 1000, quantity: 2, lineTotalCents: 2000, available: true, availableQuantity: 5 };
-  const boots = { productId: 'p2', name: 'Boots', unitPriceCents: 3000, quantity: 1, lineTotalCents: 3000, available: true, availableQuantity: 1 };
-  const gone = { productId: 'p3', name: 'Gone', unitPriceCents: 500, quantity: 1, lineTotalCents: 0, available: false, availableQuantity: 0 };
+  const helmet = { productId: 'p1', name: 'Helmet', unitPriceCents: 1100, sellerUnitPriceCents: 1000, quantity: 2, lineTotalCents: 2200, available: true, availableQuantity: 5 };
+  const boots = { productId: 'p2', name: 'Boots', unitPriceCents: 3300, sellerUnitPriceCents: 3000, quantity: 1, lineTotalCents: 3300, available: true, availableQuantity: 1 };
+  const gone = { productId: 'p3', name: 'Gone', unitPriceCents: 550, sellerUnitPriceCents: 500, quantity: 1, lineTotalCents: 0, available: false, availableQuantity: 0 };
 
-  it('posts productId/quantity to /checkout/quote and maps each seller group', async () => {
+  it('posts productId/quantity to /checkout/quote and tags every line, grouped or flat, with its id', async () => {
     const fetchMock = stubFetch({
-      items: [helmet, boots, gone],
+      items: [helmet, gone, boots],
       sellers: [
-        { seller: { id: 's1', name: 'Ann' }, items: [{ productId: 'p1', name: 'Helmet', quantity: 2, lineTotalCents: 2000 }], itemsCents: 2000, serviceFeeCents: 200, subtotalCents: 2200, deliveryFeeCents: 15000, totalCents: 17200 },
-        { seller: { id: 's2', name: 'Bob' }, items: [boots], itemsCents: 3000, subtotalCents: 3000, deliveryFeeCents: 15000, totalCents: 18000 },
+        { seller: { id: 's1', name: 'Ann' }, items: [helmet, gone], itemsCents: 2000, serviceFeeCents: 200, subtotalCents: 2200, deliveryFeeCents: 15000, totalCents: 17200 },
+        { seller: { id: 's2', name: 'Bob' }, items: [boots], itemsCents: 3000, serviceFeeCents: 300, subtotalCents: 3300, deliveryFeeCents: 15000, totalCents: 18300 },
       ],
-      subtotalCents: 5200,
+      itemsCents: 5000,
+      serviceFeeCents: 500,
+      subtotalCents: 5500,
       deliveryFeeCents: 30000,
       sellerCount: 2,
-      totalCents: 35200,
+      totalCents: 35500,
     });
 
     const quote = await quoteCheckout([{ id: 'p1', quantity: 2, price: 10 }]);
@@ -77,30 +79,14 @@ describe('quoteCheckout', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toMatch(/\/checkout\/quote$/);
     expect(JSON.parse(init.body)).toEqual({ items: [{ productId: 'p1', quantity: 2 }] });
-    expect(quote.items.map((item) => item.id)).toEqual(['p1', 'p2', 'p3']);
+    expect(quote.items.map((item) => item.id)).toEqual(['p1', 'p3', 'p2']);
     expect(quote.sellers).toHaveLength(2);
     expect(quote.sellers[0].seller).toEqual({ id: 's1', name: 'Ann' });
-    expect(quote.sellers[0].totalCents).toBe(17200);
     expect(quote.sellers[0].serviceFeeCents).toBe(200);
-    // The seller line is tagged with id and inherits the availability flags from the flat line.
-    expect(quote.sellers[0].items[0]).toMatchObject({ id: 'p1', available: true, availableQuantity: 5 });
-    expect(quote.sellers[1].serviceFeeCents).toBeUndefined();
-    expect(quote.totalCents).toBe(35200);
-  });
-
-  it('returns lines that no seller group lists as unassignedItems', async () => {
-    stubFetch({
-      items: [helmet, gone],
-      sellers: [{ seller: { id: 's1', name: 'Ann' }, items: [helmet], itemsCents: 2000, subtotalCents: 2000, deliveryFeeCents: 15000, totalCents: 17000 }],
-      subtotalCents: 2000,
-      deliveryFeeCents: 15000,
-      sellerCount: 1,
-      totalCents: 17000,
-    });
-
-    const quote = await quoteCheckout([{ id: 'p1', quantity: 2 }, { id: 'p3', quantity: 1 }]);
-
-    expect(quote.unassignedItems.map((item) => item.id)).toEqual(['p3']);
+    expect(quote.sellers[0].items.map((item) => item.id)).toEqual(['p1', 'p3']);
+    expect(quote.sellers[0].items[1]).toMatchObject({ available: false, availableQuantity: 0, sellerUnitPriceCents: 500 });
+    expect(quote).toMatchObject({ itemsCents: 5000, serviceFeeCents: 500, totalCents: 35500 });
+    expect(quote.unassignedItems).toBeUndefined();
   });
 
   it('tolerates a quote without sellers', async () => {
@@ -109,7 +95,6 @@ describe('quoteCheckout', () => {
     const quote = await quoteCheckout([{ id: 'p1', quantity: 1 }]);
 
     expect(quote.sellers).toEqual([]);
-    expect(quote.unassignedItems).toEqual([]);
   });
 });
 

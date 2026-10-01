@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import ServiceFeeNote from './ServiceFeeNote';
 
 export default function ProductCard({ product }) {
   const imageSrc = product.primaryThumbnail || product.primaryImage || product.images?.[0] || null;
@@ -45,6 +46,7 @@ export default function ProductCard({ product }) {
         )}
         <div className="mt-3">
           <p className="text-lg font-semibold text-slate-900 sm:text-xl">R{Number(product.price || 0).toFixed(2)}</p>
+          <ServiceFeeNote serviceFee={product.serviceFee} />
           {isSpecialActive ? (
             <p className="text-sm text-slate-500 line-through">R{Number(product.originalPrice || 0).toFixed(2)}</p>
           ) : null}

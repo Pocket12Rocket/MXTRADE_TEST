@@ -21,7 +21,7 @@ const SELL_CATEGORY_LABEL_OVERRIDES = { parts: 'Dirt Bike Parts' };
 
 /**
  * Why: Seller page for listing a new product. It loads the form options from the backend catalog
- * config, collects the seller's own price (the backend applies the markup, D-04) and 3-5 cropped
+ * config, collects the seller's own price (the backend adds the service fee) and 3-5 cropped
  * photos (D-13), and posts them as one multipart submission for admin review.
  * @returns {JSX.Element} The category picker, the listing form, or a sign-in / not-a-seller prompt.
  * @example

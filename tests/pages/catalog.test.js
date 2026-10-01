@@ -10,7 +10,8 @@ vi.mock('next/router', () => ({
   useRouter: () => ({ isReady: true, query: routerQuery, push: vi.fn(), replace: vi.fn() }),
 }));
 
-vi.mock('../../lib/api/catalog', () => ({
+vi.mock('../../lib/api/catalog', async (importOriginal) => ({
+  ...(await importOriginal()),
   CATEGORY_LABELS: { gear: 'Gear', parts: 'Parts', accessories: 'Accessories' },
   fetchCatalogConfig: vi.fn(),
   fetchProducts: vi.fn(),

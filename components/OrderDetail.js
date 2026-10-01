@@ -211,7 +211,9 @@ export default function OrderDetail({ order: initialOrder, refundHref, backHref,
       {/* Order total row */}
       <div className="flex justify-end rounded-2xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
         <div className="text-right">
-          <p className="text-xs text-slate-500">Subtotal {formatRands(order.subtotalCents)} · Delivery {formatRands(order.deliveryFeeCents)}</p>
+          <p className="text-xs text-slate-500">Items {formatRands(order.itemsCents)}</p>
+          <p className="text-xs text-slate-500">Service fee {formatRands(order.serviceFeeCents)}</p>
+          <p className="text-xs text-slate-500">Delivery {formatRands(order.deliveryFeeCents)}</p>
           <p className="mt-2 text-xs uppercase tracking-[0.1em] text-slate-500">Order total</p>
           <p className="mt-1 text-2xl font-semibold text-slate-900">
             {formatRands(order.totalCents)}
