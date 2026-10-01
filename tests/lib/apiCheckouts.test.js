@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   cancelCheckout,
   createCheckout,
+  formatQuoteUnitPrice,
   getCheckout,
   quoteCheckout,
   startCheckoutPayfast,
@@ -51,6 +52,17 @@ describe('checkout paths and token header', () => {
     )));
 
     await expect(startCheckoutPayfast('c1', 'tok')).rejects.toMatchObject({ status: 503, code: 'SERVICE_UNAVAILABLE' });
+  });
+});
+
+describe('formatQuoteUnitPrice', () => {
+  it('shows the seller price when it is at or below what the buyer pays', () => {
+    expect(formatQuoteUnitPrice({ unitPriceCents: 30000, sellerUnitPriceCents: 25000 })).toBe('R300.00 each, seller price R250.00');
+    expect(formatQuoteUnitPrice({ unitPriceCents: 25000, sellerUnitPriceCents: 25000 })).toBe('R250.00 each, seller price R250.00');
+  });
+
+  it('hides the seller price when a special takes the price below it', () => {
+    expect(formatQuoteUnitPrice({ unitPriceCents: 24000, sellerUnitPriceCents: 30000 })).toBe('R240.00 each');
   });
 });
 

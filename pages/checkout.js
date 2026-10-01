@@ -11,7 +11,7 @@ import {
   submitPayfastForm,
   toProvinceValue,
 } from '../lib/api/orders';
-import { createCheckout, quoteCheckout, startCheckoutPayfast } from '../lib/api/checkouts';
+import { createCheckout, formatQuoteUnitPrice, quoteCheckout, startCheckoutPayfast } from '../lib/api/checkouts';
 import { toUserMessage, reportError } from '../lib/userMessage';
 
 const EMPTY_FORM = {
@@ -300,7 +300,7 @@ export default function CheckoutPage() {
           <p className="truncate text-sm font-semibold text-slate-900">{item.name}</p>
           {item.quantity > 1 && <p className="text-xs text-slate-500">Qty: {item.quantity}</p>}
           {fromQuote && item.sellerUnitPriceCents != null ? (
-            <p className="text-xs text-slate-500">{formatRands(item.unitPriceCents)} each, seller price {formatRands(item.sellerUnitPriceCents)}</p>
+            <p className="text-xs text-slate-500">{formatQuoteUnitPrice(item)}</p>
           ) : null}
           {isFlagged ? (
             <p className="text-xs text-red-500">
