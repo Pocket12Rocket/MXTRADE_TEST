@@ -167,12 +167,11 @@ and reset links.
 
 ### JSDoc: required on every function, hook, component and handler
 
-Every new or modified function, hook and component must have a full JSDoc block:
+Every new or modified function, hook and component must have a JSDoc block:
 
 ```js
 /**
- * Why: <the reason this exists: what problem it solves or what depends on it,
- * NOT a restatement of what the code does>
+ * Why: <one or two plain sentences on why this exists>
  * @param {Type} paramName - What it means and any constraints.
  * @returns {Type} What is returned and what it represents.
  * @throws {ErrorType} When and why this can throw.
@@ -181,9 +180,17 @@ Every new or modified function, hook and component must have a full JSDoc block:
  */
 ```
 
-`@throws` is only needed where the function can throw or reject. `@example` must be a realistic
-call. When you touch existing code that lacks this, back-fill it. See `lib/api/catalog.js` for
-reference examples.
+- **`Why:` is one or two plain sentences** on why the code exists, not a restatement of what it
+  does.
+- **Keep these out of JSDoc:**
+  - business decisions and rule explanations, including `D-xx` references (they live in
+    `FastSport_BackEnd/docs/DECISIONS.md`);
+  - porting history ("ported from…", "the old app did…");
+  - contract notes, commit hashes and "planned until…" remarks;
+  - multi-sentence essays.
+- `@throws` is only needed where the function can throw or reject.
+- `@example` must be a realistic call.
+- When you touch existing code, bring its JSDoc in line with these rules.
 
 ### Style: match what's already here
 
