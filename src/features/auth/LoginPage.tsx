@@ -10,6 +10,8 @@ import {
 import { useAuthContext } from '@/lib/AuthContext';
 import { toUserMessage } from '@/lib/userMessage';
 import { useSingleFlight } from '@/lib/useSingleFlight';
+import { getPhoneError, sanitizePhoneInput } from '@/lib/phone';
+import CountryCodeSelect, { findPhoneCountry } from '@/components/CountryCodeSelect';
 
 // Why: friendly copy for the `?error=` codes the backend's Google callback redirects back with.
 const GOOGLE_ERROR_MESSAGES: Record<string, string> & { GOOGLE_AUTH_FAILED: string } = {
@@ -63,59 +65,14 @@ export default function Login() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
-  const [countryCode, setCountryCode] = useState('+27'); // Default to South Africa
+  const [countryIso, setCountryIso] = useState('ZA');
+  const [phoneError, setPhoneError] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState('');
   const [pendingVerification, setPendingVerification] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [passwordMismatchError, setPasswordMismatchError] = useState('');
   const { run, pending } = useSingleFlight();
-
-  const countryCodes = [
-    { cc: 'ZA', code: '+27', name: 'South Africa' },
-    { cc: 'US', code: '+1', name: 'United States' },
-    { cc: 'CA', code: '+1', name: 'Canada' },
-    { cc: 'SA', code: '+966', name: 'Saudi Arabia' },
-    { cc: 'QA', code: '+974', name: 'Qatar' },
-    { cc: 'KH', code: '+855', name: 'Cambodia' },
-    { cc: 'CN', code: '+86', name: 'China' },
-    { cc: 'JP', code: '+81', name: 'Japan' },
-    { cc: 'KR', code: '+82', name: 'South Korea' },
-    { cc: 'SG', code: '+65', name: 'Singapore' },
-    { cc: 'MY', code: '+60', name: 'Malaysia' },
-    { cc: 'TH', code: '+66', name: 'Thailand' },
-    { cc: 'ID', code: '+62', name: 'Indonesia' },
-    { cc: 'PH', code: '+63', name: 'Philippines' },
-    { cc: 'IN', code: '+91', name: 'India' },
-    { cc: 'BD', code: '+880', name: 'Bangladesh' },
-    { cc: 'PK', code: '+92', name: 'Pakistan' },
-    { cc: 'FR', code: '+33', name: 'France' },
-    { cc: 'DE', code: '+49', name: 'Germany' },
-    { cc: 'IT', code: '+39', name: 'Italy' },
-    { cc: 'ES', code: '+34', name: 'Spain' },
-    { cc: 'NL', code: '+31', name: 'Netherlands' },
-    { cc: 'BE', code: '+32', name: 'Belgium' },
-    { cc: 'CH', code: '+41', name: 'Switzerland' },
-    { cc: 'AT', code: '+43', name: 'Austria' },
-    { cc: 'DK', code: '+45', name: 'Denmark' },
-    { cc: 'SE', code: '+46', name: 'Sweden' },
-    { cc: 'NO', code: '+47', name: 'Norway' },
-  ];
-
-  // ...existing hook logic and handlers...
-
-  /**
-   * Why: Turns a country code into its flag emoji for the phone prefix picker.
-   * @param cc - Two-letter country code.
-   * @returns The flag emoji.
-   */
-  const countryCodeToFlag = (cc: string) => {
-    const codePoints = cc
-      .toUpperCase()
-      .split('')
-      .map((char) => 127397 + char.charCodeAt(0));
-    return String.fromCodePoint(...codePoints);
-  };
 
   // Why: the backend's Google callback redirects failures back here as `?error=<code>`.
   useEffect(() => {
@@ -159,8 +116,8 @@ export default function Login() {
           password,
           firstName: firstName.trim(),
           lastName: lastName.trim(),
-          phone: phone.trim(),
-          countryCode,
+          phone,
+          countryCode: findPhoneCountry(countryIso).code,
         });
         setPendingVerification(true);
       });
@@ -199,6 +156,12 @@ export default function Login() {
 
     if (password !== confirmPassword) {
       setMessage('Passwords do not match. Please re-enter your password.');
+      return;
+    }
+
+    const phoneProblem = getPhoneError(phone, countryIso);
+    if (phoneProblem) {
+      setPhoneError(phoneProblem);
       return;
     }
 
@@ -521,25 +484,33 @@ export default function Login() {
               <div>
                 <label className="block text-sm font-medium text-slate-700">Contact number</label>
                 <div className="flex gap-2">
-                  <select
-                    value={countryCode}
-                    onChange={(event) => setCountryCode(event.target.value)}
-                    className="mt-2 rounded-3xl border border-slate-200 bg-slate-50 px-2 py-3 focus:outline-none"
-                  >
-                    {countryCodes.map((country) => (
-                      <option key={`${country.code}-${country.name}`} value={country.code}>
-                        {countryCodeToFlag(country.cc)} {country.code}
-                      </option>
-                    ))}
-                  </select>
+                  <CountryCodeSelect
+                    value={countryIso}
+                    onChange={(iso) => {
+                      setCountryIso(iso);
+                      setPhone((current) => sanitizePhoneInput(current, iso));
+                      setPhoneError('');
+                    }}
+                  />
                   <input
                     type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel-national"
+                    aria-label="Mobile number"
+                    aria-invalid={phoneError ? true : undefined}
                     value={phone}
-                    onChange={(event) => setPhone(event.target.value)}
-                    placeholder="e.g. 821234567"
-                    className="mt-2 flex-1 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3"
+                    onChange={(event) => {
+                      setPhone(sanitizePhoneInput(event.target.value, countryIso));
+                      setPhoneError('');
+                    }}
+                    onBlur={() => setPhoneError(getPhoneError(phone, countryIso))}
+                    placeholder={countryIso === 'ZA' ? 'e.g. 821234567' : 'Phone number'}
+                    className={`mt-2 min-w-0 flex-1 rounded-3xl border px-4 py-3 focus:outline-none ${
+                      phoneError ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-slate-50'
+                    }`}
                   />
                 </div>
+                {phoneError ? <p className="mt-1 text-sm text-red-600">{phoneError}</p> : null}
               </div>
 
               <p className="text-xs text-slate-500">

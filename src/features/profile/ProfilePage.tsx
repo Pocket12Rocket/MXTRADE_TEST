@@ -18,6 +18,11 @@ import {
 import { getFieldErrors } from '@/lib/apiClient';
 import ImageCropDialog from '@/components/ImageCropDialog';
 import { useImageCropQueue } from '@/lib/useImageCropQueue';
+import CountryCodeSelect, {
+  findPhoneCountry,
+  isoForDialCode,
+} from '@/components/CountryCodeSelect';
+import { getPhoneError, sanitizePhoneInput } from '@/lib/phone';
 import { AVATAR_IMAGE_ASPECT, AVATAR_IMAGE_OUTPUT_WIDTH } from '@/lib/cropImage';
 import { toUserMessage } from '@/lib/userMessage';
 import { useSingleFlight } from '@/lib/useSingleFlight';
@@ -37,74 +42,6 @@ interface SellerFormState {
   branchCode: string;
   accountNumber: string;
 }
-
-const COUNTRY_CODES = [
-  { cc: 'US', code: '+1', name: 'United States' },
-  { cc: 'CA', code: '+1', name: 'Canada' },
-  { cc: 'GB', code: '+44', name: 'United Kingdom' },
-  { cc: 'AU', code: '+61', name: 'Australia' },
-  { cc: 'NZ', code: '+64', name: 'New Zealand' },
-  { cc: 'ZA', code: '+27', name: 'South Africa' },
-  { cc: 'NG', code: '+234', name: 'Nigeria' },
-  { cc: 'KE', code: '+254', name: 'Kenya' },
-  { cc: 'UG', code: '+256', name: 'Uganda' },
-  { cc: 'MA', code: '+212', name: 'Morocco' },
-  { cc: 'DZ', code: '+213', name: 'Algeria' },
-  { cc: 'EG', code: '+20', name: 'Egypt' },
-  { cc: 'AE', code: '+971', name: 'United Arab Emirates' },
-  { cc: 'SA', code: '+966', name: 'Saudi Arabia' },
-  { cc: 'QA', code: '+974', name: 'Qatar' },
-  { cc: 'KH', code: '+855', name: 'Cambodia' },
-  { cc: 'CN', code: '+86', name: 'China' },
-  { cc: 'JP', code: '+81', name: 'Japan' },
-  { cc: 'KR', code: '+82', name: 'South Korea' },
-  { cc: 'SG', code: '+65', name: 'Singapore' },
-  { cc: 'MY', code: '+60', name: 'Malaysia' },
-  { cc: 'TH', code: '+66', name: 'Thailand' },
-  { cc: 'ID', code: '+62', name: 'Indonesia' },
-  { cc: 'PH', code: '+63', name: 'Philippines' },
-  { cc: 'IN', code: '+91', name: 'India' },
-  { cc: 'BD', code: '+880', name: 'Bangladesh' },
-  { cc: 'PK', code: '+92', name: 'Pakistan' },
-  { cc: 'FR', code: '+33', name: 'France' },
-  { cc: 'DE', code: '+49', name: 'Germany' },
-  { cc: 'IT', code: '+39', name: 'Italy' },
-  { cc: 'ES', code: '+34', name: 'Spain' },
-  { cc: 'NL', code: '+31', name: 'Netherlands' },
-  { cc: 'BE', code: '+32', name: 'Belgium' },
-  { cc: 'CH', code: '+41', name: 'Switzerland' },
-  { cc: 'AT', code: '+43', name: 'Austria' },
-  { cc: 'DK', code: '+45', name: 'Denmark' },
-  { cc: 'SE', code: '+46', name: 'Sweden' },
-  { cc: 'NO', code: '+47', name: 'Norway' },
-  { cc: 'FI', code: '+358', name: 'Finland' },
-  { cc: 'PL', code: '+48', name: 'Poland' },
-  { cc: 'CZ', code: '+420', name: 'Czech Republic' },
-  { cc: 'RO', code: '+40', name: 'Romania' },
-  { cc: 'HU', code: '+36', name: 'Hungary' },
-  { cc: 'GR', code: '+30', name: 'Greece' },
-  { cc: 'PT', code: '+351', name: 'Portugal' },
-  { cc: 'BR', code: '+55', name: 'Brazil' },
-  { cc: 'AR', code: '+54', name: 'Argentina' },
-  { cc: 'CL', code: '+56', name: 'Chile' },
-  { cc: 'CO', code: '+57', name: 'Colombia' },
-  { cc: 'PE', code: '+51', name: 'Peru' },
-  { cc: 'UY', code: '+598', name: 'Uruguay' },
-  { cc: 'MX', code: '+52', name: 'Mexico' },
-];
-
-/**
- * Why: Turns a country code into its flag emoji for the phone prefix picker.
- * @param cc - Two-letter country code.
- * @returns The flag emoji.
- */
-const countryCodeToFlag = (cc: string) => {
-  const codePoints = cc
-    .toUpperCase()
-    .split('')
-    .map((char) => 127397 + char.charCodeAt(0));
-  return String.fromCodePoint(...codePoints);
-};
 
 const EMPTY_SELLER_PROFILE_FORM: SellerFormState = {
   idNumber: '',
@@ -190,7 +127,8 @@ function SignedInProfile() {
   const [editFirstName, setEditFirstName] = useState('');
   const [editLastName, setEditLastName] = useState('');
   const [editPhone, setEditPhone] = useState('');
-  const [editCountryCode, setEditCountryCode] = useState('+27');
+  const [editCountryIso, setEditCountryIso] = useState('ZA');
+  const [editPhoneError, setEditPhoneError] = useState('');
   const { run: runSave, pending: saving } = useSingleFlight();
   const [saveError, setSaveError] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -231,8 +169,10 @@ function SignedInProfile() {
   const openEdit = () => {
     setEditFirstName(profile?.firstName || '');
     setEditLastName(profile?.lastName || '');
-    setEditPhone(profile?.phone || '');
-    setEditCountryCode(profile?.countryCode || '+27');
+    const iso = isoForDialCode(profile?.countryCode);
+    setEditCountryIso(iso);
+    setEditPhone(sanitizePhoneInput(profile?.phone || '', iso));
+    setEditPhoneError('');
     setSaveError('');
     setSaveSuccess(false);
     setEditing(true);
@@ -252,13 +192,18 @@ function SignedInProfile() {
    */
   const saveBasicProfile = async () => {
     setSaveError('');
+    const phoneProblem = getPhoneError(editPhone, editCountryIso);
+    if (phoneProblem) {
+      setEditPhoneError(phoneProblem);
+      return;
+    }
     try {
       // The backend returns the normalised Me, so store that rather than guessing locally.
       await updateMeMutation.mutateAsync({
         firstName: editFirstName,
         lastName: editLastName,
         phone: editPhone,
-        countryCode: editCountryCode || '+27',
+        countryCode: findPhoneCountry(editCountryIso).code,
       });
       setSaveSuccess(true);
       setEditing(false);
@@ -619,29 +564,39 @@ function SignedInProfile() {
             </label>
           </div>
 
-          <label className="block">
+          <div>
             <span className="text-sm font-medium text-slate-700">Contact number</span>
-            <div className="mt-2 flex gap-2">
-              <select
-                value={editCountryCode}
-                onChange={(e) => setEditCountryCode(e.target.value)}
-                className="rounded-3xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm focus:outline-none focus:border-slate-400"
-              >
-                {COUNTRY_CODES.map((country) => (
-                  <option key={`${country.cc}-${country.code}`} value={country.code}>
-                    {countryCodeToFlag(country.cc)} {country.code} {country.name}
-                  </option>
-                ))}
-              </select>
+            <div className="flex gap-2">
+              <CountryCodeSelect
+                value={editCountryIso}
+                onChange={(iso) => {
+                  setEditCountryIso(iso);
+                  setEditPhone((current) => sanitizePhoneInput(current, iso));
+                  setEditPhoneError('');
+                }}
+              />
               <input
                 type="tel"
+                inputMode="numeric"
+                autoComplete="tel-national"
+                aria-label="Mobile number"
+                aria-invalid={editPhoneError ? true : undefined}
                 value={editPhone}
-                onChange={(e) => setEditPhone(e.target.value)}
-                placeholder="Phone number"
-                className="flex-1 rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 focus:outline-none focus:border-slate-400"
+                onChange={(e) => {
+                  setEditPhone(sanitizePhoneInput(e.target.value, editCountryIso));
+                  setEditPhoneError('');
+                }}
+                onBlur={() => setEditPhoneError(getPhoneError(editPhone, editCountryIso))}
+                placeholder={editCountryIso === 'ZA' ? 'e.g. 821234567' : 'Phone number'}
+                className={`mt-2 min-w-0 flex-1 rounded-3xl border px-4 py-3 focus:outline-none ${
+                  editPhoneError
+                    ? 'border-red-300 bg-red-50'
+                    : 'border-slate-200 bg-slate-50 focus:border-slate-400'
+                }`}
               />
             </div>
-          </label>
+            {editPhoneError ? <p className="mt-1 text-sm text-red-600">{editPhoneError}</p> : null}
+          </div>
 
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">

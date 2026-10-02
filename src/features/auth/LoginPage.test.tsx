@@ -58,4 +58,43 @@ describe('Login register', () => {
     expect(await screen.findByText(/Check your email/i)).toBeInTheDocument();
     expect(screen.queryByText(/I agree and create profile/i)).not.toBeInTheDocument();
   });
+
+  /**
+   * Why: Fills the required register fields so a test only has to vary the phone number.
+   * @returns The rendered form element.
+   */
+  const fillRegisterForm = () => {
+    vi.mocked(register).mockReset().mockResolvedValue({ message: 'ok' });
+    const { container } = render(<Login />);
+    fireEvent.click(screen.getByRole('button', { name: 'Register' }));
+    const inputs = container.querySelectorAll('input');
+    fireEvent.change(inputs[0]!, { target: { value: 'sam@example.com' } });
+    fireEvent.change(inputs[1]!, { target: { value: 'secret-pass' } });
+    fireEvent.change(inputs[2]!, { target: { value: 'secret-pass' } });
+    fireEvent.change(inputs[3]!, { target: { value: 'Sam' } });
+    fireEvent.change(inputs[4]!, { target: { value: 'Rider' } });
+    return container.querySelector('form')!;
+  };
+
+  it('blocks a South African number that is not 9 digits', () => {
+    const form = fillRegisterForm();
+    fireEvent.change(screen.getByLabelText('Mobile number'), { target: { value: '82123' } });
+    fireEvent.submit(form);
+
+    expect(register).not.toHaveBeenCalled();
+    expect(screen.getByText(/Enter the 9 digits/)).toBeInTheDocument();
+  });
+
+  it('sends a typed 082 number as 9 digits with +27', () => {
+    const form = fillRegisterForm();
+    fireEvent.change(screen.getByLabelText('Mobile number'), {
+      target: { value: '082 123 4567' },
+    });
+    fireEvent.submit(form);
+
+    expect(vi.mocked(register).mock.calls[0]![0]).toMatchObject({
+      phone: '821234567',
+      countryCode: '+27',
+    });
+  });
 });
