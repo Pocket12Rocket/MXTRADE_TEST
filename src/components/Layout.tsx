@@ -12,6 +12,7 @@ const FOOTER_LINK_ROUTES: Record<string, string> = {
   'About Us': '/about',
   'How it Works': '/about#how-it-works',
   'Contact Us': '/contact',
+  'Terms & Conditions': '/terms',
   'Privacy Policy': '/privacy',
   'Refund & Return Policy': '/returns',
 };
