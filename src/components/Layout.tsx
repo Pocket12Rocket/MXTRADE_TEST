@@ -12,6 +12,8 @@ const FOOTER_LINK_ROUTES: Record<string, string> = {
   'About Us': '/about',
   'How it Works': '/about#how-it-works',
   'Contact Us': '/contact',
+  'Privacy Policy': '/privacy',
+  'Refund & Return Policy': '/returns',
 };
 const FOOTER_COLUMNS = [
   {
